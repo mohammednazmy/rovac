@@ -16,6 +16,9 @@ Environment=ROS_DOMAIN_ID=42
 Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
 
+# SDL2 needs explicit device path on headless Pi (no X11/Wayland for discovery)
+Environment=SDL_JOYSTICK_DEVICE=/dev/input/js0
+
 # Logging
 StandardOutput=journal
 StandardError=journal
@@ -28,7 +31,7 @@ CPUQuota=10%
 Restart=always
 RestartSec=3
 
-ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; exec ros2 run joy joy_node --ros-args -p device_name:=/dev/input/js0 -p deadzone:=0.05 -p autorepeat_rate:=20.0 -p coalesce_interval_ms:=2'
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; exec ros2 run joy joy_node --ros-args -p device_id:=0 -p deadzone:=0.05 -p autorepeat_rate:=20.0 -p coalesce_interval_ms:=2'
 
 [Install]
 WantedBy=rovac-edge.target
