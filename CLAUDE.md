@@ -8,10 +8,15 @@ ROVAC is a Raspberry Pi 5-based mobile robot (Yahboom G1 Tank) with a split-brai
 
 Communication via ROS2 Jazzy over CycloneDDS (unicast, `ROS_DOMAIN_ID=42`).
 
+Both machines clone the same monorepo: `github.com/mohammednazmy/rovac`
+- **Mac path**: `~/robots/rovac/`
+- **Pi path**: `/home/pi/robots/rovac/`
+
 ## Quick Reference
 
 | Resource | Value |
 |----------|-------|
+| GitHub Repo | `git@github.com:mohammednazmy/rovac.git` |
 | Pi SSH | `ssh pi` (alias for `pi@192.168.1.200`) |
 | Pi MCP Server | `http://192.168.1.200:8000` |
 | Foxglove | `ws://localhost:8765` |
@@ -21,10 +26,18 @@ Communication via ROS2 Jazzy over CycloneDDS (unicast, `ROS_DOMAIN_ID=42`).
 ## Quick Start Commands
 
 ```bash
-# One-time persistence setup (recommended)
+# First-time setup (Pi)
+ssh pi
+cd ~
+mkdir -p robots && cd robots
+git clone git@github.com:mohammednazmy/rovac.git
+cd rovac
+# Install systemd services
+./scripts/install_pi_systemd.sh install
+
+# First-time setup (Mac)
 cd ~/robots/rovac
 ./scripts/install_mac_autostart.sh install   # macOS launchd: joy_node + joy_mapper
-./scripts/install_pi_systemd.sh install      # Pi systemd: motors + sensors + mux + lidar
 
 # Daily bringup (Mac)
 source config/ros2_env.sh
@@ -93,35 +106,79 @@ ssh pi 'sudo systemctl status rovac-edge.target'
 
 ## Project Structure
 
+Both Mac and Pi clone the same repo to `~/robots/rovac/`. The tree below shows the full monorepo layout.
+
 ```
-~/robots/rovac/
+~/robots/rovac/                         # Git root (github.com/mohammednazmy/rovac)
 ├── scripts/
 │   ├── standalone_control.sh           # Main bringup (Pi edge + controllers)
 │   ├── install_mac_autostart.sh        # macOS launchd controller autostart
 │   ├── rovac_controller_supervisor.sh  # (launchd) keeps joy stack alive
 │   ├── install_pi_systemd.sh           # Pi systemd edge autostart
 │   ├── mac_brain_launch.sh             # Mac Nav2/SLAM launcher
-│   └── joy_mapper_node.py              # Nintendo Pro Controller -> topics
+│   ├── joy_mapper_node.py              # Nintendo Pro Controller -> topics
+│   ├── deploy_core_pi.sh              # Deploy core files to Pi
+│   ├── map_house.sh                   # House mapping automation
+│   └── edge/                          # Pi-side launch helpers
+│       ├── launch_tf_publisher.sh
+│       ├── launch_map_odom_tf.sh
+│       └── launch_odom_static.sh
 ├── config/
 │   ├── ros2_env.sh             # ROS2 environment setup
 │   ├── cyclonedds_mac.xml      # Mac DDS config
 │   ├── cyclonedds_pi.xml       # Pi DDS config
-│   └── systemd/                # Pi unit files (rovac-edge.*)
 │   ├── slam_params.yaml        # SLAM toolbox config
-│   └── nav2_params.yaml        # Navigation2 config
+│   ├── nav2_params.yaml        # Navigation2 config
+│   └── systemd/                # Pi unit files (deployed via install_pi_systemd.sh)
+│       ├── rovac-edge.target
+│       ├── rovac-edge-hiwonder.service
+│       ├── rovac-edge-tf.service
+│       ├── rovac-edge-map-tf.service
+│       ├── rovac-edge-mux.service
+│       ├── rovac-edge-supersensor.service
+│       ├── rovac-edge-lidar.service
+│       ├── rovac-edge-obstacle.service
+│       ├── rovac-edge-stereo.target
+│       ├── rovac-edge-stereo-depth.service
+│       ├── rovac-edge-stereo-obstacle.service
+│       ├── rovac-edge-webcam.service
+│       ├── rovac-edge-phone-sensors.service
+│       ├── rovac-camera.service
+│       └── rovac-phone-cameras.service
 ├── hardware/
 │   ├── hiwonder-ros-controller/         # Motor/IMU board (active) — Hiwonder V1.2
 │   ├── yahboom-ros-expansion-board-v3/  # Old motor/IMU board (replaced by Hiwonder)
+│   ├── esp32_xv11_bridge/               # ESP32 LIDAR bridge firmware + docs
+│   ├── super_sensor/                    # Pi-side ROS2 nodes (supersensor, obstacle)
+│   ├── health_monitor/                  # Pi health monitor node
+│   ├── stereo_cameras/                  # Stereo camera calibration + depth
 │   ├── lidar_usb/                       # XV-11 LIDAR docs
 │   ├── phone_sensors/                   # Phone IMU/GPS integration
 │   ├── phone_cameras/                   # Phone camera streaming
 │   ├── webcam/                          # USB webcam
 │   └── README.md                        # Hardware overview
+├── ros2_ws/
+│   └── src/
+│       ├── tank_description/            # URDF / robot description
+│       ├── xv11_lidar_python/           # XV11 LIDAR ROS2 driver
+│       ├── rf2o_laser_odometry/         # Laser-based odometry
+│       └── vorwerk_lidar/               # Vorwerk LIDAR driver
+├── super_sensor/                        # Super Sensor desktop app + firmware
 ├── robot_mcp_server/
 │   ├── mcp_server.py           # 35+ tool MCP server
 │   └── phone_integration/      # Camera integration
+├── lidar_nano_usb/             # Arduino Nano LIDAR USB bridge
+├── arduino_lidar_bridge/       # Arduino LIDAR bridge sketch
+├── tools/                      # Calibration, diagnostics, testing utilities
+├── maps/                       # Saved SLAM maps
+├── foxglove_layouts/           # Foxglove Studio layout configs
+├── archive/                    # Legacy/deprecated code
 └── docs/
-    └── ARCHITECTURE_VERIFIED.md
+    ├── architecture/
+    │   └── ARCHITECTURE_VERIFIED.md
+    ├── guides/
+    │   └── bringup.md
+    └── troubleshooting/
 ```
 
 ## Environment Setup

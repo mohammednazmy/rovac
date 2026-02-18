@@ -8,6 +8,10 @@ ROVAC is a Raspberry Pi 5-based mobile robot (Yahboom G1 Tank) with a split-brai
 - **Pi 5 (Edge)**: Sensors, motors, MCP server at `192.168.1.200` (hostname: `rovac-pi`, user: `pi`)
 - **MacBook Pro (Brain)**: Nav2, SLAM, path planning at `192.168.1.104`
 
+**Monorepo**: `github.com/mohammednazmy/rovac` (private). Both Mac and Pi code live in one repo, cloned to:
+- **Mac**: `~/robots/rovac/`
+- **Pi**: `/home/pi/robots/rovac/`
+
 Communication via **ROS2 Jazzy** (NOT ROS1) over CycloneDDS (unicast, `ROS_DOMAIN_ID=42`).
 
 ## IMPORTANT: This is ROS2, NOT ROS1
@@ -15,10 +19,36 @@ Communication via **ROS2 Jazzy** (NOT ROS1) over CycloneDDS (unicast, `ROS_DOMAI
 - There is NO `roslaunch` - use scripts in `~/robots/rovac/scripts/`
 - All commands run from Mac at `~/robots/rovac/`
 
+## Git Workflow (REQUIRED for all agents)
+
+```bash
+# BEFORE starting any work — always pull latest
+cd ~/robots/rovac
+git pull origin main
+
+# AFTER completing work — commit and push
+git add <changed-files>
+git commit -m "descriptive message"
+git push origin main
+
+# On Pi — pull to deploy changes
+ssh pi 'cd /home/pi/robots/rovac && git pull origin main'
+```
+
+**Rules:**
+- Always `git pull` before making changes to avoid conflicts
+- Always `git push` after completing work so Pi can pull
+- Use specific file paths in `git add` — never `git add .` or `git add -A`
+- Pi edge code lives in `hardware/`, `config/systemd/`, `scripts/edge/`, `super_sensor/`, `robot_mcp_server/`
+- Mac brain code lives in `scripts/`, `config/`, `ros2_ws/`
+
 ## Quick Reference
 
 | Resource | Value |
 |----------|-------|
+| Git Repo | `github.com/mohammednazmy/rovac` (private) |
+| Mac Path | `~/robots/rovac/` |
+| Pi Path | `/home/pi/robots/rovac/` |
 | Pi SSH | `ssh pi` (alias for `pi@192.168.1.200`) |
 | Pi MCP Server | `http://192.168.1.200:8000` |
 | Foxglove | `ws://localhost:8765` |
@@ -46,7 +76,7 @@ source config/ros2_env.sh
 ssh pi 'sudo systemctl status rovac-edge.target'
 ```
 
-## Available Scripts in ~/robots/rovac/scripts/
+## Available Scripts (~/robots/rovac/scripts/)
 
 - `standalone_control.sh` - Main bringup (Pi edge + controllers)
 - `install_mac_autostart.sh` - macOS launchd controller autostart
@@ -104,22 +134,40 @@ ssh pi 'sudo systemctl status rovac-edge.target'
 | Webcam | NexiGo N930E USB `/dev/webcam` |
 | Power Input | 6-12V DC (board supplies 5V/5A to Pi via USB-C) |
 
-## Project Structure
+## Project Structure (Monorepo)
+
+Both Mac and Pi share the same repo. On Pi it is cloned to `/home/pi/robots/rovac/`.
 
 ```
-~/robots/rovac/
-├── scripts/                 # All launch scripts (run from Mac)
+~/robots/rovac/                         # github.com/mohammednazmy/rovac
+├── scripts/
+│   ├── standalone_control.sh           # Main bringup (Pi edge + controllers)
+│   ├── install_mac_autostart.sh        # macOS launchd controller autostart
+│   ├── install_pi_systemd.sh           # Pi systemd edge autostart
+│   ├── mac_brain_launch.sh             # Mac Nav2/SLAM/Foxglove launcher
+│   ├── joy_mapper_node.py              # Nintendo Pro Controller -> topics
+│   └── edge/                           # Pi-side edge launch scripts
 ├── config/
-│   ├── ros2_env.sh          # ROS2 environment setup
-│   ├── cyclonedds_mac.xml   # Mac DDS config
-│   ├── cyclonedds_pi.xml    # Pi DDS config
-│   ├── systemd/             # Pi unit files (rovac-edge.*)
-│   ├── slam_params.yaml     # SLAM toolbox config
-│   └── nav2_params.yaml     # Navigation2 config
+│   ├── ros2_env.sh                     # ROS2 environment setup
+│   ├── cyclonedds_mac.xml              # Mac DDS config
+│   ├── cyclonedds_pi.xml               # Pi DDS config
+│   ├── systemd/                        # Pi unit files (rovac-edge.*)
+│   ├── slam_params.yaml                # SLAM toolbox config
+│   └── nav2_params.yaml                # Navigation2 config
+├── hardware/
+│   ├── hiwonder-ros-controller/        # Motor/IMU board driver (Pi)
+│   ├── stereo_cameras/                 # Stereo vision (Pi)
+│   ├── phone_cameras/                  # Phone camera streaming (Pi)
+│   ├── phone_sensors/                  # Phone IMU/GPS (Pi)
+│   └── ...                             # Other hardware modules
 ├── robot_mcp_server/
-│   └── mcp_server.py        # 35+ tool MCP server
-└── docs/
-    └── ARCHITECTURE_VERIFIED.md
+│   └── mcp_server.py                   # 35+ tool MCP server (Pi)
+├── super_sensor/                       # Arduino Nano HC-SR04 firmware + ROS2 node
+├── ros2_ws/                            # ROS2 workspace (build artifacts gitignored)
+├── maps/                               # Saved maps (generated files gitignored)
+├── docs/
+│   └── ARCHITECTURE_VERIFIED.md
+└── archive/                            # Legacy/experimental code
 ```
 
 ## Environment Setup

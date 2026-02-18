@@ -41,6 +41,10 @@
 └─────────────────────────────────┘
 ```
 
+## Repository Structure
+
+This is a **monorepo** — both the Pi edge code and the Mac brain code live in one repository. Both machines clone the same repo to `~/robots/rovac/` and stay in sync via `git push` / `git pull`.
+
 ## Quick Start
 
 ### Prerequisites
@@ -48,6 +52,17 @@
 - MacBook with ROS2 Jazzy (via conda: `ros_jazzy`)
 - Both Pi and Mac on same network (192.168.1.x)
 - Android phone with SensorServer app (for GPS/phone sensors)
+
+### Clone the Repo
+
+```bash
+# Mac
+git clone git@github.com:mohammednazmy/rovac.git ~/robots/rovac
+
+# Pi (SSH in first)
+ssh pi
+git clone git@github.com:mohammednazmy/rovac.git ~/robots/rovac
+```
 
 ### One-Time Setup
 
@@ -57,6 +72,7 @@ cd ~/robots/rovac
 ./scripts/install_mac_autostart.sh install
 
 # Pi - Install systemd services
+cd ~/robots/rovac
 ./scripts/install_pi_systemd.sh install
 ```
 
@@ -67,7 +83,7 @@ cd ~/robots/rovac
 
 # 2. Mac - Source environment and start controllers
 cd ~/robots/rovac
-source config/ros2_env.sh
+source config/ros2_env.sh       # Both machines use the same env script
 ./scripts/standalone_control.sh start
 
 # 3. Verify topics (wait 3s for DDS discovery)
@@ -194,10 +210,10 @@ Only one camera can stream at a time (Android limitation):
 ssh pi
 
 # Switch cameras
-/home/pi/hardware/phone_cameras/switch_camera.sh back    # Main back camera (default)
-/home/pi/hardware/phone_cameras/switch_camera.sh front   # Front selfie camera
-/home/pi/hardware/phone_cameras/switch_camera.sh wide    # Back wide-angle
-/home/pi/hardware/phone_cameras/switch_camera.sh front2  # Secondary front
+~/robots/rovac/hardware/phone_cameras/switch_camera.sh back    # Main back camera (default)
+~/robots/rovac/hardware/phone_cameras/switch_camera.sh front   # Front selfie camera
+~/robots/rovac/hardware/phone_cameras/switch_camera.sh wide    # Back wide-angle
+~/robots/rovac/hardware/phone_cameras/switch_camera.sh front2  # Secondary front
 ```
 
 ### Verify Phone Sensors
@@ -218,39 +234,52 @@ ros2 topic hz /phone/imu
 
 ## Project Structure
 
+Both machines clone to `~/robots/rovac/`. The same tree is used on Mac and Pi.
+
 ```
-~/robots/rovac/
-├── README.md                      # This file
-├── CLAUDE.md                      # Claude Code instructions
-├── scripts/                       # Launch and management scripts
-│   ├── standalone_control.sh      # Main bringup script
-│   ├── mac_brain_launch.sh        # SLAM/Nav2/Foxglove launcher
-│   ├── install_mac_autostart.sh   # macOS launchd setup
-│   └── install_pi_systemd.sh      # Pi systemd setup
-├── config/                        # Configuration files
-│   ├── ros2_env.sh                # ROS2 environment setup
-│   ├── cyclonedds_mac.xml         # Mac DDS config
-│   ├── cyclonedds_pi.xml          # Pi DDS config
-│   ├── slam_params.yaml           # SLAM toolbox params
-│   ├── nav2_params.yaml           # Navigation2 params
-│   └── systemd/                   # Pi systemd unit files
-├── hardware/                      # Hardware documentation & drivers
-│   ├── README.md                  # Hardware overview
-│   ├── hiwonder-ros-controller/         # Motor/IMU board (active — Hiwonder V1.2)
-│   ├── yahboom-ros-expansion-board-v3/  # Old motor/IMU board (replaced)
-│   ├── lidar_usb/                 # XV-11 LIDAR module
-│   ├── super_sensor/              # Ultrasonic sensor array
-│   ├── phone_sensors/             # Phone IMU/GPS/Mag integration
-│   └── phone_cameras/             # Phone camera streaming
-├── robot_mcp_server/              # MCP server (35+ tools)
-├── docs/                          # Documentation
-│   ├── architecture/              # System architecture docs
-│   ├── phases/                    # Development phase docs
-│   ├── troubleshooting/           # Troubleshooting guides
-│   └── guides/                    # How-to guides
-├── tools/                         # Utility scripts
-├── archive/                       # Old/experimental code
-└── maps/                          # Saved maps
+~/robots/rovac/                         # Monorepo root (Mac + Pi)
+├── README.md                           # This file
+├── CLAUDE.md                           # Claude Code instructions
+├── AGENTS.md                           # Agent configuration
+├── scripts/                            # Launch and management scripts
+│   ├── standalone_control.sh           # Main bringup script
+│   ├── mac_brain_launch.sh             # SLAM/Nav2/Foxglove launcher
+│   ├── install_mac_autostart.sh        # macOS launchd setup
+│   ├── install_pi_systemd.sh          # Pi systemd setup
+│   └── edge/                           # Pi-only edge launch helpers
+│       ├── launch_tf_publisher.sh
+│       ├── launch_map_odom_tf.sh
+│       └── launch_odom_static.sh
+├── config/                             # Configuration (shared)
+│   ├── ros2_env.sh                     # ROS2 environment (both machines)
+│   ├── cyclonedds_mac.xml              # Mac DDS config
+│   ├── cyclonedds_pi.xml              # Pi DDS config
+│   ├── slam_params.yaml                # SLAM toolbox params
+│   ├── nav2_params.yaml                # Navigation2 params
+│   └── systemd/                        # Pi systemd unit files
+├── hardware/                           # Hardware drivers & docs
+│   ├── README.md                       # Hardware overview
+│   ├── hiwonder-ros-controller/        # Motor/IMU board (active — Hiwonder V1.2)
+│   ├── yahboom-ros-expansion-board-v3/ # Old motor/IMU board (replaced)
+│   ├── lidar_usb/                      # XV-11 LIDAR module
+│   ├── phone_sensors/                  # Phone IMU/GPS/Mag integration
+│   └── phone_cameras/                  # Phone camera streaming
+├── super_sensor/                       # Ultrasonic sensor array (Arduino Nano)
+├── ros2_ws/                            # ROS2 workspace
+│   └── src/                            # ROS2 packages
+│       ├── tank_description/           # URDF, launch files, cmd_vel mux
+│       ├── xv11_lidar_python/          # XV-11 LIDAR driver
+│       ├── rf2o_laser_odometry/        # Laser odometry
+│       └── vorwerk_lidar/              # Vorwerk LIDAR driver
+├── robot_mcp_server/                   # MCP server (35+ tools)
+├── docs/                               # Documentation
+│   ├── architecture/                   # System architecture docs
+│   ├── phases/                         # Development phase docs
+│   ├── troubleshooting/                # Troubleshooting guides
+│   └── guides/                         # How-to guides
+├── tools/                              # Utility scripts
+├── archive/                            # Old/experimental code
+└── maps/                               # Saved maps (gitignored, machine-specific)
 ```
 
 ## Systemd Services (Pi)
