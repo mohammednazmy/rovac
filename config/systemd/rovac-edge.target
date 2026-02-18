@@ -14,6 +14,10 @@ Wants=rovac-edge-obstacle.service
 Wants=rovac-edge-stereo-depth.service
 Wants=rovac-edge-stereo-obstacle.service
 
+# PS2 wireless controller (joy_node + mapper on Pi)
+Wants=rovac-edge-ps2-joy.service
+Wants=rovac-edge-ps2-mapper.service
+
 # Phone sensors (optional - starts if phone connected)
 Wants=rovac-edge-phone-sensors.service
 

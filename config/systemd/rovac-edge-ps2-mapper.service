@@ -1,0 +1,33 @@
+[Unit]
+Description=ROVAC PS2 Joy Mapper (/joy -> /cmd_vel_joy, servo, LED, buzzer)
+Documentation=https://github.com/mohammednazmy/rovac
+Wants=network-online.target
+After=network-online.target rovac-edge-ps2-joy.service
+PartOf=rovac-edge.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/robots/rovac
+
+# DDS Configuration
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rovac-ps2-mapper
+
+# Resource limits
+MemoryMax=64M
+CPUQuota=10%
+
+Restart=always
+RestartSec=3
+
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; [ -f /home/pi/robots/rovac/ros2_ws/install/setup.bash ] && source /home/pi/robots/rovac/ros2_ws/install/setup.bash; [ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh; exec python3 /home/pi/robots/rovac/scripts/ps2_joy_mapper_node.py'
+
+[Install]
+WantedBy=rovac-edge.target
