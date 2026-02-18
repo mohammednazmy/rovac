@@ -400,4 +400,3 @@ The robot has multiple overlapping sensors for redundancy:
 ## License
 
 This is a personal robotics project. Hardware documentation follows vendor licenses.
-
