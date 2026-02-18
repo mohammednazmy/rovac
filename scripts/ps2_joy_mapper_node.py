@@ -10,11 +10,11 @@ Controller: Hiwonder PS2 Wireless (ShanWan ZD-V+ USB HID receiver)
 
 Linux joydev axis/button mapping (confirmed via jstest/evtest):
 
-  Axes (normalized -1.0 to +1.0 by joy_node):
+  Axes (normalized -1.0 to +1.0 by joy_node via SDL2):
     0: Left Stick X   (left=-1, right=+1)
-    1: Left Stick Y   (up=-1, down=+1)    ← inverted from ROS forward=+
+    1: Left Stick Y   (SDL2 mapped gamepad — convention varies)
     2: Right Stick X   (left=-1, right=+1)
-    3: Right Stick Y   (up=-1, down=+1)
+    3: Right Stick Y   (SDL2 mapped gamepad — convention varies)
     4: D-Pad X         (left=-1, right=+1)
     5: D-Pad Y         (up=-1, down=+1)
 
@@ -34,12 +34,12 @@ Linux joydev axis/button mapping (confirmed via jstest/evtest):
    12: Mode/Analog     — BTN_MODE
 
 Controls:
-  Left Stick:    Drive (Y=forward/back, X=turn)
+  Right Stick:   Drive (Y=forward/back, X=turn)
   R2:            Forward (fixed speed)
   L2:            Reverse (fixed speed)
   L1:            Turn left
   R1:            Turn right
-  Right Stick X: Servo pan (camera)
+  Left Stick X:  Servo pan (camera)
   D-Pad Up/Down: Speed adjust ±10%
   Triangle:      Cycle speed modes (SLOW/MEDIUM/FAST)
   Cross:         Buzzer (hold)
@@ -112,7 +112,6 @@ class PS2JoyMapper(Node):
         self.stick_deadzone = 0.15
         self.stick_linear_scale = 1.0
         self.stick_angular_scale = 3.0  # Generous turning from stick
-        self.stick_active = False
 
         # Servo state
         self.servo_angle = 0.0
@@ -151,8 +150,8 @@ class PS2JoyMapper(Node):
         self.get_logger().info(f"  cmd_vel rate: {self.cmd_vel_rate_hz} Hz")
         self.get_logger().info(f"  speed: {self.speed_percent}%")
         self.get_logger().info("Controls:")
-        self.get_logger().info("  Left Stick : Drive (forward/back + turn)")
-        self.get_logger().info("  Right Stick: Servo pan")
+        self.get_logger().info("  Right Stick: Drive (forward/back + turn)")
+        self.get_logger().info("  Left Stick : Servo pan")
         self.get_logger().info("  L2/R2      : Reverse / Forward")
         self.get_logger().info("  L1/R1      : Turn left / right")
         self.get_logger().info("  D-Pad U/D  : Speed ±10%")
@@ -240,59 +239,49 @@ class PS2JoyMapper(Node):
         trigger_drive = False
         bumper_drive = False
 
+        # Build a single twist from all drive inputs. Always publish
+        # (even zero) so the mux never holds a stale command.
+        twist = Twist()
+
         # === R2: Forward ===
         if self.button_held(BTN_R2, buttons):
-            twist = Twist()
             twist.linear.x = self.button_linear_base * speed_ratio
-            self.publish_cmd_vel(twist)
             trigger_drive = True
 
         # === L2: Reverse ===
         if self.button_held(BTN_L2, buttons):
-            twist = Twist()
             twist.linear.x = -self.button_linear_base * speed_ratio
-            self.publish_cmd_vel(twist)
             trigger_drive = True
 
         # === L1: Turn left ===
         if self.button_held(BTN_L1, buttons):
-            twist = Twist()
             twist.angular.z = self.button_angular_base * speed_ratio
-            self.publish_cmd_vel(twist)
             bumper_drive = True
 
         # === R1: Turn right ===
         if self.button_held(BTN_R1, buttons):
-            twist = Twist()
             twist.angular.z = -self.button_angular_base * speed_ratio
-            self.publish_cmd_vel(twist)
             bumper_drive = True
 
-        # === Left stick drive (only when no button drive active) ===
-        stick_active_now = False
+        # === Right stick drive (only when no button drive active) ===
         if not trigger_drive and not bumper_drive:
-            stick_x = self.apply_deadzone(axes[AXIS_LSTICK_X], self.stick_deadzone)
-            # Negate Y: Linux joydev up=-1, but ROS forward=+1
-            stick_y = -self.apply_deadzone(axes[AXIS_LSTICK_Y], self.stick_deadzone)
+            stick_x = self.apply_deadzone(axes[AXIS_RSTICK_X], self.stick_deadzone)
+            stick_y = self.apply_deadzone(axes[AXIS_RSTICK_Y], self.stick_deadzone)
 
-            if stick_x != 0.0 or stick_y != 0.0:
-                twist = Twist()
-                twist.linear.x = stick_y * self.stick_linear_scale * speed_ratio
-                twist.angular.z = -stick_x * self.stick_angular_scale * speed_ratio
-                self.publish_cmd_vel(twist)
-                stick_active_now = True
+            # SDL2 mapped gamepad: Y axis up = positive value for this controller
+            # (confirmed by user testing — no negation needed)
+            twist.linear.x = stick_y * self.stick_linear_scale * speed_ratio
+            twist.angular.z = -stick_x * self.stick_angular_scale * speed_ratio
 
-        # Stop when stick released and no button drive
-        if self.stick_active and not stick_active_now and not trigger_drive and not bumper_drive:
-            self.publish_cmd_vel(Twist())
-        self.stick_active = stick_active_now
+        # Always publish — zero twist when idle ensures reliable stopping
+        self.publish_cmd_vel(twist)
 
-        # === Right stick X → servo pan ===
-        right_x = axes[AXIS_RSTICK_X]
-        if abs(right_x) > self.servo_deadzone:
-            if abs(right_x - self.last_right_x) >= 0.05:
-                self.last_right_x = right_x
-                self.servo_angle = max(-90.0, min(90.0, right_x * 90.0))
+        # === Left stick X → servo pan ===
+        left_x = axes[AXIS_LSTICK_X]
+        if abs(left_x) > self.servo_deadzone:
+            if abs(left_x - self.last_right_x) >= 0.05:
+                self.last_right_x = left_x
+                self.servo_angle = max(-90.0, min(90.0, left_x * 90.0))
                 self.publish_servo()
 
         # === D-Pad Y: speed adjust ===
