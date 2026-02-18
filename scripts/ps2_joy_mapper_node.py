@@ -109,7 +109,7 @@ class PS2JoyMapper(Node):
         # Drive parameters
         self.button_linear_base = 0.6   # Base linear speed for L2/R2
         self.button_angular_base = 1.5  # Base angular speed for L1/R1
-        self.stick_deadzone = 0.15
+        self.stick_deadzone = 0.25  # Large deadzone — PS2 sticks drift up to ±0.19 at rest
         self.stick_linear_scale = 1.0
         self.stick_angular_scale = 3.0  # Generous turning from stick
 
@@ -126,6 +126,10 @@ class PS2JoyMapper(Node):
         # D-pad edge tracking
         self.dpad_up_active = False
         self.dpad_down_active = False
+
+        # Debug logging (throttled)
+        self.last_debug_time = 0.0
+        self.debug_interval = 0.25  # Log at most 4x/sec
 
         # Rate limiting for cmd_vel (prevents motor jitter from high-freq joy msgs)
         self.cmd_vel_rate_hz = 20.0
@@ -265,13 +269,24 @@ class PS2JoyMapper(Node):
 
         # === Right stick drive (only when no button drive active) ===
         if not trigger_drive and not bumper_drive:
-            stick_x = self.apply_deadzone(axes[AXIS_RSTICK_X], self.stick_deadzone)
-            stick_y = self.apply_deadzone(axes[AXIS_RSTICK_Y], self.stick_deadzone)
+            raw_x = axes[AXIS_RSTICK_X]
+            raw_y = axes[AXIS_RSTICK_Y]
+            stick_x = self.apply_deadzone(raw_x, self.stick_deadzone)
+            # Negate Y: SDL2 joydev reports forward (up) as negative
+            stick_y = -self.apply_deadzone(raw_y, self.stick_deadzone)
 
-            # SDL2 mapped gamepad: Y axis up = positive value for this controller
-            # (confirmed by user testing — no negation needed)
             twist.linear.x = stick_y * self.stick_linear_scale * speed_ratio
             twist.angular.z = -stick_x * self.stick_angular_scale * speed_ratio
+
+            # Debug: log when stick is active (throttled)
+            now = time.time()
+            if (stick_x != 0.0 or stick_y != 0.0) and now - self.last_debug_time > self.debug_interval:
+                self.last_debug_time = now
+                self.get_logger().info(
+                    f"STICK raw_y={raw_y:+.3f}→neg={stick_y:+.3f} "
+                    f"raw_x={raw_x:+.3f}→{stick_x:+.3f} "
+                    f"cmd=(lin={twist.linear.x:+.3f},ang={twist.angular.z:+.3f})"
+                )
 
         # Always publish — zero twist when idle ensures reliable stopping
         self.publish_cmd_vel(twist)

@@ -300,7 +300,12 @@ class HiwonderDriver(Node):
         self._cmd_angular = msg.angular.z
         self._last_cmd_time = time.monotonic()
         self._cmd_count += 1
-        self._send_motor_speeds(msg.linear.x, msg.angular.z)
+        # Use stop-all (H-bridge disengage) for zero velocity to avoid coil whine.
+        # PID-hold at zero keeps the H-bridge actively switching → audible whine.
+        if abs(msg.linear.x) < 0.01 and abs(msg.angular.z) < 0.01:
+            self._stop_motors()
+        else:
+            self._send_motor_speeds(msg.linear.x, msg.angular.z)
 
     def _send_motor_speeds(self, linear: float, angular: float):
         """Convert (linear, angular) to differential drive motor speeds in r/s."""
