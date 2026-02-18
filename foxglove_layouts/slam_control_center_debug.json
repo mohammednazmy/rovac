@@ -1,0 +1,656 @@
+{
+  "configById": {
+    "3D!slam_view": {
+      "cameraState": {
+        "perspective": false,
+        "distance": 8,
+        "phi": 0,
+        "thetaOffset": 90,
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.01,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "followTf": "base_link",
+      "scene": {
+        "backgroundColor": "#1a1a2e",
+        "enableStats": false,
+        "labelScaleFactor": 1
+      },
+      "transforms": {
+        "editable": false,
+        "showLabel": false,
+        "axisScale": 0.1,
+        "enablePreloading": false
+      },
+      "topics": {
+        "/map": {
+          "visible": true,
+          "frameLocked": true
+        },
+        "/scan": {
+          "visible": true,
+          "colorMode": "flat",
+          "flatColor": "#00ff00",
+          "pointSize": 6
+        },
+        "/sensors/ultrasonic/scan": {
+          "visible": true,
+          "colorMode": "flat",
+          "flatColor": "#ff8800",
+          "pointSize": 8
+        },
+        "/sensors/ultrasonic/points": {
+          "visible": true,
+          "colorMode": "flat",
+          "flatColor": "#ff4400",
+          "pointSize": 12
+        }
+      },
+      "layers": {},
+      "publish": {
+        "type": "pose",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose"
+      }
+    },
+    "Image!webcam": {
+      "imageTopic": "/image_raw/compressed"
+    },
+    "Plot!vel_plot": {
+      "paths": [
+        {
+          "value": "/cmd_vel_joy.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Linear (m/s)",
+          "color": "#4488ff"
+        },
+        {
+          "value": "/cmd_vel_joy.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Angular (rad/s)",
+          "color": "#ff8844"
+        },
+        {
+          "value": "/cmd_vel_nav.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Nav Linear (m/s)",
+          "color": "#66cc66"
+        },
+        {
+          "value": "/cmd_vel_smoothed.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Smoothed Linear (m/s)",
+          "color": "#cccc66"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 200,
+      "minYValue": -1.5,
+      "maxYValue": 1.5
+    },
+    "Plot!imu_plot": {
+      "paths": [
+        {
+          "value": "/sensors/imu.linear_acceleration.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Accel X",
+          "color": "#ff4444"
+        },
+        {
+          "value": "/sensors/imu.linear_acceleration.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Accel Y",
+          "color": "#44ff44"
+        },
+        {
+          "value": "/sensors/imu.linear_acceleration.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Accel Z",
+          "color": "#4444ff"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 200,
+      "minYValue": -15,
+      "maxYValue": 15
+    },
+    "Plot!gyro_plot": {
+      "paths": [
+        {
+          "value": "/sensors/imu.angular_velocity.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Gyro X",
+          "color": "#ff8888"
+        },
+        {
+          "value": "/sensors/imu.angular_velocity.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Gyro Y",
+          "color": "#88ff88"
+        },
+        {
+          "value": "/sensors/imu.angular_velocity.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Gyro Z",
+          "color": "#8888ff"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 200,
+      "minYValue": -5,
+      "maxYValue": 5
+    },
+    "Plot!ultrasonic_plot": {
+      "paths": [
+        {
+          "value": "/sensors/ultrasonic/range.range",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Distance (m)",
+          "color": "#ff8800"
+        },
+        {
+          "value": "/sensors/servo_angles.data[0]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Servo Angle (deg)",
+          "color": "#00aaff"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 200,
+      "minYValue": -100,
+      "maxYValue": 100
+    },
+    "Gauge!ultrasonic_gauge": {
+      "path": "/sensors/ultrasonic/range.range",
+      "minValue": 0,
+      "maxValue": 4,
+      "colorMode": "gradient",
+      "gradient": [
+        "#00ff00",
+        "#ffff00",
+        "#ff0000"
+      ],
+      "reverse": true
+    },
+    "Indicator!lidar_status": {
+      "path": "/scan.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#880000",
+      "fallbackLabel": "LIDAR OFFLINE",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#00aa00",
+          "label": "LIDAR OK"
+        }
+      ]
+    },
+    "Indicator!slam_status": {
+      "path": "/map.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#884400",
+      "fallbackLabel": "SLAM WAITING",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#00aa66",
+          "label": "SLAM ACTIVE"
+        }
+      ]
+    },
+    "Indicator!odom_status": {
+      "path": "/odom.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#880000",
+      "fallbackLabel": "ODOM OFFLINE",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#00aa00",
+          "label": "ODOM OK"
+        }
+      ]
+    },
+    "Indicator!ultrasonic_status": {
+      "path": "/sensors/ultrasonic/range.range",
+      "style": "background",
+      "fallbackColor": "#444444",
+      "fallbackLabel": "ULTRASONIC N/A",
+      "rules": [
+        {
+          "operator": "<",
+          "rawValue": "0.3",
+          "color": "#ff0000",
+          "label": "OBSTACLE CLOSE!"
+        },
+        {
+          "operator": "<",
+          "rawValue": "1.0",
+          "color": "#ff8800",
+          "label": "OBSTACLE NEAR"
+        },
+        {
+          "operator": ">=",
+          "rawValue": "1.0",
+          "color": "#00aa00",
+          "label": "CLEAR"
+        }
+      ]
+    },
+    "Indicator!imu_status": {
+      "path": "/sensors/imu.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#444444",
+      "fallbackLabel": "IMU N/A",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#00aa00",
+          "label": "IMU OK"
+        }
+      ]
+    },
+    "Indicator!ir_left_status": {
+      "path": "/sensors/ir_obstacle.data[0]",
+      "style": "background",
+      "fallbackColor": "#444444",
+      "fallbackLabel": "IR-L N/A",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#ff0000",
+          "label": "IR-L BLOCKED"
+        },
+        {
+          "operator": "=",
+          "rawValue": "0",
+          "color": "#00aa00",
+          "label": "IR-L CLEAR"
+        }
+      ]
+    },
+    "Indicator!ir_right_status": {
+      "path": "/sensors/ir_obstacle.data[1]",
+      "style": "background",
+      "fallbackColor": "#444444",
+      "fallbackLabel": "IR-R N/A",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#ff0000",
+          "label": "IR-R BLOCKED"
+        },
+        {
+          "operator": "=",
+          "rawValue": "0",
+          "color": "#00aa00",
+          "label": "IR-R CLEAR"
+        }
+      ]
+    },
+    "Indicator!button_status": {
+      "path": "/sensors/button.data",
+      "style": "background",
+      "fallbackColor": "#444444",
+      "fallbackLabel": "BTN N/A",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "true",
+          "color": "#ffaa00",
+          "label": "BTN PRESSED"
+        },
+        {
+          "operator": "=",
+          "rawValue": "false",
+          "color": "#333366",
+          "label": "BTN IDLE"
+        }
+      ]
+    },
+    "Teleop!gamepad_backup": {
+      "topic": "/cmd_vel_joy",
+      "publishRate": 10,
+      "upButton": {
+        "field": "linear-x",
+        "value": 0.5
+      },
+      "downButton": {
+        "field": "linear-x",
+        "value": -0.5
+      },
+      "leftButton": {
+        "field": "angular-z",
+        "value": 0.8
+      },
+      "rightButton": {
+        "field": "angular-z",
+        "value": -0.8
+      }
+    },
+    "Publish!servo_control": {
+      "topicName": "/sensors/servo_cmd",
+      "datatype": "std_msgs/msg/Float32MultiArray",
+      "value": "{ \"data\": [0.0] }"
+    },
+    "Publish!servo_left": {
+      "topicName": "/sensors/servo_cmd",
+      "datatype": "std_msgs/msg/Float32MultiArray",
+      "value": "{ \"data\": [-90.0] }"
+    },
+    "Publish!servo_home": {
+      "topicName": "/sensors/servo_cmd",
+      "datatype": "std_msgs/msg/Float32MultiArray",
+      "value": "{ \"data\": [0.0] }"
+    },
+    "Publish!servo_right": {
+      "topicName": "/sensors/servo_cmd",
+      "datatype": "std_msgs/msg/Float32MultiArray",
+      "value": "{ \"data\": [90.0] }"
+    },
+    "Publish!servo_-45": {
+      "topicName": "/sensors/servo_cmd",
+      "datatype": "std_msgs/msg/Float32MultiArray",
+      "value": "{ \"data\": [-45.0] }"
+    },
+    "Publish!servo_+45": {
+      "topicName": "/sensors/servo_cmd",
+      "datatype": "std_msgs/msg/Float32MultiArray",
+      "value": "{ \"data\": [45.0] }"
+    },
+    "Publish!sweep_trigger": {
+      "topicName": "/sensors/sweep_cmd",
+      "datatype": "std_msgs/msg/Bool",
+      "value": "{ \"data\": true }"
+    },
+    "Publish!buzzer_control": {
+      "topicName": "/sensors/buzzer_cmd",
+      "datatype": "std_msgs/msg/Bool",
+      "value": "{ \"data\": false }"
+    },
+    "Publish!led_control": {
+      "topicName": "/sensors/led_cmd",
+      "datatype": "std_msgs/msg/Int32MultiArray",
+      "value": "{ \"data\": [0, 0, 0] }"
+    },
+    "RawMessages!tracking_data": {
+      "topicPath": "/sensors/tracking",
+      "diffEnabled": false,
+      "expansion": "all"
+    },
+    "RawMessages!imu_data": {
+      "topicPath": "/sensors/imu",
+      "diffEnabled": false,
+      "expansion": "all"
+    },
+    "RawMessages!ultrasonic_data": {
+      "topicPath": "/sensors/ultrasonic/range",
+      "diffEnabled": false,
+      "expansion": "all"
+    },
+    "RawMessages!odom_data": {
+      "topicPath": "/odom.pose.pose.position",
+      "diffEnabled": false,
+      "expansion": "all"
+    },
+    "Indicator!servo_status": {
+      "path": "/sensors/servo_angles.data[0]",
+      "style": "background",
+      "fallbackColor": "#444444",
+      "fallbackLabel": "SERVO N/A",
+      "rules": [
+        {
+          "operator": "<",
+          "rawValue": "-181",
+          "color": "#880000",
+          "label": "SERVO ERR"
+        },
+        {
+          "operator": ">=",
+          "rawValue": "-181",
+          "color": "#0066aa",
+          "label": "SERVO OK"
+        }
+      ]
+    },
+    "Indicator!battery_status": {
+      "path": "/tank/status.data",
+      "style": "background",
+      "fallbackColor": "#444444",
+      "fallbackLabel": "BATTERY N/A",
+      "rules": [
+        {
+          "operator": "!=",
+          "rawValue": "",
+          "color": "#00aa00",
+          "label": "BATTERY DATA"
+        }
+      ]
+    },
+    "Indicator!motor_status": {
+      "path": "/diagnostics.status[0].level",
+      "style": "background",
+      "fallbackColor": "#444444",
+      "fallbackLabel": "MOTOR N/A",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "0",
+          "color": "#00aa00",
+          "label": "MOTOR OK"
+        },
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#ffaa00",
+          "label": "MOTOR WARN"
+        },
+        {
+          "operator": ">=",
+          "rawValue": "2",
+          "color": "#ff0000",
+          "label": "MOTOR ERROR"
+        }
+      ]
+    },
+    "Indicator!control_manual": {
+      "path": "/cmd_vel_joy.linear.x",
+      "style": "background",
+      "fallbackColor": "#333333",
+      "fallbackLabel": "MANUAL IDLE",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0.01",
+          "color": "#0066aa",
+          "label": "MANUAL ACTIVE"
+        },
+        {
+          "operator": "<",
+          "rawValue": "-0.01",
+          "color": "#0066aa",
+          "label": "MANUAL ACTIVE"
+        }
+      ]
+    },
+    "Indicator!control_nav": {
+      "path": "/cmd_vel_nav.linear.x",
+      "style": "background",
+      "fallbackColor": "#333333",
+      "fallbackLabel": "NAV IDLE",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0.01",
+          "color": "#8844aa",
+          "label": "NAV ACTIVE"
+        },
+        {
+          "operator": "<",
+          "rawValue": "-0.01",
+          "color": "#8844aa",
+          "label": "NAV ACTIVE"
+        }
+      ]
+    },
+    "Indicator!autonomy_status": {
+      "path": "/plan.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#444444",
+      "fallbackLabel": "AUTONOMY IDLE",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#008855",
+          "label": "AUTONOMY ACTIVE"
+        }
+      ]
+    },
+    "RawMessages!tf_view": {
+      "topicPath": "/tf",
+      "diffEnabled": false,
+      "expansion": "first"
+    },
+    "RawMessages!tf_static_view": {
+      "topicPath": "/tf_static",
+      "diffEnabled": false,
+      "expansion": "first"
+    },
+    "RawMessages!scan_view": {
+      "topicPath": "/scan",
+      "diffEnabled": false,
+      "expansion": "first"
+    },
+    "RawMessages!tank_status": {
+      "topicPath": "/tank/status",
+      "diffEnabled": false,
+      "expansion": "all"
+    },
+    "RawMessages!diagnostics_raw": {
+      "topicPath": "/diagnostics",
+      "diffEnabled": false,
+      "expansion": "all"
+    },
+    "Indicator!camera_status": {
+      "path": "/image_raw/compressed.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#880000",
+      "fallbackLabel": "CAMERA OFFLINE",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#00aa00",
+          "label": "CAMERA OK"
+        }
+      ]
+    },
+    "Publish!save_map": {
+      "topicName": "/map_save_cmd",
+      "datatype": "std_msgs/msg/String",
+      "value": "{ \"data\": \"house_map\" }"
+    },
+    "RawMessages!pose_view": {
+      "topicPath": "/odom",
+      "diffEnabled": false,
+      "expansion": "first"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "direction": "column",
+    "splitPercentage": 60,
+    "first": {
+      "direction": "row",
+      "splitPercentage": 60,
+      "first": "3D!slam_view",
+      "second": {
+        "direction": "column",
+        "splitPercentage": 50,
+        "first": "Image!webcam",
+        "second": "Plot!vel_plot"
+      }
+    },
+    "second": {
+      "direction": "row",
+      "splitPercentage": 50,
+      "first": {
+        "direction": "column",
+        "splitPercentage": 50,
+        "first": "RawMessages!tf_view",
+        "second": "RawMessages!tf_static_view"
+      },
+      "second": {
+        "direction": "column",
+        "splitPercentage": 50,
+        "first": "RawMessages!scan_view",
+        "second": "RawMessages!diagnostics_raw"
+      }
+    }
+  }
+}

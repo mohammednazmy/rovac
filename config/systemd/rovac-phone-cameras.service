@@ -1,0 +1,31 @@
+[Unit]
+Description=ROVAC Phone Cameras (Multi-camera via scrcpy)
+Documentation=https://github.com/Genymobile/scrcpy
+After=network.target
+Conflicts=rovac-camera.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/hardware/phone_cameras
+
+# ROS2 environment
+Environment="ROS_DOMAIN_ID=42"
+Environment="RMW_IMPLEMENTATION=rmw_cyclonedds_cpp"
+Environment="CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml"
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="HOME=/home/pi"
+
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && /home/pi/hardware/phone_cameras/launch_multi_cameras.sh back'
+ExecStop=/bin/bash -c 'pkill -f "scrcpy.*video-source=camera"; pkill -f multi_camera_publisher'
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Allow access to ADB
+SupplementaryGroups=plugdev dialout
+
+[Install]
+WantedBy=rovac-edge.target

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Status Indicator Test</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .status-item {
+            margin: 15px 0;
+            padding: 10px;
+            border-radius: 5px;
+            background: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Status Indicator Test</h1>
+        
+        <div class="status-item">
+            <p><span class="status-indicator status-running"></span> Running Status</p>
+        </div>
+        
+        <div class="status-item">
+            <p><span class="status-indicator status-stopped"></span> Stopped Status</p>
+        </div>
+        
+        <div class="status-item">
+            <p><span class="status-indicator status-warning"></span> Warning Status</p>
+        </div>
+        
+        <div class="status-item">
+            <p><span class="status-indicator status-idle"></span> Idle Status</p>
+        </div>
+        
+        <div class="status-item">
+            <p><span class="status-indicator status-unknown"></span> Unknown Status</p>
+        </div>
+        
+        <hr>
+        
+        <h2>Dynamic Status Simulation</h2>
+        <div class="status-item">
+            <p><span class="status-indicator status-unknown"></span> Health Monitor: <span id="health-status">Unknown</span></p>
+        </div>
+        
+        <div class="status-item">
+            <p><span class="status-indicator status-unknown"></span> Sensor Fusion: <span id="sensor-status">Unknown</span></p>
+        </div>
+        
+        <div class="status-item">
+            <p><span class="status-indicator status-unknown"></span> Obstacle Avoidance: <span id="obstacle-status">Unknown</span></p>
+        </div>
+        
+        <div class="status-item">
+            <p><span class="status-indicator status-unknown"></span> Navigation: <span id="navigation-status">Unknown</span></p>
+        </div>
+        
+        <div class="status-item">
+            <p><span class="status-indicator status-unknown"></span> Communication: <span id="communication-status">Unknown</span></p>
+        </div>
+    </div>
+    
+    <script src="/static/js/test-status.js"></script>
+</body>
+</html>

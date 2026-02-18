@@ -1,0 +1,6 @@
+# Super Sensor GUI Dependencies
+# Core dependencies
+pyserial>=3.5
+
+# Build dependencies (for creating standalone executables)
+# pyinstaller>=6.0

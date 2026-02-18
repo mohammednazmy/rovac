@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+<body>
+    <h1>WebSocket Test for ROVAC Dashboard</h1>
+    <p>Connection Status: <span id="connection-status">Connecting...</span></p>
+    
+    <h2>Received Data</h2>
+    <pre id="data-received">No data received yet</pre>
+    
+    <h2>Command Responses</h2>
+    <pre id="response-received">No responses yet</pre>
+    
+    <button onclick="sendTestCommand()">Send Test Command</button>
+    
+    <script src="/static/js/test-websocket.js"></script>
+    
+    <script>
+        function sendTestCommand() {
+            socket.emit('robot_command', {command: 'test-command'});
+        }
+    </script>
+</body>
+</html>

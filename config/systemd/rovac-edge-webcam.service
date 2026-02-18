@@ -1,0 +1,30 @@
+[Unit]
+Description=ROVAC USB Webcam ROS2 Publisher (NexiGo N930E)
+After=network.target
+Wants=rovac-edge.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/hardware/webcam
+
+# ROS2 environment
+Environment="ROS_DOMAIN_ID=42"
+Environment="RMW_IMPLEMENTATION=rmw_cyclonedds_cpp"
+Environment="CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml"
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="HOME=/home/pi"
+
+ExecStartPre=/bin/bash -c 'test -e /dev/webcam || test -e /dev/video0'
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && python3 /home/pi/hardware/webcam/webcam_publisher.py --device /dev/webcam --width 640 --height 480 --fps 30'
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Permissions
+SupplementaryGroups=video dialout
+
+[Install]
+WantedBy=rovac-edge.target

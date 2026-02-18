@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stereo Camera Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #eee;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: rgba(22, 33, 62, 0.95);
+            padding: 12px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #e94560;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .header h1 {
+            font-size: 1.4em;
+            font-weight: 600;
+            background: linear-gradient(90deg, #e94560, #f39c12);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .status-badge {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status-badge::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        .status-connected {
+            background: rgba(46, 204, 113, 0.2);
+            color: #2ecc71;
+            border: 1px solid #2ecc71;
+        }
+        .status-connected::before { background: #2ecc71; }
+        .status-disconnected {
+            background: rgba(231, 76, 60, 0.2);
+            color: #e74c3c;
+            border: 1px solid #e74c3c;
+        }
+        .status-disconnected::before { background: #e74c3c; animation: none; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Main container */
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 20px;
+            padding: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* Panels */
+        .panel {
+            background: rgba(22, 33, 62, 0.8);
+            border-radius: 12px;
+            padding: 18px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .panel-title {
+            font-size: 1em;
+            font-weight: 600;
+            color: #e94560;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .panel-title svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* Image containers */
+        .image-container {
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            aspect-ratio: 4/3;
+        }
+        .image-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+        .image-label {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.75);
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 0.8em;
+            font-weight: 500;
+            backdrop-filter: blur(5px);
+        }
+        .image-overlay {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.75);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75em;
+            font-family: monospace;
+        }
+
+        /* Stereo pair grid */
+        .stereo-pair {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        /* Metrics */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+        .metric {
+            background: rgba(15, 52, 96, 0.6);
+            padding: 14px;
+            border-radius: 10px;
+            text-align: center;
+            transition: transform 0.2s, background 0.2s;
+        }
+        .metric:hover {
+            transform: translateY(-2px);
+            background: rgba(15, 52, 96, 0.9);
+        }
+        .metric-value {
+            font-size: 1.6em;
+            font-weight: 700;
+            color: #e94560;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+        .metric-label {
+            font-size: 0.75em;
+            color: #888;
+            margin-top: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .metric-unit {
+            font-size: 0.6em;
+            color: #666;
+            margin-left: 2px;
+        }
+
+        /* Obstacles */
+        .obstacles-container {
+            margin-top: 15px;
+        }
+        .obstacle-visual {
+            position: relative;
+            height: 120px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+        .obstacle-robot {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40px;
+            height: 30px;
+            background: #3498db;
+            border-radius: 5px;
+        }
+        .obstacle-zone {
+            position: absolute;
+            bottom: 50px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            font-size: 0.75em;
+            transition: all 0.3s;
+        }
+        .obstacle-zone.left { left: 15%; }
+        .obstacle-zone.center { left: 50%; transform: translateX(-50%); }
+        .obstacle-zone.right { right: 15%; }
+        .obstacle-zone.clear { background: rgba(46, 204, 113, 0.3); border: 2px solid #2ecc71; }
+        .obstacle-zone.warning { background: rgba(243, 156, 18, 0.3); border: 2px solid #f39c12; }
+        .obstacle-zone.danger { background: rgba(231, 76, 60, 0.3); border: 2px solid #e74c3c; }
+        .obstacle-distance {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .obstacle-label {
+            font-size: 0.7em;
+            opacity: 0.8;
+        }
+
+        /* Emergency stop indicator */
+        .emergency-stop {
+            background: rgba(231, 76, 60, 0.2);
+            border: 2px solid #e74c3c;
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+            display: none;
+            animation: blink 0.5s infinite;
+        }
+        .emergency-stop.active { display: block; }
+        .emergency-stop-text {
+            color: #e74c3c;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Log */
+        .log-container {
+            background: rgba(10, 10, 26, 0.8);
+            border-radius: 8px;
+            padding: 12px;
+            height: 180px;
+            overflow-y: auto;
+            font-family: 'SF Mono', Monaco, Consolas, monospace;
+            font-size: 0.8em;
+        }
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            gap: 8px;
+        }
+        .log-time {
+            color: #666;
+            flex-shrink: 0;
+        }
+        .log-message { color: #aaa; }
+        .log-message.info { color: #3498db; }
+        .log-message.warn { color: #f39c12; }
+        .log-message.error { color: #e74c3c; }
+
+        /* Depth histogram */
+        .histogram-container {
+            height: 80px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 15px;
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+        }
+        .histogram-bar {
+            flex: 1;
+            background: linear-gradient(to top, #e94560, #f39c12);
+            border-radius: 2px 2px 0 0;
+            min-height: 4px;
+            transition: height 0.3s;
+        }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #e94560;
+            color: white;
+        }
+        .btn-primary:hover { background: #d63850; }
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #eee;
+        }
+        .btn-secondary:hover { background: rgba(255, 255, 255, 0.2); }
+
+        /* Responsive */
+        @media (max-width: 1000px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+            .stereo-pair {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-left">
+            <h1>Stereo Camera Dashboard</h1>
+        </div>
+        <div class="header-right">
+            <span id="frame-info" style="color: #888; font-size: 0.9em;">Frame: --</span>
+            <span id="status" class="status-badge status-disconnected">Disconnected</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="main-content">
+            <div class="panel">
+                <h2 class="panel-title">
+                    <svg fill="currentColor" viewBox="0 0 20 20"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
+                    Depth View
+                </h2>
+                <div class="image-container">
+                    <img id="depth-image" src="" alt="Depth Map">
+                    <span class="image-label">Colorized Depth</span>
+                    <span class="image-overlay" id="depth-info">--</span>
+                </div>
+
+                <div class="histogram-container" id="histogram">
+                    <!-- Histogram bars will be generated dynamically -->
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top: 20px;">
+                <h2 class="panel-title">
+                    <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 5a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 3H8.828a2 2 0 00-1.414.586L6.293 4.707A1 1 0 015.586 5H4zm6 9a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+                    Stereo Camera Views
+                </h2>
+                <div class="stereo-pair">
+                    <div class="image-container">
+                        <img id="left-image" src="" alt="Left Camera">
+                        <span class="image-label">Left Camera</span>
+                    </div>
+                    <div class="image-container">
+                        <img id="right-image" src="" alt="Right Camera">
+                        <span class="image-label">Right Camera</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="panel">
+                <h2 class="panel-title">
+                    <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                    Performance
+                </h2>
+                <div class="metrics-grid">
+                    <div class="metric">
+                        <div class="metric-value"><span id="fps">--</span><span class="metric-unit">Hz</span></div>
+                        <div class="metric-label">Frame Rate</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value"><span id="latency">--</span><span class="metric-unit">ms</span></div>
+                        <div class="metric-label">Compute Time</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="frames">--</div>
+                        <div class="metric-label">Total Frames</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="dropped">0</div>
+                        <div class="metric-label">Dropped</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top: 15px;">
+                <h2 class="panel-title">
+                    <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                    Obstacle Detection
+                </h2>
+
+                <div id="emergency-stop" class="emergency-stop">
+                    <span class="emergency-stop-text">⚠️ EMERGENCY STOP ACTIVE</span>
+                </div>
+
+                <div class="obstacles-container">
+                    <div class="obstacle-visual">
+                        <div class="obstacle-robot"></div>
+                        <div class="obstacle-zone left clear" id="zone-left">
+                            <span class="obstacle-distance" id="dist-left">--</span>
+                            <span class="obstacle-label">Left</span>
+                        </div>
+                        <div class="obstacle-zone center clear" id="zone-center">
+                            <span class="obstacle-distance" id="dist-center">--</span>
+                            <span class="obstacle-label">Center</span>
+                        </div>
+                        <div class="obstacle-zone right clear" id="zone-right">
+                            <span class="obstacle-distance" id="dist-right">--</span>
+                            <span class="obstacle-label">Right</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top: 15px;">
+                <h2 class="panel-title">
+                    <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3.293 1.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L7.586 10 5.293 7.707a1 1 0 010-1.414zM11 12a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
+                    Activity Log
+                </h2>
+                <div class="log-container" id="log"></div>
+            </div>
+
+            <div class="controls">
+                <button class="btn btn-secondary" onclick="togglePause()">
+                    <span id="pause-btn">⏸️ Pause</span>
+                </button>
+                <button class="btn btn-secondary" onclick="takeSnapshot()">
+                    📷 Snapshot
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 10;
+        let paused = false;
+        let lastFrameTime = 0;
+
+        // Initialize histogram
+        const histogramEl = document.getElementById('histogram');
+        for (let i = 0; i < 20; i++) {
+            const bar = document.createElement('div');
+            bar.className = 'histogram-bar';
+            bar.style.height = '4px';
+            histogramEl.appendChild(bar);
+        }
+
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+            ws.onopen = function() {
+                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('status').className = 'status-badge status-connected';
+                reconnectAttempts = 0;
+                addLog('Connected to server', 'info');
+            };
+
+            ws.onclose = function() {
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').className = 'status-badge status-disconnected';
+                addLog('Disconnected from server', 'warn');
+
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    addLog(`Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`, 'info');
+                    setTimeout(connect, 2000);
+                } else {
+                    addLog('Max reconnection attempts reached', 'error');
+                }
+            };
+
+            ws.onerror = function(error) {
+                addLog('WebSocket error', 'error');
+            };
+
+            ws.onmessage = function(event) {
+                if (paused) return;
+                const data = JSON.parse(event.data);
+                handleUpdate(data);
+            };
+        }
+
+        function handleUpdate(data) {
+            const now = Date.now();
+
+            // Update depth image
+            if (data.depth_image) {
+                document.getElementById('depth-image').src = 'data:image/jpeg;base64,' + data.depth_image;
+            }
+
+            // Update stereo images
+            if (data.left_image) {
+                document.getElementById('left-image').src = 'data:image/jpeg;base64,' + data.left_image;
+                document.getElementById('right-image').src = 'data:image/jpeg;base64,' + data.left_image;
+            }
+
+            // Update frame count
+            document.getElementById('frames').textContent = data.frame_count || '--';
+            document.getElementById('frame-info').textContent = `Frame: ${data.frame_count || '--'}`;
+
+            // Update depth info
+            if (lastFrameTime > 0) {
+                const wsLatency = now - data.timestamp * 1000;
+                document.getElementById('depth-info').textContent = `WS: ${wsLatency.toFixed(0)}ms`;
+            }
+            lastFrameTime = now;
+
+            // Update diagnostics
+            if (data.diagnostics && data.diagnostics.stereo_depth) {
+                const diag = data.diagnostics.stereo_depth.values;
+                document.getElementById('fps').textContent = parseFloat(diag.fps || 0).toFixed(1);
+                document.getElementById('latency').textContent = parseFloat(diag.compute_time_ms || 0).toFixed(0);
+                document.getElementById('dropped').textContent = diag.dropped_frames || '0';
+            }
+
+            // Update obstacles
+            if (data.obstacles) {
+                updateObstacleZone('left', data.obstacles.left);
+                updateObstacleZone('center', data.obstacles.center);
+                updateObstacleZone('right', data.obstacles.right);
+
+                // Check for emergency stop
+                const minDist = Math.min(
+                    data.obstacles.left?.distance || 999,
+                    data.obstacles.center?.distance || 999,
+                    data.obstacles.right?.distance || 999
+                );
+                const emergencyEl = document.getElementById('emergency-stop');
+                if (minDist < 0.3) {
+                    emergencyEl.classList.add('active');
+                } else {
+                    emergencyEl.classList.remove('active');
+                }
+            }
+
+            // Update histogram (simulated for now)
+            updateHistogram();
+        }
+
+        function updateObstacleZone(zone, data) {
+            if (!data) return;
+
+            const zoneEl = document.getElementById('zone-' + zone);
+            const distEl = document.getElementById('dist-' + zone);
+
+            const distance = data.distance;
+            distEl.textContent = distance ? distance.toFixed(2) + 'm' : '--';
+
+            zoneEl.classList.remove('clear', 'warning', 'danger');
+            if (distance < 0.3) {
+                zoneEl.classList.add('danger');
+            } else if (distance < 0.7) {
+                zoneEl.classList.add('warning');
+            } else {
+                zoneEl.classList.add('clear');
+            }
+        }
+
+        function updateHistogram() {
+            const bars = histogramEl.querySelectorAll('.histogram-bar');
+            bars.forEach((bar, i) => {
+                // Simulated depth distribution
+                const height = Math.random() * 60 + 10;
+                bar.style.height = height + '%';
+            });
+        }
+
+        function addLog(message, type = '') {
+            const log = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-message ${type}">${message}</span>`;
+            log.insertBefore(entry, log.firstChild);
+
+            while (log.children.length > 50) {
+                log.removeChild(log.lastChild);
+            }
+        }
+
+        function togglePause() {
+            paused = !paused;
+            document.getElementById('pause-btn').textContent = paused ? '▶️ Resume' : '⏸️ Pause';
+            addLog(paused ? 'Stream paused' : 'Stream resumed', 'info');
+        }
+
+        function takeSnapshot() {
+            const depthImg = document.getElementById('depth-image');
+            if (depthImg.src) {
+                const link = document.createElement('a');
+                link.download = `stereo_snapshot_${Date.now()}.jpg`;
+                link.href = depthImg.src;
+                link.click();
+                addLog('Snapshot saved', 'info');
+            }
+        }
+
+        // Start connection
+        connect();
+        addLog('Dashboard initialized', 'info');
+    </script>
+</body>
+</html>

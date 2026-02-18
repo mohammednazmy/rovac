@@ -1,0 +1,12 @@
+[Unit]
+Description=ROVAC Stereo Camera System (depth + obstacle detection)
+Documentation=https://github.com/rovac-robot
+After=network-online.target
+Wants=network-online.target
+
+# Stereo camera services
+Wants=rovac-edge-stereo-depth.service
+Wants=rovac-edge-stereo-obstacle.service
+
+[Install]
+WantedBy=rovac-edge.target

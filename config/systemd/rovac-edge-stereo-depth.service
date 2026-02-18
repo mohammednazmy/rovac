@@ -1,0 +1,25 @@
+[Unit]
+Description=ROVAC Stereo Depth Node (Dual USB cameras -> depth image)
+Documentation=https://github.com/rovac-robot
+Wants=network-online.target
+After=network-online.target
+# Start after other sensors but before obstacle detector
+Before=rovac-edge-stereo-obstacle.service
+PartOf=rovac-edge.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/rovac/hardware/stereo_cameras
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/cyclonedds_pi.xml
+# Give cameras time to initialize
+ExecStartPre=/bin/sleep 2
+ExecStart=/bin/bash -lc "source /opt/ros/jazzy/setup.bash; [ -f /home/pi/ros2_env.sh ] && source /home/pi/ros2_env.sh; exec python3 /home/pi/rovac/hardware/stereo_cameras/ros2_stereo_depth_node.py"
+Restart=always
+RestartSec=5
+# Longer restart delay for camera devices
+
+[Install]
+WantedBy=rovac-edge.target

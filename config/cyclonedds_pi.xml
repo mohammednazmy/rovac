@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface address="192.168.1.200" priority="default" multicast="false"/>
+      </Interfaces>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <Peers>
+        <!-- Mac -->
+        <Peer address="192.168.1.104"/>
+        <!-- Self (for local Pi-to-Pi communication) -->
+        <Peer address="192.168.1.200"/>
+      </Peers>
+    </Discovery>
+    <Tracing>
+      <Verbosity>warning</Verbosity>
+    </Tracing>
+  </Domain>
+</CycloneDDS>

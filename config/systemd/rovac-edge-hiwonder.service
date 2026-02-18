@@ -1,0 +1,28 @@
+[Unit]
+Description=ROVAC Hiwonder ROS Controller V1.2 (IMU + Motors + Odom)
+After=network.target
+PartOf=rovac-edge.target
+Before=rovac-edge-mux.service rovac-edge-obstacle.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/hardware/hiwonder-ros-controller
+
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/rovac/config/cyclonedds_pi.xml
+
+ExecStart=/home/pi/hardware/hiwonder-ros-controller/launch_hiwonder.sh
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rovac-hiwonder
+
+MemoryMax=256M
+CPUQuota=50%
+
+[Install]
+WantedBy=rovac-edge.target

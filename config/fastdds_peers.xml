@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <profiles>
+        <participant profile_name="participant_profile" is_default_profile="true">
+            <rtps>
+                <builtin>
+                    <discovery_config>
+                        <!-- Use Simple Discovery Protocol with explicit peers -->
+                        <discoveryProtocol>SIMPLE</discoveryProtocol>
+                        <simpleEDP>
+                            <PUBWRITER_SUBREADER>true</PUBWRITER_SUBREADER>
+                            <PUBREADER_SUBWRITER>true</PUBREADER_SUBWRITER>
+                        </simpleEDP>
+                        <leaseDuration>
+                            <sec>20</sec>
+                            <nanosec>0</nanosec>
+                        </leaseDuration>
+                        <initialAnnouncements>
+                            <count>10</count>
+                            <period>
+                                <sec>0</sec>
+                                <nanosec>100000000</nanosec>
+                            </period>
+                        </initialAnnouncements>
+                    </discovery_config>
+                    <initialPeersList>
+                        <locator>
+                            <udpv4>
+                                <address>192.168.1.104</address>
+                            </udpv4>
+                        </locator>
+                        <locator>
+                            <udpv4>
+                                <address>192.168.1.200</address>
+                            </udpv4>
+                        </locator>
+                    </initialPeersList>
+                </builtin>
+                <useBuiltinTransports>true</useBuiltinTransports>
+            </rtps>
+        </participant>
+    </profiles>
+</dds>

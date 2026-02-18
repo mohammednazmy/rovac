@@ -1,0 +1,10 @@
+{
+  "left_device": 0,
+  "right_device": 2,
+  "width": 1280,
+  "height": 720,
+  "rotate_90_cw": true,
+  "calibration_dir": "calibration_data",
+  "target_fps": 10.0,
+  "note": "Device mapping for Raspberry Pi 5 - may need to swap left/right if cameras are reversed"
+}

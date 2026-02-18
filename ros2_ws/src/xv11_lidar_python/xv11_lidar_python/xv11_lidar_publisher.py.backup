@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+
+import os
+import termios
+import time
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import LaserScan
+
+PI = 3.14159265
+
+def has_valid_crc(dataframe):
+    data_list = []
+    for t in range(10):
+        data_list.append(dataframe[2*t] + (dataframe[2*t+1] << 8))
+    chk32 = 0
+    for d in data_list:
+        chk32 = (chk32 << 1) + d
+    chk32 = (chk32 & 0x7FFF) + (chk32 >> 15)
+    chk32 = chk32 & 0x7FFF
+    crc = dataframe[20] + (dataframe[21] << 8)
+    return crc == chk32
+
+def extract_sweep(buffer):
+    buf_len = len(buffer)
+    scan = LaserScan()
+    scan.angle_min = 0.0
+    scan.angle_max = 2*PI
+    scan.angle_increment = (2*PI)/360
+    scan.ranges = [0.0] * 360
+    scan.intensities = [0.0] * 360
+    sum_motor_speed, num_good_dfs = 0.0, 0.0
+    last_df = 0
+    i = 0
+    while i < buf_len:
+        if buffer[i] == 0xFA:
+            if i+22 <= buf_len:
+                if has_valid_crc(buffer[i:i+22]):
+                    df_index = buffer[i+1] - 0xA0
+                    if 0 <= df_index <= 89:
+                        sum_motor_speed += buffer[i+2] + (buffer[i+3] << 8)
+                        num_good_dfs += 1
+                        for j in range(4):
+                            byte0, byte1, byte2, byte3 = buffer[i+4+4*j], buffer[i+5+4*j], buffer[i+6+4*j], buffer[i+7+4*j]
+                            idx = df_index*4+j
+                            if idx < 360:
+                                scan.ranges[idx] = (byte0 + ((byte1 & 0x3F) << 8)) / 1000.0
+                                scan.intensities[idx] = byte2 + (byte3 << 8)
+                    i += 22
+                    last_df = i
+                else:
+                    i += 1
+                    last_df = i
+            else:
+                break
+        else:
+            i += 1
+    if num_good_dfs > 0:
+        scan.time_increment = sum_motor_speed/num_good_dfs/1e8
+    else:
+        scan.time_increment = 0.0
+    return last_df, scan
+
+class XV11_Node(Node):
+    def __init__(self):
+        super().__init__("xv11_lidar")
+        self.get_logger().info("Initializing XV11 Lidar Node (non-blocking termios).")
+        self.publisher = self.create_publisher(LaserScan, "/scan", 10)
+        self.declare_parameter("port", "/dev/ttyAMA0")
+        self.declare_parameter("frame_id", "laser_frame")
+        self.declare_parameter("range_min", 0.06)
+        self.declare_parameter("range_max", 5.0)
+
+    def publish_scan(self, scan):
+        self.publisher.publish(scan)
+
+
+def configure_serial_nonblocking(fd):
+    """Configure serial port in non-blocking mode for maximum throughput."""
+    attrs = termios.tcgetattr(fd)
+    attrs[0] = 0  # Input flags
+    attrs[1] = 0  # Output flags
+    attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL  # 8N1
+    attrs[3] = 0  # Local flags - raw mode
+    attrs[4] = termios.B115200
+    attrs[5] = termios.B115200
+    attrs[6][termios.VMIN] = 0
+    attrs[6][termios.VTIME] = 0
+    termios.tcsetattr(fd, termios.TCSANOW, attrs)
+    termios.tcflush(fd, termios.TCIOFLUSH)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = XV11_Node()
+    port = node.get_parameter("port").value
+    frame_id = node.get_parameter("frame_id").value
+    range_min = node.get_parameter("range_min").value
+    range_max = node.get_parameter("range_max").value
+
+    data_buffer = bytearray()
+    scan_count = 0
+    last_report = time.time()
+    total_bytes = 0
+
+    try:
+        fd = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        configure_serial_nonblocking(fd)
+        node.get_logger().info(f"{port} connected (non-blocking mode)!")
+    except Exception as e:
+        node.get_logger().error(f"Couldn't connect to {port}: {e}")
+        rclpy.shutdown()
+        return
+
+    try:
+        t1 = node.get_clock().now()
+        empty_reads = 0
+
+        while rclpy.ok():
+            try:
+                chunk = os.read(fd, 4096)
+                if chunk:
+                    data_buffer.extend(chunk)
+                    total_bytes += len(chunk)
+                    empty_reads = 0
+                else:
+                    empty_reads += 1
+            except BlockingIOError:
+                empty_reads += 1
+            except OSError as e:
+                node.get_logger().warn(f"Read error: {e}")
+                empty_reads += 1
+
+            if empty_reads > 50:
+                time.sleep(0.001)
+                empty_reads = 0
+
+            while len(data_buffer) >= 2000:
+                last_index, scan = extract_sweep(data_buffer)
+                t2 = node.get_clock().now()
+                scan.header.stamp = t2.to_msg()
+                scan.header.frame_id = frame_id
+                scan.range_min = range_min
+                scan.range_max = range_max
+                scan.scan_time = (t2-t1).nanoseconds * 1e-9
+                node.publish_scan(scan)
+
+                if last_index > 0:
+                    data_buffer = data_buffer[last_index:]
+                else:
+                    data_buffer = data_buffer[1:]
+
+                t1 = t2
+                scan_count += 1
+
+            now = time.time()
+            if now - last_report >= 5.0:
+                rate = scan_count / (now - last_report)
+                bytes_rate = total_bytes / (now - last_report)
+                node.get_logger().info(f"Scan rate: {rate:.1f} Hz, bytes: {bytes_rate:.0f}/s, buf: {len(data_buffer)}")
+                scan_count = 0
+                total_bytes = 0
+                last_report = now
+    except KeyboardInterrupt:
+        pass
+    finally:
+        os.close(fd)
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()

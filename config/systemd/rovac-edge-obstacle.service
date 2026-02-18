@@ -1,0 +1,19 @@
+[Unit]
+Description=ROVAC Obstacle Avoidance Node (Super Sensor integration)
+Wants=network-online.target rovac-edge-supersensor.service
+After=network-online.target rovac-edge-hiwonder.service rovac-edge-supersensor.service
+PartOf=rovac-edge.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/hardware/super_sensor
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/cyclonedds_pi.xml
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; [ -f /home/pi/yahboom_tank_ws/install/setup.bash ] && source /home/pi/yahboom_tank_ws/install/setup.bash; [ -f /home/pi/ros2_env.sh ] && source /home/pi/ros2_env.sh; exec python3 /home/pi/hardware/super_sensor/obstacle_avoidance_node.py'
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=rovac-edge.target

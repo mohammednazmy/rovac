@@ -1,0 +1,15 @@
+[Unit]
+Description=Robot MCP Server for ChatGPT Voice Control
+After=network.target ros2.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/robot_mcp_server
+ExecStart=/home/pi/robot_mcp_server/start_mcp_server.sh
+Restart=on-failure
+RestartSec=5
+Environment=HOME=/home/pi
+
+[Install]
+WantedBy=multi-user.target

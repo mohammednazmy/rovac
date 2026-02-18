@@ -1,0 +1,540 @@
+{
+  "configById": {
+    "3D!main": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 6,
+        "phi": 55,
+        "thetaOffset": 45,
+        "targetOffset": [0, 0, 0],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 50,
+        "near": 0.1,
+        "far": 500
+      },
+      "followMode": "follow-pose",
+      "followTf": "base_link",
+      "scene": {
+        "backgroundColor": "#0d1117",
+        "enableStats": false,
+        "labelScale": 0,
+        "transforms": {
+          "showLabel": false,
+          "axisScale": 0.25,
+          "lineWidth": 1.5
+        }
+      },
+      "transforms": {
+        "frame:base_link": { "visible": true },
+        "frame:laser_frame": { "visible": false },
+        "frame:odom": { "visible": true },
+        "frame:map": { "visible": true },
+        "frame:stereo_camera": { "visible": false }
+      },
+      "topics": {
+        "/scan": {
+          "visible": true,
+          "colorField": "range",
+          "colorMode": "gradient",
+          "gradient": ["#00d4ff", "#00ff88", "#ffee00", "#ff6600", "#ff0044"],
+          "pointSize": 5,
+          "pointShape": "circle",
+          "decayTime": 1.5
+        },
+        "/sensors/ultrasonic/points": {
+          "visible": true,
+          "colorMode": "flat",
+          "flatColor": "#ff00ff",
+          "pointSize": 14
+        },
+        "/super_sensor/obstacle_points": {
+          "visible": true,
+          "colorMode": "flat",
+          "flatColor": "#ff8800",
+          "pointSize": 12
+        },
+        "/slam_toolbox/scan_visualization": {
+          "visible": true,
+          "colorMode": "flat",
+          "flatColor": "#00ffaa",
+          "pointSize": 3,
+          "decayTime": 0
+        },
+        "/map": {
+          "visible": true,
+          "colorMode": "map",
+          "alpha": 0.6,
+          "unknownColor": "#0d1117",
+          "invalidColor": "#ff0044",
+          "minColor": "#ffffff",
+          "maxColor": "#222222"
+        },
+        "/slam_toolbox/graph_visualization": {
+          "visible": true
+        },
+        "/obstacles/ranges": {
+          "visible": true,
+          "colorMode": "flat",
+          "flatColor": "#ff0066",
+          "pointSize": 8
+        }
+      },
+      "layers": {
+        "grid": {
+          "layerId": "foxglove.Grid",
+          "visible": true,
+          "size": 15,
+          "divisions": 30,
+          "lineWidth": 1,
+          "color": "#1a2f3f",
+          "position": [0, 0, 0],
+          "rotation": [0, 0, 0, 1],
+          "frameId": "odom"
+        }
+      },
+      "publish": {
+        "type": "pose",
+        "poseTopic": "/goal_pose",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose"
+      }
+    },
+    "3D!topdown": {
+      "cameraState": {
+        "perspective": false,
+        "distance": 12,
+        "phi": 0,
+        "thetaOffset": 0,
+        "targetOffset": [0, 0, 0],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.1,
+        "far": 500
+      },
+      "followMode": "follow-pose",
+      "followTf": "base_link",
+      "scene": {
+        "backgroundColor": "#0d1117",
+        "enableStats": false,
+        "labelScale": 0
+      },
+      "topics": {
+        "/scan": {
+          "visible": true,
+          "colorField": "range",
+          "colorMode": "gradient",
+          "gradient": ["#00d4ff", "#00ff88", "#ffee00", "#ff6600"],
+          "pointSize": 3,
+          "pointShape": "circle",
+          "decayTime": 2
+        },
+        "/map": {
+          "visible": true,
+          "colorMode": "map",
+          "alpha": 0.8
+        },
+        "/super_sensor/obstacle_points": {
+          "visible": true,
+          "colorMode": "flat",
+          "flatColor": "#ff8800",
+          "pointSize": 8
+        }
+      },
+      "layers": {
+        "grid": {
+          "layerId": "foxglove.Grid",
+          "visible": true,
+          "size": 10,
+          "divisions": 20,
+          "lineWidth": 1,
+          "color": "#1a2f3f"
+        }
+      }
+    },
+    "Image!stereo_left": {
+      "imageMode": {
+        "imageTopic": "/stereo/left/image_raw",
+        "calibrationTopic": "/stereo/camera_info"
+      },
+      "rotation": 90,
+      "flipHorizontal": false,
+      "flipVertical": false,
+      "minValue": 0,
+      "maxValue": 255,
+      "smooth": true,
+      "transformMarkers": true,
+      "synchronize": true
+    },
+    "Image!stereo_right": {
+      "imageMode": {
+        "imageTopic": "/stereo/right/image_raw",
+        "calibrationTopic": "/stereo/camera_info"
+      },
+      "rotation": 90,
+      "smooth": true
+    },
+    "Image!phone": {
+      "imageMode": {
+        "imageTopic": "/phone/camera/back/image_raw"
+      },
+      "rotation": 0,
+      "smooth": true
+    },
+    "Image!depth": {
+      "imageMode": {
+        "imageTopic": "/stereo/depth/image_color"
+      },
+      "rotation": 90,
+      "smooth": true,
+      "minValue": 0,
+      "maxValue": 10
+    },
+    "Plot!ultrasonic": {
+      "paths": [
+        {
+          "value": "/super_sensor/range/front_top.range",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Front Top",
+          "color": "#00d4ff"
+        },
+        {
+          "value": "/super_sensor/range/front_bottom.range",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Front Bottom",
+          "color": "#00ff88"
+        },
+        {
+          "value": "/super_sensor/range/left.range",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Left",
+          "color": "#ffaa00"
+        },
+        {
+          "value": "/super_sensor/range/right.range",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Right",
+          "color": "#ff6600"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "minYValue": 0,
+      "maxYValue": 4,
+      "followingViewWidth": 30
+    },
+    "Plot!imu_accel": {
+      "paths": [
+        {
+          "value": "/imu/data.linear_acceleration.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Accel X",
+          "color": "#ff4444"
+        },
+        {
+          "value": "/imu/data.linear_acceleration.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Accel Y",
+          "color": "#44ff44"
+        },
+        {
+          "value": "/imu/data.linear_acceleration.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Accel Z",
+          "color": "#4444ff"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 15
+    },
+    "Plot!imu_gyro": {
+      "paths": [
+        {
+          "value": "/imu/data.angular_velocity.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Gyro X",
+          "color": "#ff8888"
+        },
+        {
+          "value": "/imu/data.angular_velocity.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Gyro Y",
+          "color": "#88ff88"
+        },
+        {
+          "value": "/imu/data.angular_velocity.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Gyro Z",
+          "color": "#8888ff"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 15
+    },
+    "Plot!velocity": {
+      "paths": [
+        {
+          "value": "/odom.twist.twist.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Linear X",
+          "color": "#00ff88"
+        },
+        {
+          "value": "/odom.twist.twist.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Angular Z",
+          "color": "#ff8800"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "minYValue": -1,
+      "maxYValue": 1,
+      "followingViewWidth": 20
+    },
+    "Indicator!lidar": {
+      "path": "/scan.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#ff0044",
+      "fallbackLabel": "LIDAR OFF",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#00ff88",
+          "label": "LIDAR"
+        }
+      ]
+    },
+    "Indicator!stereo": {
+      "path": "/stereo/camera_info.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#ff6600",
+      "fallbackLabel": "STEREO OFF",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#00ff88",
+          "label": "STEREO"
+        }
+      ]
+    },
+    "Indicator!ultrasonic": {
+      "path": "/super_sensor/range/front_top.range",
+      "style": "background",
+      "fallbackColor": "#ff6600",
+      "fallbackLabel": "ULTRA OFF",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#00ff88",
+          "label": "ULTRA"
+        }
+      ]
+    },
+    "Indicator!imu": {
+      "path": "/imu/data.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#ff6600",
+      "fallbackLabel": "IMU OFF",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#00ff88",
+          "label": "IMU"
+        }
+      ]
+    },
+    "Indicator!gps": {
+      "path": "/phone/gps/fix.latitude",
+      "style": "background",
+      "fallbackColor": "#666666",
+      "fallbackLabel": "GPS OFF",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#00ff88",
+          "label": "GPS"
+        }
+      ]
+    },
+    "Indicator!battery": {
+      "path": "/battery_voltage.data",
+      "style": "background",
+      "fallbackColor": "#666666",
+      "fallbackLabel": "BATTERY",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "11.5",
+          "color": "#00ff88",
+          "label": "BAT OK"
+        },
+        {
+          "operator": "<=",
+          "rawValue": "11.5",
+          "color": "#ffaa00",
+          "label": "BAT LOW"
+        },
+        {
+          "operator": "<",
+          "rawValue": "10.5",
+          "color": "#ff0044",
+          "label": "BAT CRIT"
+        }
+      ]
+    },
+    "Gauge!speed": {
+      "path": "/odom.twist.twist.linear.x",
+      "minValue": -0.5,
+      "maxValue": 0.5,
+      "colorMode": "colormap",
+      "colorMap": "turbo"
+    },
+    "RawMessages!odom": {
+      "diffEnabled": false,
+      "topicPath": "/odom.twist.twist"
+    },
+    "RawMessages!pose": {
+      "diffEnabled": false,
+      "topicPath": "/odom.pose.pose"
+    },
+    "Map!gps": {
+      "layer": "map",
+      "followTopic": "/phone/gps/fix",
+      "topicColors": {
+        "/phone/gps/fix": "#00ff88"
+      }
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": {
+      "first": {
+        "first": {
+          "first": "Image!stereo_left",
+          "second": "Image!stereo_right",
+          "direction": "row",
+          "splitPercentage": 50
+        },
+        "second": {
+          "first": "Image!phone",
+          "second": "Image!depth",
+          "direction": "row",
+          "splitPercentage": 50
+        },
+        "direction": "row",
+        "splitPercentage": 50
+      },
+      "second": {
+        "first": "3D!main",
+        "second": {
+          "first": "3D!topdown",
+          "second": {
+            "first": "Plot!ultrasonic",
+            "second": "Plot!velocity",
+            "direction": "column",
+            "splitPercentage": 50
+          },
+          "direction": "column",
+          "splitPercentage": 50
+        },
+        "direction": "row",
+        "splitPercentage": 65
+      },
+      "direction": "column",
+      "splitPercentage": 18
+    },
+    "second": {
+      "first": {
+        "first": "Indicator!lidar",
+        "second": {
+          "first": "Indicator!stereo",
+          "second": {
+            "first": "Indicator!ultrasonic",
+            "second": {
+              "first": "Indicator!imu",
+              "second": {
+                "first": "Indicator!gps",
+                "second": "Indicator!battery",
+                "direction": "row",
+                "splitPercentage": 50
+              },
+              "direction": "row",
+              "splitPercentage": 50
+            },
+            "direction": "row",
+            "splitPercentage": 50
+          },
+          "direction": "row",
+          "splitPercentage": 50
+        },
+        "direction": "row",
+        "splitPercentage": 17
+      },
+      "second": {
+        "first": {
+          "first": "Plot!imu_accel",
+          "second": "Plot!imu_gyro",
+          "direction": "row",
+          "splitPercentage": 50
+        },
+        "second": {
+          "first": "RawMessages!odom",
+          "second": "RawMessages!pose",
+          "direction": "row",
+          "splitPercentage": 50
+        },
+        "direction": "row",
+        "splitPercentage": 60
+      },
+      "direction": "column",
+      "splitPercentage": 35
+    },
+    "direction": "column",
+    "splitPercentage": 82
+  }
+}

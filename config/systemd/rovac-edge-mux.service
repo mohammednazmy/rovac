@@ -1,0 +1,39 @@
+[Unit]
+Description=ROVAC cmd_vel mux (/cmd_vel_obstacle + /cmd_vel_joy + /cmd_vel_smoothed -> /cmd_vel)
+Wants=network-online.target
+After=network-online.target rovac-edge-hiwonder.service
+PartOf=rovac-edge.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+
+# DDS Configuration
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/cyclonedds_pi.xml
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rovac-mux
+
+# Timeout settings
+TimeoutStartSec=30
+TimeoutStopSec=10
+
+# Resource limits for Pi 5
+MemoryMax=128M
+CPUQuota=20%
+
+# Restart policy
+Restart=always
+RestartSec=2
+
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; [ -f /home/pi/yahboom_tank_ws/install/setup.bash ] && source /home/pi/yahboom_tank_ws/install/setup.bash; [ -f /home/pi/ros2_env.sh ] && source /home/pi/ros2_env.sh; exec python3 /home/pi/yahboom_tank_ws/src/tank_description/tank_description/cmd_vel_mux.py'
+
+[Install]
+WantedBy=rovac-edge.target

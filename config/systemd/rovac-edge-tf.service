@@ -1,0 +1,19 @@
+[Unit]
+Description=ROVAC TF Publisher (robot_state_publisher)
+Wants=network-online.target
+After=network-online.target
+PartOf=rovac-edge.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/cyclonedds_pi.xml
+ExecStart=/home/pi/launch_tf_publisher.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=rovac-edge.target

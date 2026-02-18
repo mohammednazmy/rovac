@@ -1,0 +1,4 @@
+# LIDAR Nano USB (CH340) stable symlink
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="rovac_lidar", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="5523", SYMLINK+="rovac_lidar", MODE="0666"
+

@@ -1,0 +1,202 @@
+{
+  "configById": {
+    "3D!1": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 5,
+        "phi": 70,
+        "thetaOffset": 0,
+        "targetOffset": [0, 0, 0],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "followTf": "laser_frame",
+      "scene": {
+        "backgroundColor": "#1a1a2e",
+        "enableStats": false,
+        "labelScale": 0,
+        "transforms": {
+          "showLabel": false,
+          "axisScale": 0.5,
+          "lineWidth": 1.5
+        }
+      },
+      "transforms": {
+        "frame:base_link": {
+          "visible": true
+        },
+        "frame:laser_frame": {
+          "visible": true
+        },
+        "frame:odom": {
+          "visible": true
+        },
+        "frame:map": {
+          "visible": true
+        }
+      },
+      "topics": {
+        "/scan": {
+          "visible": true,
+          "colorField": "range",
+          "colorMode": "gradient",
+          "gradient": ["#0778f3ff", "#ff6699ff"],
+          "pointSize": 8,
+          "pointShape": "circle",
+          "decayTime": 1
+        },
+        "/map": {
+          "visible": true,
+          "colorMode": "map",
+          "alpha": 0.8,
+          "unknownColor": "#1a1a2e",
+          "invalidColor": "#ff0000",
+          "minColor": "#ffffff",
+          "maxColor": "#000000"
+        }
+      },
+      "layers": {},
+      "publish": {
+        "type": "point",
+        "poseTopic": "/goal_pose",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      }
+    },
+    "RawMessages!2": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/scan.header"
+    },
+    "Plot!3": {
+      "paths": [
+        {
+          "value": "/scan.range_min",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Min Range",
+          "color": "#00ff88"
+        },
+        {
+          "value": "/scan.range_max",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Max Range",
+          "color": "#ff8800"
+        },
+        {
+          "value": "/scan.scan_time",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Scan Time",
+          "color": "#ff0088"
+        },
+        {
+          "value": "/scan.angle_increment",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Angle Inc",
+          "color": "#0088ff"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "minYValue": 0,
+      "maxYValue": 5,
+      "followingViewWidth": 30
+    },
+    "StateTransitions!4": {
+      "paths": [],
+      "isSynced": true
+    },
+    "Indicator!5": {
+      "path": "/scan.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#a0a0a0",
+      "fallbackLabel": "No Data",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#00ff88",
+          "label": "LIDAR Active"
+        }
+      ]
+    },
+    "Indicator!6": {
+      "path": "/map_metadata.width",
+      "style": "background",
+      "fallbackColor": "#a0a0a0",
+      "fallbackLabel": "No Map",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "10",
+          "color": "#00ff88",
+          "label": "Map Building"
+        },
+        {
+          "operator": "<=",
+          "rawValue": "10",
+          "color": "#ffaa00",
+          "label": "Map Starting"
+        }
+      ]
+    },
+    "TopicGraph!7": {
+      "selection": "all"
+    },
+    "DiagnosticSummary!8": {
+      "minLevel": 0,
+      "pinnedIds": [],
+      "hardwareIdFilter": "",
+      "sortByLevel": true
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": {
+      "first": "3D!1",
+      "second": {
+        "first": "Plot!3",
+        "second": {
+          "first": "Indicator!5",
+          "second": "Indicator!6",
+          "direction": "row",
+          "splitPercentage": 50
+        },
+        "direction": "column",
+        "splitPercentage": 70
+      },
+      "direction": "row",
+      "splitPercentage": 70
+    },
+    "second": {
+      "first": "RawMessages!2",
+      "second": "TopicGraph!7",
+      "direction": "column",
+      "splitPercentage": 50
+    },
+    "direction": "column",
+    "splitPercentage": 75
+  }
+}

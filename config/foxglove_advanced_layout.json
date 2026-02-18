@@ -1,0 +1,354 @@
+{
+  "configById": {
+    "3D!main": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 8,
+        "phi": 60,
+        "thetaOffset": 0,
+        "targetOffset": [0, 0, 0],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 50,
+        "near": 0.1,
+        "far": 1000
+      },
+      "followMode": "follow-pose",
+      "followTf": "base_link",
+      "scene": {
+        "backgroundColor": "#0a0a14",
+        "enableStats": false,
+        "labelScale": 0,
+        "transforms": {
+          "showLabel": false,
+          "axisScale": 0.3,
+          "lineWidth": 1
+        }
+      },
+      "transforms": {
+        "frame:base_link": { "visible": true },
+        "frame:laser_frame": { "visible": false },
+        "frame:odom": { "visible": false },
+        "frame:map": { "visible": false }
+      },
+      "topics": {
+        "/scan": {
+          "visible": true,
+          "colorField": "range",
+          "colorMode": "gradient",
+          "gradient": ["#00ffff", "#00ff00", "#ffff00", "#ff6600", "#ff0000"],
+          "pointSize": 6,
+          "pointShape": "circle",
+          "decayTime": 2
+        },
+        "/sensors/ultrasonic/points": {
+          "visible": true,
+          "colorMode": "flat",
+          "flatColor": "#ff00ff",
+          "pointSize": 10
+        },
+        "/super_sensor/obstacle_points": {
+          "visible": true,
+          "colorMode": "flat",
+          "flatColor": "#ffaa00",
+          "pointSize": 12
+        },
+        "/map": {
+          "visible": true,
+          "colorMode": "map",
+          "alpha": 0.7,
+          "unknownColor": "#0a0a14",
+          "invalidColor": "#ff0000",
+          "minColor": "#ffffff",
+          "maxColor": "#333333"
+        }
+      },
+      "layers": {
+        "grid": {
+          "layerId": "foxglove.Grid",
+          "visible": true,
+          "size": 20,
+          "divisions": 20,
+          "lineWidth": 1,
+          "color": "#1a3a4a",
+          "position": [0, 0, 0],
+          "rotation": [0, 0, 0, 1],
+          "frameId": "odom"
+        }
+      },
+      "publish": {
+        "type": "point",
+        "poseTopic": "/goal_pose",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose"
+      }
+    },
+    "3D!topdown": {
+      "cameraState": {
+        "perspective": false,
+        "distance": 15,
+        "phi": 0,
+        "thetaOffset": 0,
+        "targetOffset": [0, 0, 0],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.1,
+        "far": 1000
+      },
+      "followMode": "follow-pose",
+      "followTf": "base_link",
+      "scene": {
+        "backgroundColor": "#0a0a14",
+        "enableStats": false,
+        "labelScale": 0
+      },
+      "topics": {
+        "/scan": {
+          "visible": true,
+          "colorField": "range",
+          "colorMode": "gradient",
+          "gradient": ["#00ffff", "#00ff00", "#ffff00", "#ff6600"],
+          "pointSize": 4,
+          "pointShape": "circle",
+          "decayTime": 3
+        },
+        "/map": {
+          "visible": true,
+          "colorMode": "map",
+          "alpha": 0.8
+        }
+      },
+      "layers": {
+        "grid": {
+          "layerId": "foxglove.Grid",
+          "visible": true,
+          "size": 10,
+          "divisions": 10,
+          "lineWidth": 1,
+          "color": "#1a3a4a"
+        }
+      }
+    },
+    "Image!left": {
+      "imageMode": "decompressed",
+      "imageTopic": "/stereo/left/image_raw",
+      "calibrationTopic": "/stereo/camera_info",
+      "rotation": 0,
+      "flipHorizontal": false,
+      "flipVertical": false,
+      "minValue": 0,
+      "maxValue": 255,
+      "smooth": true,
+      "transformMarkers": true,
+      "synchronize": true
+    },
+    "Image!right": {
+      "imageMode": "decompressed",
+      "imageTopic": "/stereo/right/image_raw",
+      "calibrationTopic": "/stereo/camera_info",
+      "rotation": 0,
+      "smooth": true
+    },
+    "Image!phone": {
+      "imageMode": "decompressed",
+      "imageTopic": "/phone/camera/back/image_raw",
+      "rotation": 0,
+      "smooth": true
+    },
+    "Image!depth": {
+      "imageMode": "decompressed",
+      "imageTopic": "/stereo/depth/image_color",
+      "rotation": 0,
+      "smooth": true
+    },
+    "Plot!ultrasonic": {
+      "paths": [
+        {
+          "value": "/super_sensor/range/front_top.range",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Front Top",
+          "color": "#00ffff"
+        },
+        {
+          "value": "/super_sensor/range/front_bottom.range",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Front Bottom",
+          "color": "#00ff88"
+        },
+        {
+          "value": "/super_sensor/range/left.range",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Left",
+          "color": "#ffaa00"
+        },
+        {
+          "value": "/super_sensor/range/right.range",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "Right",
+          "color": "#ff6600"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "minYValue": 0,
+      "maxYValue": 4,
+      "followingViewWidth": 30
+    },
+    "Gauge!speed": {
+      "path": "/odom.twist.twist.linear.x",
+      "minValue": -0.5,
+      "maxValue": 0.5,
+      "colorMode": "colormap",
+      "colorMap": "turbo",
+      "gradient": ["#0000ff", "#00ff00", "#ffff00", "#ff0000"]
+    },
+    "Indicator!lidar": {
+      "path": "/scan.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#ff0000",
+      "fallbackLabel": "LIDAR OFF",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#00ff88",
+          "label": "LIDAR OK"
+        }
+      ]
+    },
+    "Indicator!stereo": {
+      "path": "/stereo/diagnostics.status",
+      "style": "background",
+      "fallbackColor": "#ff6600",
+      "fallbackLabel": "STEREO OFF",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "OK",
+          "color": "#00ff88",
+          "label": "STEREO OK"
+        }
+      ]
+    },
+    "Indicator!ultrasonic": {
+      "path": "/super_sensor/status",
+      "style": "background",
+      "fallbackColor": "#ff6600",
+      "fallbackLabel": "ULTRA OFF",
+      "rules": []
+    },
+    "Indicator!battery": {
+      "path": "/battery_voltage.data",
+      "style": "background",
+      "fallbackColor": "#666666",
+      "fallbackLabel": "No Battery",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "11.5",
+          "color": "#00ff88",
+          "label": "Battery OK"
+        },
+        {
+          "operator": "<=",
+          "rawValue": "11.5",
+          "color": "#ffaa00",
+          "label": "Battery Low"
+        },
+        {
+          "operator": "<",
+          "rawValue": "10.5",
+          "color": "#ff0000",
+          "label": "Battery Critical"
+        }
+      ]
+    },
+    "RawMessages!odom": {
+      "diffEnabled": false,
+      "topicPath": "/odom.twist.twist"
+    },
+    "RawMessages!imu": {
+      "diffEnabled": false,
+      "topicPath": "/imu/data.linear_acceleration"
+    },
+    "TopicGraph!1": {
+      "selection": "all"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": {
+      "first": {
+        "first": {
+          "first": "Image!left",
+          "second": "Image!right",
+          "direction": "row",
+          "splitPercentage": 50
+        },
+        "second": {
+          "first": "Image!phone",
+          "second": "Image!depth",
+          "direction": "row",
+          "splitPercentage": 50
+        },
+        "direction": "row",
+        "splitPercentage": 50
+      },
+      "second": {
+        "first": "3D!main",
+        "second": {
+          "first": "3D!topdown",
+          "second": "Plot!ultrasonic",
+          "direction": "column",
+          "splitPercentage": 60
+        },
+        "direction": "row",
+        "splitPercentage": 70
+      },
+      "direction": "column",
+      "splitPercentage": 20
+    },
+    "second": {
+      "first": {
+        "first": "Indicator!lidar",
+        "second": {
+          "first": "Indicator!stereo",
+          "second": {
+            "first": "Indicator!ultrasonic",
+            "second": "Indicator!battery",
+            "direction": "row",
+            "splitPercentage": 50
+          },
+          "direction": "row",
+          "splitPercentage": 50
+        },
+        "direction": "row",
+        "splitPercentage": 25
+      },
+      "second": {
+        "first": "RawMessages!odom",
+        "second": "RawMessages!imu",
+        "direction": "row",
+        "splitPercentage": 50
+      },
+      "direction": "column",
+      "splitPercentage": 40
+    },
+    "direction": "column",
+    "splitPercentage": 85
+  }
+}

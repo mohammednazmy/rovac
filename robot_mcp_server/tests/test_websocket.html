@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+    <div id="status">Connecting...</div>
+    <div id="messages"></div>
+    
+    <script>
+        const socket = io('http://localhost:5001');
+        const statusDiv = document.getElementById('status');
+        const messagesDiv = document.getElementById('messages');
+        
+        socket.on('connect', function() {
+            statusDiv.innerHTML = 'Connected!';
+            socket.emit('robot_command', {command: 'test'});
+        });
+        
+        socket.on('disconnect', function() {
+            statusDiv.innerHTML = 'Disconnected';
+        });
+        
+        socket.on('robot_data', function(data) {
+            const message = document.createElement('div');
+            message.innerHTML = '<strong>Robot Data:</strong> ' + JSON.stringify(data);
+            messagesDiv.appendChild(message);
+        });
+        
+        socket.on('command_response', function(data) {
+            const message = document.createElement('div');
+            message.innerHTML = '<strong>Command Response:</strong> ' + JSON.stringify(data);
+            messagesDiv.appendChild(message);
+        });
+    </script>
+</body>
+</html>

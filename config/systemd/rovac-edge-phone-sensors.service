@@ -1,0 +1,22 @@
+[Unit]
+Description=ROVAC Phone Sensors (IMU, GPS via SensorServer)
+Documentation=https://github.com/umer0586/SensorServer
+After=network.target
+PartOf=rovac-edge.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/hardware/phone_sensors
+ExecStart=/home/pi/hardware/phone_sensors/launch_phone_sensors.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# ADB needs access
+SupplementaryGroups=plugdev
+
+[Install]
+WantedBy=rovac-edge.target

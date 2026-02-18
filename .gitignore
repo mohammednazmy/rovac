@@ -1,0 +1,78 @@
+# === OS Files ===
+.DS_Store
+Thumbs.db
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.eggs/
+venv/
+.venv/
+env/
+.env.local
+
+# === ROS2 Build Artifacts ===
+build/
+install/
+log/
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# === Logs ===
+*.log
+
+# === Binary Archives ===
+*.zip
+*.ZIP
+*.tar.gz
+*.tar.bz2
+*.dmg
+*.apk
+*.deb
+
+# === Calibration Data (large, machine-specific) ===
+*.npz
+
+# === ML Models ===
+*.caffemodel
+*.onnx
+*.tflite
+*.pb
+
+# === IDE / Editor / Tool Caches ===
+.opencode/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.mcp.json
+*.swp
+*.swo
+*.tmp
+.idea/
+.vscode/
+*.sublime-*
+
+# === Super Sensor Build Outputs ===
+super_sensor/dist/
+super_sensor/build/
+super_sensor/offline_deps/
+
+# === Runtime Maps (generated, machine-specific) ===
+maps/*.yaml
+maps/*.pgm
+!maps/.gitkeep
+
+# === Foxglove / ROS bags ===
+*.bag
+*.db3
+*.mcap
+
+# === Misc Runtime ===
+*.bak
+node_modules/
+.cache/
