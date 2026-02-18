@@ -3,10 +3,10 @@
 
 # Source ROS2
 source /opt/ros/jazzy/setup.bash
-source ~/ros2_ws/install/setup.bash
+source ~/robots/rovac/ros2_ws/install/setup.bash
 
 # Change to server directory
-cd /home/pi/robot_mcp_server
+cd ~/robots/rovac/robot_mcp_server
 
 # Activate virtualenv
 source venv/bin/activate

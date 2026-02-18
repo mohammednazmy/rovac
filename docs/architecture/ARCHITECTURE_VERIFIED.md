@@ -146,7 +146,9 @@ sudo systemctl restart rovac-edge.target
 sudo journalctl -u rovac-edge-hiwonder.service -n 100 --no-pager
 
 # Manual env (fallback)
-source ~/ros2_env.sh
+cd ~/robots/rovac
+git pull
+source config/ros2_env.sh
 ```
 
 ### On Mac
@@ -168,9 +170,9 @@ python3 scripts/joy_mapper_node.py &
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `config/ros2_env.sh` | Mac (+ synced to Pi `~/ros2_env.sh`) | ROS2 environment setup |
-| `config/cyclonedds_mac.xml` | Mac | DDS config - peers to `192.168.1.104`, `.200` |
-| `~/cyclonedds_pi.xml` | Pi | DDS config - peers to `192.168.1.200`, `.104` |
+| `config/ros2_env.sh` | Both (same repo on Mac + Pi) | ROS2 environment setup (auto-detects OS) |
+| `config/cyclonedds_mac.xml` | Both (used on Mac) | DDS config - peers to `192.168.1.104`, `.200` |
+| `config/cyclonedds_pi.xml` | Both (used on Pi) | DDS config - peers to `192.168.1.200`, `.104` |
 | `scripts/joy_mapper_node.py` | Mac | Controller input mapping |
 | `scripts/standalone_control.sh` | Mac | Full stack launcher |
 

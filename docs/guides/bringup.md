@@ -53,7 +53,9 @@ Recovery access:
 
 Environment setup is handled by:
 
-- `config/ros2_env.sh` (Mac) / `~/ros2_env.sh` (Pi -- auto-detects OS and loads Pi-specific config)
+- `config/ros2_env.sh` (relative to repo root, same file on both machines -- auto-detects OS and loads Pi-specific config)
+  - Mac: `~/robots/rovac/config/ros2_env.sh`
+  - Pi: `/home/pi/robots/rovac/config/ros2_env.sh`
 
 This configures:
 - ROS 2 distro (Jazzy)
@@ -68,7 +70,7 @@ source config/ros2_env.sh
 
 To manually source on Pi:
 ```bash
-source ~/ros2_env.sh
+source ~/robots/rovac/config/ros2_env.sh
 ```
 
 Verify:
@@ -82,12 +84,25 @@ echo $CYCLONEDDS_URI        # should point to the XML config file
 ## Normal Startup (Expected Path)
 
 1. Power on robot
-2. Pi auto-starts the edge stack (if installed):
+2. SSH into Pi and pull latest code:
+   ```bash
+   ssh pi 'cd ~/robots/rovac && git pull'
+   ```
+3. Pi auto-starts the edge stack (if installed):
    - `rovac-edge.target` (hiwonder board + TF publisher + mux + stereo cameras)
-3. Mac auto-starts the controller stack at login (if installed):
+   - If systemd unit files changed, reload and restart:
+     ```bash
+     ssh pi 'sudo systemctl daemon-reload && sudo systemctl restart rovac-edge.target'
+     ```
+4. On Mac, pull latest and source environment:
+   ```bash
+   cd ~/robots/rovac && git pull
+   source config/ros2_env.sh
+   ```
+5. Mac auto-starts the controller stack at login (if installed):
    - launchd `com.rovac.controller` (joy_node + joy_mapper)
-4. Run brain nodes on Mac as needed (SLAM/Nav2/Foxglove)
-5. Robot responds to controller input
+6. Run brain nodes on Mac as needed (SLAM/Nav2/Foxglove)
+7. Robot responds to controller input
 
 ### One-time Persistence Install (recommended)
 ```bash
@@ -178,7 +193,9 @@ ssh pi 'sudo systemctl stop rovac-edge.target'
 If systemd services are not installed, you can start the ROS 2 environment manually on the Pi:
 
 ```bash
-source ~/ros2_env.sh
+cd ~/robots/rovac
+git pull
+source config/ros2_env.sh
 ```
 
 The `ros2_env.sh` script auto-detects the OS (Linux vs. Darwin) and loads the correct DDS config and IP addresses for the Pi.
@@ -199,7 +216,7 @@ This configuration was chosen because:
 | File | Location | Binds To |
 |------|----------|----------|
 | `cyclonedds_mac.xml` | `config/` | `192.168.1.104` on en0 (WiFi) |
-| `cyclonedds_pi.xml` | `~/cyclonedds_pi.xml` on Pi | `192.168.1.200` on eth0 |
+| `cyclonedds_pi.xml` | `config/cyclonedds_pi.xml` (in repo) | `192.168.1.200` on eth0 |
 
 Both configs use the same structure:
 ```xml

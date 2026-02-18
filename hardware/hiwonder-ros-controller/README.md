@@ -15,7 +15,7 @@ The active motor/IMU controller board for ROVAC. Replaced the Yahboom ROS Expans
 | **Motor Channels** | 4 available, 2 active (M1 left, M2 right — tank config) |
 | **Encoder Handling** | Internal PID at 100 Hz (TIM7 loop) — NOT sent to host |
 | **Motor Config** | TANKBLACK: left motor inverted |
-| **Firmware** | RRCLite (source docs at `/home/pi/RRCLite/`) |
+| **Firmware** | RRCLite (vendor docs were removed from Pi during cleanup; see lesson summaries below) |
 | **Motor Switch** | Physical switch on board — must be ON for motors to spin |
 
 ## Comparison with Previous Board
@@ -34,7 +34,7 @@ The active motor/IMU controller board for ROVAC. Replaced the Yahboom ROS Expans
 
 ## ROS2 Driver
 
-**File:** `/home/pi/hardware/hiwonder-ros-controller/hiwonder_driver.py`
+**File:** `~/robots/rovac/hardware/hiwonder-ros-controller/hiwonder_driver.py`
 
 A standalone ROS2 node (Python script, not a ROS2 package).
 
@@ -123,7 +123,7 @@ sudo systemctl restart rovac-edge-hiwonder.service
 
 ## Firmware Documentation
 
-RRCLite firmware docs are at `/home/pi/RRCLite/3. RRCLite Program Analysis/`:
+RRCLite firmware docs (previously at `/home/pi/RRCLite/`, removed from Pi during cleanup):
 - Lessons 1-3: Architecture, LED/Buzzer, Button
 - Lesson 4: ADC voltage detection
 - Lesson 5: QMI8658 accelerometer/gyroscope

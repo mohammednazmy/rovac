@@ -59,10 +59,10 @@ ros2 topic hz /phone/camera/back/image_raw
 
 ```bash
 # Switch to different camera (on Pi)
-/home/pi/hardware/phone_cameras/switch_camera.sh front   # Front camera
-/home/pi/hardware/phone_cameras/switch_camera.sh wide    # Back wide-angle
-/home/pi/hardware/phone_cameras/switch_camera.sh front2  # Secondary front
-/home/pi/hardware/phone_cameras/switch_camera.sh back    # Back to default
+~/robots/rovac/hardware/phone_cameras/switch_camera.sh front   # Front camera
+~/robots/rovac/hardware/phone_cameras/switch_camera.sh wide    # Back wide-angle
+~/robots/rovac/hardware/phone_cameras/switch_camera.sh front2  # Secondary front
+~/robots/rovac/hardware/phone_cameras/switch_camera.sh back    # Back to default
 ```
 
 ## Prerequisites
@@ -142,7 +142,7 @@ sudo systemctl edit rovac-phone-cameras.service
 # Add override:
 [Service]
 ExecStart=
-ExecStart=/home/pi/hardware/phone_cameras/launch_multi_cameras.sh front
+ExecStart=/home/pi/robots/rovac/hardware/phone_cameras/launch_multi_cameras.sh front
 ```
 
 ## Architecture

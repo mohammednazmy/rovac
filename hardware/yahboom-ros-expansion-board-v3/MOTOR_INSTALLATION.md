@@ -125,7 +125,7 @@ M4 = Rear Right
 ssh pi
 
 # Watch encoder values
-source /home/pi/ros2_env.sh
+source ~/robots/rovac/config/ros2_env.sh
 ros2 topic echo /wheel_encoders
 ```
 

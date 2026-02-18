@@ -65,8 +65,8 @@ rovac-edge.target (orchestrator)
    - Ensures automatic recovery from crashes
 
 3. **Environment Handling**
-   - Services source ROS2 environment via `/home/pi/ros2_env.sh`
-   - DDS configuration via `CYCLONEDDS_URI=file:///home/pi/cyclonedds_pi.xml`
+   - Services source ROS2 environment via `~/robots/rovac/config/ros2_env.sh`
+   - DDS configuration via `CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml`
    - Domain isolation: `ROS_DOMAIN_ID=42`
 
 4. **Conditional Execution**
@@ -696,7 +696,7 @@ ExecStart=/bin/bash -lc 'systemd-notify --ready; exec ...'
 
 Add watchdog script:
 ```python
-# /home/pi/camera_watchdog.py
+# ~/robots/rovac/scripts/camera_watchdog.py
 import time
 import subprocess
 

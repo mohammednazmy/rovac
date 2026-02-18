@@ -78,7 +78,7 @@ sudo systemctl edit rovac-edge-webcam.service
 # Add override:
 [Service]
 ExecStart=
-ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && python3 /home/pi/hardware/webcam/webcam_publisher.py --device /dev/webcam --width 1280 --height 720 --fps 30'
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && python3 /home/pi/robots/rovac/hardware/webcam/webcam_publisher.py --device /dev/webcam --width 1280 --height 720 --fps 30'
 ```
 
 ## Troubleshooting
@@ -112,7 +112,7 @@ sudo journalctl -u rovac-edge-webcam -n 50
 ls -la /dev/webcam
 
 # Test manually
-python3 /home/pi/hardware/webcam/webcam_publisher.py --device /dev/video0
+python3 ~/robots/rovac/hardware/webcam/webcam_publisher.py --device /dev/video0
 ```
 
 ## Integration with Robot

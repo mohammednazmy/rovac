@@ -123,7 +123,7 @@ The main control board for motors and onboard IMU. Replaced the Yahboom ROS Expa
 | **Motors** | 4x DC motor channels (2 active: M1 left, M2 right for tank) |
 | **Encoders** | Internal PID only (100 Hz TIM7 loop) — NOT sent to host |
 | **Motor Config** | TANKBLACK: left motor inverted, M1(left)/M2(right) |
-| **Firmware** | RRCLite (docs at `/home/pi/RRCLite/`) |
+| **Firmware** | RRCLite (vendor docs removed from Pi during cleanup) |
 | **Power Input** | 6-12V DC |
 | **Motor Switch** | Physical switch must be ON for motors to spin |
 

@@ -91,7 +91,7 @@ SAVED_LOCATIONS = {
 }
 
 # Saved maps directory (externalized)
-MAPS_DIR = os.getenv("ROVAC_MAPS_DIR", "/home/pi/maps")
+MAPS_DIR = os.getenv("ROVAC_MAPS_DIR", os.path.expanduser("~/robots/rovac/maps"))
 
 
 # ============================================================================

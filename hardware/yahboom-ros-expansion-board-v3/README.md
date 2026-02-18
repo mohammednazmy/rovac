@@ -103,7 +103,7 @@ sudo systemctl restart rovac-edge-yahboom
 ### Installation
 
 ```bash
-cd /home/pi/hardware/yahboom-ros-expansion-board-v3/py_install
+cd ~/robots/rovac/hardware/yahboom-ros-expansion-board-v3/py_install
 sudo python3 setup.py install
 ```
 
@@ -334,7 +334,7 @@ yahboom-ros-expansion-board-v3/
 
 **On Pi:**
 ```
-/home/pi/hardware/yahboom-ros-expansion-board-v3/
+~/robots/rovac/hardware/yahboom-ros-expansion-board-v3/
 ├── yahboom_ros2_node.py              # ROS2 node
 ├── launch_yahboom_node.sh            # Launch script
 └── py_install/                       # Driver library

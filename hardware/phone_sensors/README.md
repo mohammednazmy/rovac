@@ -71,8 +71,8 @@ ssh pi
 # Start SensorServer app on phone first!
 
 # Then run the node manually:
-source /home/pi/ros2_env.sh
-python3 /home/pi/hardware/phone_sensors/phone_sensors_ros2_node.py
+source ~/robots/rovac/config/ros2_env.sh
+python3 ~/robots/rovac/hardware/phone_sensors/phone_sensors_ros2_node.py
 
 # Or use the service:
 sudo systemctl start rovac-edge-phone-sensors.service
