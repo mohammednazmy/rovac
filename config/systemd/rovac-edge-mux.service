@@ -14,7 +14,7 @@ WorkingDirectory=/home/pi
 # DDS Configuration
 Environment=ROS_DOMAIN_ID=42
 Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-Environment=CYCLONEDDS_URI=file:///home/pi/cyclonedds_pi.xml
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
 
 # Logging
 StandardOutput=journal
@@ -33,7 +33,7 @@ CPUQuota=20%
 Restart=always
 RestartSec=2
 
-ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; [ -f /home/pi/yahboom_tank_ws/install/setup.bash ] && source /home/pi/yahboom_tank_ws/install/setup.bash; [ -f /home/pi/ros2_env.sh ] && source /home/pi/ros2_env.sh; exec python3 /home/pi/yahboom_tank_ws/src/tank_description/tank_description/cmd_vel_mux.py'
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; [ -f /home/pi/robots/rovac/ros2_ws/install/setup.bash ] && source /home/pi/robots/rovac/ros2_ws/install/setup.bash; [ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh; exec python3 /home/pi/robots/rovac/ros2_ws/src/tank_description/tank_description/cmd_vel_mux.py'
 
 [Install]
 WantedBy=rovac-edge.target

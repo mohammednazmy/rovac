@@ -334,7 +334,7 @@ case "$1" in
             # Joy Mapper (for Servo/LEDs)
             pkill -f "joy_mapper_node" 2>/dev/null || true
             # Run with sudo if needed for permissions, or assuming pi is fixed
-            nohup python3 -u /home/pi/joy_mapper_node.py > /tmp/joy_mapper.log 2>&1 &
+            nohup python3 -u /home/pi/robots/rovac/scripts/joy_mapper_node.py > /tmp/joy_mapper.log 2>&1 &
 
             # teleop_twist_joy was unstable; left stick is handled by joy_mapper_node
             log_info "Left stick handled by joy_mapper_node (teleop_twist_joy disabled)"
@@ -344,16 +344,16 @@ case "$1" in
 
         # Status hub + map save trigger (Foxglove widgets)
         if ! pgrep -f "robot_status_hub.py" &>/dev/null; then
-            nohup python3 /home/pi/robot_status_hub.py > /tmp/robot_status_hub.log 2>&1 &
+            nohup python3 /home/pi/robots/rovac/scripts/robot_status_hub.py > /tmp/robot_status_hub.log 2>&1 &
         fi
         if ! pgrep -f "map_save_trigger_node.py" &>/dev/null; then
-            nohup python3 /home/pi/map_save_trigger_node.py > /tmp/map_save_trigger.log 2>&1 &
+            nohup python3 /home/pi/robots/rovac/scripts/map_save_trigger_node.py > /tmp/map_save_trigger.log 2>&1 &
         fi
         if ! pgrep -f "autonomy_control_node.py" &>/dev/null; then
-            nohup python3 /home/pi/autonomy_control_node.py > /tmp/autonomy_control.log 2>&1 &
+            nohup python3 /home/pi/robots/rovac/scripts/autonomy_control_node.py > /tmp/autonomy_control.log 2>&1 &
         fi
         if ! pgrep -f "coverage_lawnmower_node.py" &>/dev/null; then
-            nohup python3 /home/pi/coverage_lawnmower_node.py > /tmp/coverage_lawnmower.log 2>&1 &
+            nohup python3 /home/pi/robots/rovac/scripts/coverage_lawnmower_node.py > /tmp/coverage_lawnmower.log 2>&1 &
         fi
         
         local ip=$(hostname -I | awk '{print $1}')

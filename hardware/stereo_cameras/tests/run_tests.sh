@@ -38,12 +38,12 @@ case "${1:-}" in
         echo -e "${YELLOW}Note: Stereo nodes must be running for these tests${NC}"
         if [ "$IS_PI" = true ]; then
             source /opt/ros/jazzy/setup.bash
-            [ -f /home/pi/ros2_env.sh ] && source /home/pi/ros2_env.sh
+            [ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh
             python3 test_stereo_integration.py
         else
             ssh pi@192.168.1.200 bash -lc "
                 source /opt/ros/jazzy/setup.bash
-                [ -f /home/pi/ros2_env.sh ] && source /home/pi/ros2_env.sh
+                [ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh
                 cd ~/rovac/hardware/stereo_cameras/tests
                 python3 test_stereo_integration.py
             "

@@ -8,13 +8,13 @@ Before=rovac-edge-mux.service rovac-edge-obstacle.service
 Type=simple
 User=pi
 Group=pi
-WorkingDirectory=/home/pi/hardware/hiwonder-ros-controller
+WorkingDirectory=/home/pi/robots/rovac/hardware/hiwonder-ros-controller
 
 Environment=ROS_DOMAIN_ID=42
 Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-Environment=CYCLONEDDS_URI=file:///home/pi/rovac/config/cyclonedds_pi.xml
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
 
-ExecStart=/home/pi/hardware/hiwonder-ros-controller/launch_hiwonder.sh
+ExecStart=/home/pi/robots/rovac/hardware/hiwonder-ros-controller/launch_hiwonder.sh
 Restart=always
 RestartSec=5
 StandardOutput=journal

@@ -22,8 +22,8 @@ export CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
 
 # Source ROS2
 source /opt/ros/jazzy/setup.bash
-if [ -f /home/pi/ros2_env.sh ]; then
-    source /home/pi/ros2_env.sh
+if [ -f /home/pi/robots/rovac/config/ros2_env.sh ]; then
+    source /home/pi/robots/rovac/config/ros2_env.sh
 fi
 
 echo "=== USB Webcam Publisher ==="

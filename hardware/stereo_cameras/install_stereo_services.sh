@@ -6,7 +6,7 @@
 set -e
 
 PI_HOST="${PI_HOST:-pi@192.168.1.200}"
-PI_STEREO_DIR="/home/pi/rovac/hardware/stereo_cameras"
+PI_STEREO_DIR="/home/pi/robots/rovac/hardware/stereo_cameras"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Colors
@@ -50,7 +50,7 @@ sudo mv /tmp/rovac-edge-stereo-obstacle.service /etc/systemd/system/
 sudo mv /tmp/rovac-edge-stereo.target /etc/systemd/system/
 
 # Backup and update cmd_vel_mux
-MUX_DIR="/home/pi/yahboom_tank_ws/src/tank_description/tank_description"
+MUX_DIR="/home/pi/robots/rovac/ros2_ws/src/tank_description/tank_description"
 if [ -f "${MUX_DIR}/cmd_vel_mux.py" ]; then
     cp "${MUX_DIR}/cmd_vel_mux.py" "${MUX_DIR}/cmd_vel_mux.py.backup"
     echo "Backed up original cmd_vel_mux.py"
@@ -103,7 +103,7 @@ install_local() {
     sudo cp "${SCRIPT_DIR}/systemd/rovac-edge-stereo.target" /etc/systemd/system/
 
     # Backup and update cmd_vel_mux
-    MUX_DIR="/home/pi/yahboom_tank_ws/src/tank_description/tank_description"
+    MUX_DIR="/home/pi/robots/rovac/ros2_ws/src/tank_description/tank_description"
     if [ -f "${MUX_DIR}/cmd_vel_mux.py" ]; then
         cp "${MUX_DIR}/cmd_vel_mux.py" "${MUX_DIR}/cmd_vel_mux.py.backup"
     fi
@@ -150,7 +150,7 @@ sudo rm -f /etc/systemd/system/rovac-edge-stereo.target
 sudo sed -i '/rovac-edge-stereo/d' /etc/systemd/system/rovac-edge.target
 
 # Restore original cmd_vel_mux if backup exists
-MUX_DIR="/home/pi/yahboom_tank_ws/src/tank_description/tank_description"
+MUX_DIR="/home/pi/robots/rovac/ros2_ws/src/tank_description/tank_description"
 if [ -f "${MUX_DIR}/cmd_vel_mux.py.backup" ]; then
     mv "${MUX_DIR}/cmd_vel_mux.py.backup" "${MUX_DIR}/cmd_vel_mux.py"
     echo "Restored original cmd_vel_mux.py"

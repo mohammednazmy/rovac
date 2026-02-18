@@ -28,7 +28,7 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
 
 source /opt/ros/jazzy/setup.bash
-[ -f /home/pi/ros2_env.sh ] && source /home/pi/ros2_env.sh
+[ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh
 
 # Parse arguments
 if [ $# -eq 0 ]; then

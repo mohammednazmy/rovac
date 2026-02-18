@@ -2,7 +2,7 @@
 # Static transform from odom to base_link
 # This allows SLAM to work with pure scan matching
 source /opt/ros/jazzy/setup.bash
-source /home/pi/ros2_env.sh
+source /home/pi/robots/rovac/config/ros2_env.sh
 
 exec ros2 run tf2_ros static_transform_publisher \
     --x 0 --y 0 --z 0 \

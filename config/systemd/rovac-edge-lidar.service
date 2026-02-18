@@ -29,7 +29,7 @@ CPUQuota=20%
 Restart=always
 RestartSec=2
 
-ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; [ -f /home/pi/yahboom_tank_ws/install/setup.bash ] && source /home/pi/yahboom_tank_ws/install/setup.bash; [ -f /home/pi/ros2_env.sh ] && source /home/pi/ros2_env.sh; exec ros2 run xv11_lidar_python xv11_lidar --ros-args -p port:=/dev/esp32_lidar -p frame_id:=laser_frame'
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; [ -f /home/pi/robots/rovac/ros2_ws/install/setup.bash ] && source /home/pi/robots/rovac/ros2_ws/install/setup.bash; [ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh; exec ros2 run xv11_lidar_python xv11_lidar --ros-args -p port:=/dev/esp32_lidar -p frame_id:=laser_frame'
 
 [Install]
 WantedBy=rovac-edge.target

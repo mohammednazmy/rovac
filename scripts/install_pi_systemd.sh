@@ -61,11 +61,13 @@ install_units() {
   fi
 
   echo "Installing systemd units to $PI_HOST..."
-  echo "Ensuring Pi has ROS2/DDS config files..."
-  remote_install_if_missing "/home/pi/ros2_env.sh" "$ROVAC_DIR/config/ros2_env.sh" "0755"
-  remote_install_if_missing "/home/pi/cyclonedds_pi.xml" "$ROVAC_DIR/config/cyclonedds_pi.xml" "0644"
-  remote_install_if_missing "/home/pi/fastdds_pi.xml" "$ROVAC_DIR/config/fastdds_pi.xml" "0644"
-  remote_install_if_missing "/home/pi/fastdds_peers.xml" "$ROVAC_DIR/config/fastdds_peers.xml" "0644"
+
+  # Pre-flight: verify monorepo is cloned on Pi
+  if ! ssh "$PI_HOST" "test -d /home/pi/robots/rovac/config"; then
+    echo "ERROR: Monorepo not found at /home/pi/robots/rovac/" >&2
+    echo "Run: ssh pi 'mkdir -p /home/pi/robots && git clone git@github.com:mohammednazmy/rovac.git /home/pi/robots/rovac'" >&2
+    exit 1
+  fi
 
   remote_sudo_install "/etc/systemd/system/rovac-edge.target" "$UNIT_DIR/rovac-edge.target"
   remote_sudo_install "/etc/systemd/system/rovac-edge-hiwonder.service" "$UNIT_DIR/rovac-edge-hiwonder.service"
@@ -80,6 +82,7 @@ install_units() {
   remote_sudo_install "/etc/systemd/system/rovac-edge-stereo.target" "$UNIT_DIR/rovac-edge-stereo.target"
   remote_sudo_install "/etc/systemd/system/rovac-edge-phone-sensors.service" "$UNIT_DIR/rovac-edge-phone-sensors.service"
   remote_sudo_install "/etc/systemd/system/rovac-phone-cameras.service" "$UNIT_DIR/rovac-phone-cameras.service"
+  remote_sudo_install "/etc/systemd/system/rovac-edge-webcam.service" "$UNIT_DIR/rovac-edge-webcam.service"
   remote_sudo_install "/etc/systemd/system/rovac-camera.service" "$UNIT_DIR/rovac-camera.service"
 
   ssh "$PI_HOST" "sudo systemctl daemon-reload"

@@ -9,8 +9,8 @@ User=pi
 WorkingDirectory=/home/pi
 Environment=ROS_DOMAIN_ID=42
 Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-Environment=CYCLONEDDS_URI=file:///home/pi/cyclonedds_pi.xml
-ExecStart=/home/pi/launch_map_odom_tf.sh
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
+ExecStart=/home/pi/robots/rovac/scripts/edge/launch_map_odom_tf.sh
 Restart=always
 RestartSec=2
 

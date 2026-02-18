@@ -6,8 +6,8 @@ set -e
 
 # Source ROS2 environment
 source /opt/ros/jazzy/setup.bash
-if [ -f /home/pi/ros2_env.sh ]; then
-    source /home/pi/ros2_env.sh
+if [ -f /home/pi/robots/rovac/config/ros2_env.sh ]; then
+    source /home/pi/robots/rovac/config/ros2_env.sh
 fi
 
 # Ensure ADB port forwarding is set up
@@ -23,7 +23,7 @@ fi
 echo "Phone connected, starting sensors node..."
 
 # Launch the node
-exec python3 /home/pi/hardware/phone_sensors/phone_sensors_ros2_node.py --ros-args \
+exec python3 /home/pi/robots/rovac/hardware/phone_sensors/phone_sensors_ros2_node.py --ros-args \
     -p websocket_host:=localhost \
     -p websocket_port:=8080 \
     -p gps_poll_rate:=1.0 \

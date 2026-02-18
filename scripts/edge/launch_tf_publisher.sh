@@ -1,8 +1,8 @@
 #!/bin/bash
 source /opt/ros/jazzy/setup.bash
-source /home/pi/ros2_env.sh
+source /home/pi/robots/rovac/config/ros2_env.sh
 
-URDF_FILE="/home/pi/yahboom_tank_ws/src/tank_description/urdf/tank.urdf"
+URDF_FILE="/home/pi/robots/rovac/ros2_ws/src/tank_description/urdf/tank.urdf"
 
 if [ ! -f "$URDF_FILE" ]; then
     echo "ERROR: URDF file not found: $URDF_FILE"

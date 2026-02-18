@@ -3,15 +3,15 @@
 
 source /opt/ros/jazzy/setup.bash
 
-if [ -f /home/pi/yahboom_tank_ws/install/setup.bash ]; then
-    source /home/pi/yahboom_tank_ws/install/setup.bash
+if [ -f /home/pi/robots/rovac/ros2_ws/install/setup.bash ]; then
+    source /home/pi/robots/rovac/ros2_ws/install/setup.bash
 fi
 
-if [ -f /home/pi/ros2_env.sh ]; then
-    source /home/pi/ros2_env.sh
+if [ -f /home/pi/robots/rovac/config/ros2_env.sh ]; then
+    source /home/pi/robots/rovac/config/ros2_env.sh
 fi
 
-exec python3 /home/pi/hardware/hiwonder-ros-controller/hiwonder_driver.py --ros-args \
+exec python3 /home/pi/robots/rovac/hardware/hiwonder-ros-controller/hiwonder_driver.py --ros-args \
     -p port:=/dev/hiwonder_board \
     -p baud:=1000000 \
     -p wheel_separation:=0.155 \

@@ -39,12 +39,12 @@ ExecStartPre=/bin/bash -lc 'modprobe -r v4l2loopback 2>/dev/null || true; modpro
 ExecStart=/bin/bash -lc '\
 set -e; set -o pipefail; \
 source /opt/ros/jazzy/setup.bash; \
-[ -f /home/pi/ros2_env.sh ] && source /home/pi/ros2_env.sh; \
+[ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh; \
 VIDEO_DEV="${ROVAC_VIDEO_DEVICE:-/dev/video10}"; \
 CAM_ID="${PHONE_CAMERA_ID:-0}"; \
 ADB="/usr/bin/adb"; \
 SCRCPY="/usr/local/bin/scrcpy"; \
-PUBLISHER="/home/pi/phone_camera_publisher.py"; \
+PUBLISHER="/home/pi/robots/rovac/hardware/phone_cameras/phone_camera_publisher.py"; \
 \
 $ADB start-server >/dev/null 2>&1 || true; \
 phone_ok=0; \

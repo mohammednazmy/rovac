@@ -7,7 +7,7 @@ Wants=rovac-edge.target
 Type=simple
 User=pi
 Group=pi
-WorkingDirectory=/home/pi/hardware/webcam
+WorkingDirectory=/home/pi/robots/rovac/hardware/webcam
 
 # ROS2 environment
 Environment="ROS_DOMAIN_ID=42"
@@ -17,7 +17,7 @@ Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="HOME=/home/pi"
 
 ExecStartPre=/bin/bash -c 'test -e /dev/webcam || test -e /dev/video0'
-ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && python3 /home/pi/hardware/webcam/webcam_publisher.py --device /dev/webcam --width 640 --height 480 --fps 30'
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && python3 /home/pi/robots/rovac/hardware/webcam/webcam_publisher.py --device /dev/webcam --width 640 --height 480 --fps 30'
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
