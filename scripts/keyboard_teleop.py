@@ -97,15 +97,13 @@ class TeleopControl(Node):
                 key = getKey(settings)
 
                 if key == 'w':
-                    control_linear_vel = lin_vel
-                elif key == 's':
                     control_linear_vel = -lin_vel
+                elif key == 's':
+                    control_linear_vel = lin_vel
                 elif key == 'a':
                     control_angular_vel = ang_vel
-                    control_linear_vel = 0.0
                 elif key == 'd':
                     control_angular_vel = -ang_vel
-                    control_linear_vel = 0.0
                 elif key == ' ':
                     control_linear_vel = 0.0
                     control_angular_vel = 0.0
@@ -119,7 +117,8 @@ class TeleopControl(Node):
                     ang_vel = max(0.1, ang_vel - 0.1)
                     print(f'\r  Speed: {lin_vel:.2f} m/s | {ang_vel:.2f} rad/s   ', end='', flush=True)
                 elif key == '':
-                    # No key pressed — stop turning, keep linear
+                    # No key pressed — stop everything
+                    control_linear_vel = 0.0
                     control_angular_vel = 0.0
                 elif key == '\x03':
                     break
