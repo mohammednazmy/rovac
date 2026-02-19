@@ -22,6 +22,7 @@ Both machines clone the same monorepo: `github.com/mohammednazmy/rovac`
 | Foxglove | `ws://localhost:8765` |
 | ROS_DOMAIN_ID | 42 |
 | DDS | CycloneDDS (unicast) |
+| Shared Folder | `~/robots/rovac/shared/` (Syncthing, Mac ↔ Pi) |
 
 ## Quick Start Commands
 
@@ -171,6 +172,7 @@ Both Mac and Pi clone the same repo to `~/robots/rovac/`. The tree below shows t
 ├── arduino_lidar_bridge/       # Arduino LIDAR bridge sketch
 ├── tools/                      # Calibration, diagnostics, testing utilities
 ├── maps/                       # Saved SLAM maps
+├── shared/                     # Syncthing-synced folder (Mac ↔ Pi, gitignored)
 ├── foxglove_layouts/           # Foxglove Studio layout configs
 ├── archive/                    # Legacy/deprecated code
 └── docs/

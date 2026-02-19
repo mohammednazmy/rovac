@@ -25,6 +25,7 @@
 | Joy Node | Working | Mac | `ros2 run joy joy_node` via launchd - reads Pro Controller |
 | Joy Mapper | Working | Mac | `joy_mapper_node.py` via launchd - maps inputs to topics |
 | DDS (CycloneDDS) | Working | Both | Unicast peer discovery (multicast disabled) |
+| Syncthing (File Sync) | Working | Both | P2P file sync via `~/robots/rovac/shared/`, LAN-only, TLS-encrypted |
 
 ## Data Flow
 

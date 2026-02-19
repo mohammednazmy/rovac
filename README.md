@@ -272,6 +272,7 @@ Both machines clone to `~/robots/rovac/`. The same tree is used on Mac and Pi.
 │       ├── rf2o_laser_odometry/        # Laser odometry
 │       └── vorwerk_lidar/              # Vorwerk LIDAR driver
 ├── robot_mcp_server/                   # MCP server (35+ tools)
+├── shared/                             # Syncthing-synced folder (Mac ↔ Pi, gitignored)
 ├── docs/                               # Documentation
 │   ├── architecture/                   # System architecture docs
 │   ├── phases/                         # Development phase docs
@@ -325,6 +326,47 @@ The robot exposes 35+ tools via MCP (Model Context Protocol) server at `http://1
 
 ### Navigation Tools
 `go_to_position`, `go_to_named_location`, `save_current_location`, `return_home`, `explore_and_map`, `save_map`, `load_map`
+
+## File Sharing (Syncthing)
+
+A **Syncthing** peer-to-peer sync folder at `~/robots/rovac/shared/` enables instant file sharing between the Mac and Pi over the local network. Drop a file into `shared/` on one machine, and it appears on the other within seconds.
+
+| Setting | Value |
+|---------|-------|
+| Tool | [Syncthing](https://syncthing.net/) (open source, P2P, TLS-encrypted) |
+| Folder | `~/robots/rovac/shared/` (same path on both machines) |
+| Folder ID | `rovac-shared` |
+| Sync mode | Send & Receive (bidirectional) |
+| Network | LAN-only (global discovery and relay disabled) |
+| Mac service | `brew services` (launchd: `homebrew.mxcl.syncthing`) |
+| Pi service | `systemctl --user` (`syncthing.service`, lingering enabled) |
+| Web UI | `http://127.0.0.1:8384` (localhost only, both machines) |
+
+### Usage
+
+```bash
+# Copy a file to the shared folder on Mac — appears on Pi in ~3 seconds
+cp ~/Downloads/model.onnx ~/robots/rovac/shared/
+
+# Check from Pi
+ssh pi 'ls ~/robots/rovac/shared/'
+
+# Check service status
+brew services list | grep syncthing            # Mac
+ssh pi 'systemctl --user status syncthing'     # Pi
+
+# Access web UI on Pi (via SSH tunnel)
+ssh -L 8384:127.0.0.1:8384 pi
+# Then open http://127.0.0.1:8384 in browser
+```
+
+### Notes
+
+- Files are **duplicated** on both machines (sync, not a network mount)
+- The `shared/` directory is in `.gitignore` — synced files are not tracked by git
+- `.stfolder` inside `shared/` is a Syncthing marker — do not delete it
+- If both sides edit the same file simultaneously, Syncthing creates a `.sync-conflict-*` copy
+- Deletions sync too — removing a file on one side removes it on the other
 
 ## Troubleshooting
 

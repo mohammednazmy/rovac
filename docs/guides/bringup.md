@@ -314,4 +314,5 @@ ssh pi 'sudo systemctl status rovac-edge-hiwonder.service'
 - If in doubt, reboot and follow **Normal Startup** again
 - Always use `--no-daemon` with `ros2` CLI commands on macOS to avoid CycloneDDS daemon hangs
 - LIDAR uses `/dev/esp32_lidar` (ESP32 bridge), not `/dev/ttyAMA0`
+- **Shared files:** `~/robots/rovac/shared/` is a Syncthing P2P sync folder between Mac and Pi. Drop files there to transfer between machines instantly (see README for details).
 - Keep this file updated when hardware or launch flow changes

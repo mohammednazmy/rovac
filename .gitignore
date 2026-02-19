@@ -80,3 +80,6 @@ yahboom/
 *.bak
 node_modules/
 .cache/
+
+# === Syncthing Shared Folder ===
+shared/
