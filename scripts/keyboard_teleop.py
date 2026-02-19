@@ -113,8 +113,12 @@ class TeleopControl(Node):
                 twist.angular.y = 0.0
                 twist.angular.z = control_angular_vel
 
-                # Always publish so PID stop commands get reinforced
-                self.cmd_vel.publish(twist)
+                # Official Hiwonder: only publish on change or while turning
+                if last_x != control_linear_vel or last_z != control_angular_vel or control_angular_vel != 0:
+                    self.cmd_vel.publish(twist)
+
+                last_x = control_linear_vel
+                last_z = control_angular_vel
         except BaseException as e:
             print(e)
         finally:
