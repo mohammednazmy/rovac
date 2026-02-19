@@ -34,8 +34,8 @@ else:
 if os.name != 'nt':
     settings = termios.tcgetattr(sys.stdin)
 
-LIN_VEL = 0.6   # Max before motor clipping (~3.0 RPS)
-ANG_VEL = 7.5   # Max turn speed (~3.0 RPS per wheel)
+LIN_VEL = 0.4   # ~2.0 RPS — strong but within PID comfort zone
+ANG_VEL = 4.0   # ~1.5 RPS per wheel — strong turns, PID stays stable
 
 MSG = """
 ---------------------------
@@ -116,8 +116,8 @@ class TeleopControl(Node):
                     last_key_time = 0.0
                     print('\r  ** STOP **                    ', end='', flush=True)
                 elif key == 'q':
-                    lin_vel = min(0.6, lin_vel + 0.05)
-                    ang_vel = min(7.5, ang_vel + 0.5)
+                    lin_vel = min(0.5, lin_vel + 0.05)
+                    ang_vel = min(5.0, ang_vel + 0.5)
                     print(f'\r  Speed: {lin_vel:.2f} m/s | {ang_vel:.2f} rad/s   ', end='', flush=True)
                 elif key == 'z':
                     lin_vel = max(0.05, lin_vel - 0.05)
