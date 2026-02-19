@@ -35,7 +35,7 @@ if os.name != 'nt':
     settings = termios.tcgetattr(sys.stdin)
 
 LIN_VEL = 0.2
-ANG_VEL = 0.5
+ANG_VEL = 2.0  # Needs to be high enough to overcome motor static friction
 
 MSG = """
 ---------------------------

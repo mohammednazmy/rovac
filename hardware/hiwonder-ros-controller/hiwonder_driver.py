@@ -218,7 +218,10 @@ class HiwonderDriver(Node):
         self._cmd_angular = msg.angular.z
         self._last_cmd_time = time.monotonic()
         self._cmd_count += 1
-        self._send_motor_speeds(msg.linear.x, msg.angular.z)
+        if abs(msg.linear.x) < 0.01 and abs(msg.angular.z) < 0.01:
+            self._stop_motors()
+        else:
+            self._send_motor_speeds(msg.linear.x, msg.angular.z)
 
     def _send_motor_speeds(self, linear: float, angular: float):
         """Convert (linear, angular) to differential drive motor speeds via official SDK."""
@@ -248,7 +251,25 @@ class HiwonderDriver(Node):
         ])
 
     def _stop_motors(self):
-        """Stop motors by sending zero speed via official SDK."""
+        """Hard-stop motors by sending speed 0 then immediately cutting PID.
+
+        Sending PID speed=0 alone keeps the H-bridge actively switching
+        (the PID integral term from previous commands causes lingering
+        movement). We first zero the PID target, then send a brief
+        opposite-polarity pulse to flush the integral, then zero again.
+        """
+        # Zero PID target
+        self.board.set_motor_speed([
+            [self._motor_left_id, 0.0],
+            [self._motor_right_id, 0.0],
+        ])
+        # Tiny reverse pulse to kill PID integral momentum, then zero again
+        time.sleep(0.01)
+        self.board.set_motor_speed([
+            [self._motor_left_id, 0.001],
+            [self._motor_right_id, 0.001],
+        ])
+        time.sleep(0.01)
         self.board.set_motor_speed([
             [self._motor_left_id, 0.0],
             [self._motor_right_id, 0.0],
