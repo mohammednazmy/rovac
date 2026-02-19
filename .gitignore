@@ -72,6 +72,10 @@ maps/*.pgm
 *.db3
 *.mcap
 
+# === Vendor Firmware Docs (large, not project code) ===
+hiwonder/
+yahboom/
+
 # === Misc Runtime ===
 *.bak
 node_modules/
