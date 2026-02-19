@@ -76,7 +76,6 @@ class TeleopControl(Node):
         control_angular_vel = 0.0
         last_x = 0
         last_z = 0
-        was_turning = False  # track if previous tick was a turn
 
         try:
             print(msg)
@@ -87,35 +86,20 @@ class TeleopControl(Node):
                 # w/s set linear (persists), a/d set angular (zeros on release)
                 if key == 'w':
                     control_linear_vel = -LIN_VEL  # negative = forward on ROVAC
-                    control_angular_vel = 0.0
-                    was_turning = False
                 elif key == 'a':
                     control_angular_vel = -ANG_VEL
                     control_linear_vel = 0.0
-                    was_turning = True
                 elif key == 'd':
                     control_angular_vel = ANG_VEL
                     control_linear_vel = 0.0
-                    was_turning = True
                 elif key == 's':
                     control_linear_vel = LIN_VEL   # positive = backward on ROVAC
-                    control_angular_vel = 0.0
-                    was_turning = False
                 elif key == ' ':
                     control_linear_vel = 0.0
                     control_angular_vel = 0.0
-                    was_turning = False
                 elif key == '':
-                    if was_turning:
-                        # Brake pulse: brief forward nudge to align PID states
-                        # before stopping. Opposite-direction PID integral from
-                        # turning causes residual drift; this resets it.
-                        control_linear_vel = -0.05  # small forward nudge
-                        control_angular_vel = 0.0
-                        was_turning = False  # next tick will send full stop
-                    else:
-                        control_linear_vel = 0.0
-                        control_angular_vel = 0.0
+                    control_linear_vel = 0.0
+                    control_angular_vel = 0.0
                 else:
                     if (key == '\x03'):
                         break
