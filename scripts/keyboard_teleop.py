@@ -1,61 +1,47 @@
 #!/usr/bin/env python3
 # encoding: utf-8
 """
-Keyboard Teleop — uses official Hiwonder teleop_key_control.py logic
-https://github.com/Hiwonder/LanderPi/blob/main/src/peripherals/peripherals/teleop_key_control.py
+Official Hiwonder teleop_key_control.py (LanderPi repo)
+Stripped of Ackermann servo code (not applicable to tank chassis).
 
-Adapted for ROVAC TANKBLACK chassis (differential drive):
-- Negative linear.x = forward on this chassis
-- Topic: /cmd_vel (official uses controller/cmd_vel)
-- Servo code removed (no steering servo)
-- Added space=stop, q/z=speed adjust
+Source: hiwonder/LanderPi/src/peripherals/peripherals/teleop_key_control.py
 
-Run on Mac: python3 ~/robots/rovac/scripts/keyboard_teleop.py
+Behavior (non-Ackermann, official):
+  w/s : forward/backward (PERSISTS after release)
+  a/d : turn left/right (stops on release)
+  space : full stop
+  CTRL-C : quit
 
-Controls:
-    w - Forward  (persists after release; driver watchdog stops after 0.5s)
-    s - Backward (persists after release)
-    a - Turn left  (stops on release)
-    d - Turn right (stops on release)
-    space - Full stop
-    q/z - Increase/decrease speed
-    CTRL-C - Quit
+Publishes to: controller/cmd_vel (bypasses app speed cap)
 """
-import sys
-import os
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 
+import sys, select, os
 if os.name == 'nt':
     import msvcrt, time
 else:
-    import tty, termios, select
+    import tty, termios
 
 if os.name != 'nt':
     settings = termios.tcgetattr(sys.stdin)
 
-LIN_VEL = 0.4
-ANG_VEL = 4.0
+LIN_VEL = 0.2
+ANG_VEL = 0.5
 
-MSG = """
+msg = """
+Control Your Robot!
 ---------------------------
-  ROVAC Keyboard Teleop
----------------------------
-  Controls:
+Moving around:
         w
    a    s    d
 
-  w/s : forward / backward (persists)
-  a/d : turn left / right (stops on release)
-  space : full stop
-  q/z : speed up / down
-  CTRL-C : quit
-
-  Speed: {lin:.2f} m/s | {ang:.2f} rad/s
----------------------------
+w/s persist after release (robot keeps moving)
+a/d stop on release
+space = full stop
+CTRL-C to quit
 """
-
 
 # Official Hiwonder getKey — unchanged
 def getKey(settings):
@@ -81,68 +67,57 @@ def getKey(settings):
     termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
     return key
 
-
 class TeleopControl(Node):
     def __init__(self, name):
         super().__init__(name)
-        self.cmd_vel = self.create_publisher(Twist, '/cmd_vel', 1)
+        self.cmd_vel = self.create_publisher(Twist, "controller/cmd_vel", 1)
 
     def run_control_loop(self):
-        lin_vel = LIN_VEL
-        ang_vel = ANG_VEL
         control_linear_vel = 0.0
         control_angular_vel = 0.0
-        last_x = 0.0
-        last_z = 0.0
+        last_x = 0
+        last_z = 0
 
         try:
-            print(MSG.format(lin=lin_vel, ang=ang_vel))
+            print(msg)
             while rclpy.ok():
                 key = getKey(settings)
 
-                # Official Hiwonder logic for non-Ackermann (differential drive):
-                # - w/s set linear, which PERSISTS after release
-                # - a/d set angular and zero linear
-                # - empty key zeros angular only (so turns stop on release)
+                # Official Hiwonder non-Ackermann logic:
+                # w/s set linear (persists), a/d set angular (zeros on release)
                 if key == 'w':
-                    control_linear_vel = -lin_vel   # negative = forward on TANKBLACK
-                elif key == 's':
-                    control_linear_vel = lin_vel     # positive = backward on TANKBLACK
+                    control_linear_vel = LIN_VEL
                 elif key == 'a':
-                    control_angular_vel = ang_vel
+                    control_angular_vel = ANG_VEL
                     control_linear_vel = 0.0
                 elif key == 'd':
-                    control_angular_vel = -ang_vel
+                    control_angular_vel = -ANG_VEL
                     control_linear_vel = 0.0
+                elif key == 's':
+                    control_linear_vel = -LIN_VEL
                 elif key == ' ':
                     control_linear_vel = 0.0
                     control_angular_vel = 0.0
-                    print('\r  ** STOP **                    ', end='', flush=True)
-                elif key == 'q':
-                    lin_vel = min(0.5, lin_vel + 0.05)
-                    ang_vel = min(5.0, ang_vel + 0.5)
-                    print(f'\r  Speed: {lin_vel:.2f} m/s | {ang_vel:.2f} rad/s   ', end='', flush=True)
-                elif key == 'z':
-                    lin_vel = max(0.05, lin_vel - 0.05)
-                    ang_vel = max(0.5, ang_vel - 0.5)
-                    print(f'\r  Speed: {lin_vel:.2f} m/s | {ang_vel:.2f} rad/s   ', end='', flush=True)
                 elif key == '':
-                    # Official Hiwonder: only zero angular on empty key
-                    # Linear persists — driver watchdog stops after 0.5s of no messages
                     control_angular_vel = 0.0
-                elif key == '\x03':
-                    break
+                else:
+                    if (key == '\x03'):
+                        break
 
-                # Official Hiwonder: only publish when values change
+                twist = Twist()
+                twist.linear.x = control_linear_vel
+                twist.linear.y = 0.0
+                twist.linear.z = 0.0
+                twist.angular.x = 0.0
+                twist.angular.y = 0.0
+                twist.angular.z = control_angular_vel
+
+                # Official Hiwonder: only publish on change or while turning
                 if last_x != control_linear_vel or last_z != control_angular_vel or control_angular_vel != 0:
-                    twist = Twist()
-                    twist.linear.x = control_linear_vel
-                    twist.angular.z = control_angular_vel
                     self.cmd_vel.publish(twist)
 
                 last_x = control_linear_vel
                 last_z = control_angular_vel
-
         except BaseException as e:
             print(e)
         finally:
@@ -150,23 +125,14 @@ class TeleopControl(Node):
             twist.linear.x = 0.0
             twist.angular.z = 0.0
             self.cmd_vel.publish(twist)
-            print('\n  Stopped. Bye.')
+
             if os.name != 'nt':
                 termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
 
-
 def main():
     rclpy.init()
-    node = TeleopControl('keyboard_teleop')
-    try:
-        node.run_control_loop()
-    finally:
-        node.destroy_node()
-        try:
-            rclpy.shutdown()
-        except Exception:
-            pass
+    node = TeleopControl('teleop_control')
+    node.run_control_loop()
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
