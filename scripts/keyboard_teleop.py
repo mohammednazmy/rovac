@@ -1,41 +1,42 @@
 #!/usr/bin/env python3
 # encoding: utf-8
 """
-Keyboard Teleop — based on official Hiwonder teleop_key_control.py
+Keyboard Teleop — uses official Hiwonder teleop_key_control.py logic
 https://github.com/Hiwonder/LanderPi/blob/main/src/peripherals/peripherals/teleop_key_control.py
 
-Adapted for ROVAC TANKBLACK chassis (differential drive).
+Adapted for ROVAC TANKBLACK chassis (differential drive):
+- Negative linear.x = forward on this chassis
+- Topic: /cmd_vel (official uses controller/cmd_vel)
+- Servo code removed (no steering servo)
+- Added space=stop, q/z=speed adjust
+
 Run on Mac: python3 ~/robots/rovac/scripts/keyboard_teleop.py
 
 Controls:
-    w - Forward
-    s - Backward
-    a - Turn left
-    d - Turn right
-    (release key to stop turning; forward/back persists until s or space)
+    w - Forward  (persists after release; driver watchdog stops after 0.5s)
+    s - Backward (persists after release)
+    a - Turn left  (stops on release)
+    d - Turn right (stops on release)
     space - Full stop
     q/z - Increase/decrease speed
     CTRL-C - Quit
 """
 import sys
 import os
-import time
-import select
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 
 if os.name == 'nt':
-    import msvcrt
+    import msvcrt, time
 else:
-    import tty
-    import termios
+    import tty, termios, select
 
 if os.name != 'nt':
     settings = termios.tcgetattr(sys.stdin)
 
-LIN_VEL = 0.4   # ~2.0 RPS — strong but within PID comfort zone
-ANG_VEL = 4.0   # ~1.5 RPS per wheel — strong turns, PID stays stable
+LIN_VEL = 0.4
+ANG_VEL = 4.0
 
 MSG = """
 ---------------------------
@@ -45,9 +46,9 @@ MSG = """
         w
    a    s    d
 
-  w/s : forward / backward
-  a/d : turn left / right
-  space : stop
+  w/s : forward / backward (persists)
+  a/d : turn left / right (stops on release)
+  space : full stop
   q/z : speed up / down
   CTRL-C : quit
 
@@ -56,17 +57,22 @@ MSG = """
 """
 
 
+# Official Hiwonder getKey — unchanged
 def getKey(settings):
     if os.name == 'nt':
+        timeout = 0.1
         startTime = time.time()
         while True:
             if msvcrt.kbhit():
-                return msvcrt.getch().decode()
-            elif time.time() - startTime > 0.05:
+                if sys.version_info[0] >= 3:
+                    return msvcrt.getch().decode()
+                else:
+                    return msvcrt.getch()
+            elif time.time() - startTime > timeout:
                 return ''
 
     tty.setraw(sys.stdin.fileno())
-    rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
+    rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
     if rlist:
         key = sys.stdin.read(1)
     else:
@@ -86,34 +92,31 @@ class TeleopControl(Node):
         ang_vel = ANG_VEL
         control_linear_vel = 0.0
         control_angular_vel = 0.0
-        last_key_time = 0.0       # When we last saw a movement key
-        release_delay = 0.3       # Seconds of no input before we consider key released
-                                  # Must be longer than macOS key repeat initial delay gap
+        last_x = 0.0
+        last_z = 0.0
 
         try:
             print(MSG.format(lin=lin_vel, ang=ang_vel))
             while rclpy.ok():
                 key = getKey(settings)
-                now = time.time()
 
-                if key in ('w', 's', 'a', 'd'):
-                    last_key_time = now
-                    if key == 'w':
-                        control_linear_vel = -lin_vel
-                        control_angular_vel = 0.0
-                    elif key == 's':
-                        control_linear_vel = lin_vel
-                        control_angular_vel = 0.0
-                    elif key == 'a':
-                        control_linear_vel = 0.0
-                        control_angular_vel = ang_vel
-                    elif key == 'd':
-                        control_linear_vel = 0.0
-                        control_angular_vel = -ang_vel
+                # Official Hiwonder logic for non-Ackermann (differential drive):
+                # - w/s set linear, which PERSISTS after release
+                # - a/d set angular and zero linear
+                # - empty key zeros angular only (so turns stop on release)
+                if key == 'w':
+                    control_linear_vel = -lin_vel   # negative = forward on TANKBLACK
+                elif key == 's':
+                    control_linear_vel = lin_vel     # positive = backward on TANKBLACK
+                elif key == 'a':
+                    control_angular_vel = ang_vel
+                    control_linear_vel = 0.0
+                elif key == 'd':
+                    control_angular_vel = -ang_vel
+                    control_linear_vel = 0.0
                 elif key == ' ':
                     control_linear_vel = 0.0
                     control_angular_vel = 0.0
-                    last_key_time = 0.0
                     print('\r  ** STOP **                    ', end='', flush=True)
                 elif key == 'q':
                     lin_vel = min(0.5, lin_vel + 0.05)
@@ -124,22 +127,21 @@ class TeleopControl(Node):
                     ang_vel = max(0.5, ang_vel - 0.5)
                     print(f'\r  Speed: {lin_vel:.2f} m/s | {ang_vel:.2f} rad/s   ', end='', flush=True)
                 elif key == '':
-                    # No key available — only zero velocity if enough time
-                    # has passed since last key (longer than key repeat gap)
-                    if last_key_time > 0 and (now - last_key_time) > release_delay:
-                        control_linear_vel = 0.0
-                        control_angular_vel = 0.0
-                        last_key_time = 0.0
+                    # Official Hiwonder: only zero angular on empty key
+                    # Linear persists — driver watchdog stops after 0.5s of no messages
+                    control_angular_vel = 0.0
                 elif key == '\x03':
                     break
 
-                twist = Twist()
-                twist.linear.x = control_linear_vel
-                twist.angular.z = control_angular_vel
+                # Official Hiwonder: only publish when values change
+                if last_x != control_linear_vel or last_z != control_angular_vel or control_angular_vel != 0:
+                    twist = Twist()
+                    twist.linear.x = control_linear_vel
+                    twist.angular.z = control_angular_vel
+                    self.cmd_vel.publish(twist)
 
-                # Always publish — driver watchdog stops motors if no
-                # cmd_vel arrives for 0.5s, so we must keep sending.
-                self.cmd_vel.publish(twist)
+                last_x = control_linear_vel
+                last_z = control_angular_vel
 
         except BaseException as e:
             print(e)
