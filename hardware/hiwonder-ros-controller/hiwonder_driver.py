@@ -251,29 +251,16 @@ class HiwonderDriver(Node):
         ])
 
     def _stop_motors(self):
-        """Hard-stop motors by sending speed 0 then immediately cutting PID.
+        """Stop motors using firmware motor-off command (sub-cmd 0x03).
 
-        Sending PID speed=0 alone keeps the H-bridge actively switching
-        (the PID integral term from previous commands causes lingering
-        movement). We first zero the PID target, then send a brief
-        opposite-polarity pulse to flush the integral, then zero again.
+        PID speed=0 (sub-cmd 0x01) keeps the PID loop active — the
+        accumulated integral term causes lingering movement. Sub-cmd
+        0x03 is the RRCLite firmware's motor-off command that fully
+        disengages the H-bridge, bypassing PID entirely.
         """
-        # Zero PID target
-        self.board.set_motor_speed([
-            [self._motor_left_id, 0.0],
-            [self._motor_right_id, 0.0],
-        ])
-        # Tiny reverse pulse to kill PID integral momentum, then zero again
-        time.sleep(0.01)
-        self.board.set_motor_speed([
-            [self._motor_left_id, 0.001],
-            [self._motor_right_id, 0.001],
-        ])
-        time.sleep(0.01)
-        self.board.set_motor_speed([
-            [self._motor_left_id, 0.0],
-            [self._motor_right_id, 0.0],
-        ])
+        # Sub-cmd 0x03, motor mask: bit0=M1, bit1=M2 → 0x03 = both
+        from ros_robot_controller_sdk import PacketFunction
+        self.board.buf_write(PacketFunction.PACKET_FUNC_MOTOR, bytes([0x03, 0x03]))
 
     # -----------------------------------------------------------------
     # Watchdog — stop motors if no cmd_vel received
