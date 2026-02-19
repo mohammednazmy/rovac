@@ -19,6 +19,7 @@ Controls:
 """
 import sys
 import os
+import time
 import select
 import rclpy
 from rclpy.node import Node
@@ -26,7 +27,6 @@ from geometry_msgs.msg import Twist
 
 if os.name == 'nt':
     import msvcrt
-    import time
 else:
     import tty
     import termios
@@ -58,19 +58,15 @@ MSG = """
 
 def getKey(settings):
     if os.name == 'nt':
-        timeout = 0.1
         startTime = time.time()
         while True:
             if msvcrt.kbhit():
-                if sys.version_info[0] >= 3:
-                    return msvcrt.getch().decode()
-                else:
-                    return msvcrt.getch()
-            elif time.time() - startTime > timeout:
+                return msvcrt.getch().decode()
+            elif time.time() - startTime > 0.05:
                 return ''
 
     tty.setraw(sys.stdin.fileno())
-    rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+    rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
     if rlist:
         key = sys.stdin.read(1)
     else:
@@ -90,23 +86,34 @@ class TeleopControl(Node):
         ang_vel = ANG_VEL
         control_linear_vel = 0.0
         control_angular_vel = 0.0
+        last_key_time = 0.0       # When we last saw a movement key
+        release_delay = 0.3       # Seconds of no input before we consider key released
+                                  # Must be longer than macOS key repeat initial delay gap
 
         try:
             print(MSG.format(lin=lin_vel, ang=ang_vel))
             while rclpy.ok():
                 key = getKey(settings)
+                now = time.time()
 
-                if key == 'w':
-                    control_linear_vel = -lin_vel
-                elif key == 's':
-                    control_linear_vel = lin_vel
-                elif key == 'a':
-                    control_angular_vel = ang_vel
-                elif key == 'd':
-                    control_angular_vel = -ang_vel
+                if key in ('w', 's', 'a', 'd'):
+                    last_key_time = now
+                    if key == 'w':
+                        control_linear_vel = -lin_vel
+                        control_angular_vel = 0.0
+                    elif key == 's':
+                        control_linear_vel = lin_vel
+                        control_angular_vel = 0.0
+                    elif key == 'a':
+                        control_linear_vel = 0.0
+                        control_angular_vel = ang_vel
+                    elif key == 'd':
+                        control_linear_vel = 0.0
+                        control_angular_vel = -ang_vel
                 elif key == ' ':
                     control_linear_vel = 0.0
                     control_angular_vel = 0.0
+                    last_key_time = 0.0
                     print('\r  ** STOP **                    ', end='', flush=True)
                 elif key == 'q':
                     lin_vel = min(1.0, lin_vel + 0.05)
@@ -117,9 +124,12 @@ class TeleopControl(Node):
                     ang_vel = max(0.1, ang_vel - 0.1)
                     print(f'\r  Speed: {lin_vel:.2f} m/s | {ang_vel:.2f} rad/s   ', end='', flush=True)
                 elif key == '':
-                    # No key pressed — stop everything
-                    control_linear_vel = 0.0
-                    control_angular_vel = 0.0
+                    # No key available — only zero velocity if enough time
+                    # has passed since last key (longer than key repeat gap)
+                    if last_key_time > 0 and (now - last_key_time) > release_delay:
+                        control_linear_vel = 0.0
+                        control_angular_vel = 0.0
+                        last_key_time = 0.0
                 elif key == '\x03':
                     break
 
