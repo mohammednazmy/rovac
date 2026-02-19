@@ -86,7 +86,7 @@ class TeleopControl(Node):
                 # Official Hiwonder non-Ackermann logic:
                 # w/s set linear (persists), a/d set angular (zeros on release)
                 if key == 'w':
-                    control_linear_vel = LIN_VEL
+                    control_linear_vel = -LIN_VEL  # negative = forward on ROVAC
                 elif key == 'a':
                     control_angular_vel = ANG_VEL
                     control_linear_vel = 0.0
@@ -94,7 +94,7 @@ class TeleopControl(Node):
                     control_angular_vel = -ANG_VEL
                     control_linear_vel = 0.0
                 elif key == 's':
-                    control_linear_vel = -LIN_VEL
+                    control_linear_vel = LIN_VEL   # positive = backward on ROVAC
                 elif key == ' ':
                     control_linear_vel = 0.0
                     control_angular_vel = 0.0
