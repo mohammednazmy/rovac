@@ -99,6 +99,7 @@ class TeleopControl(Node):
                     control_linear_vel = 0.0
                     control_angular_vel = 0.0
                 elif key == '':
+                    control_linear_vel = 0.0
                     control_angular_vel = 0.0
                 else:
                     if (key == '\x03'):
