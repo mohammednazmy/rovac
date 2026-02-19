@@ -76,6 +76,7 @@ class TeleopControl(Node):
         control_angular_vel = 0.0
         last_x = 0
         last_z = 0
+        empty_ticks = 0  # consecutive '' ticks for debounce
 
         try:
             print(msg)
@@ -86,20 +87,32 @@ class TeleopControl(Node):
                 # w/s set linear (persists), a/d set angular (zeros on release)
                 if key == 'w':
                     control_linear_vel = -LIN_VEL  # negative = forward on ROVAC
+                    control_angular_vel = 0.0
+                    empty_ticks = 0
                 elif key == 'a':
                     control_angular_vel = -ANG_VEL
                     control_linear_vel = 0.0
+                    empty_ticks = 0
                 elif key == 'd':
                     control_angular_vel = ANG_VEL
                     control_linear_vel = 0.0
+                    empty_ticks = 0
                 elif key == 's':
                     control_linear_vel = LIN_VEL   # positive = backward on ROVAC
+                    control_angular_vel = 0.0
+                    empty_ticks = 0
                 elif key == ' ':
                     control_linear_vel = 0.0
                     control_angular_vel = 0.0
+                    empty_ticks = 0
                 elif key == '':
+                    empty_ticks += 1
                     control_linear_vel = 0.0
-                    control_angular_vel = 0.0
+                    # Only zero angular after 2+ consecutive empty ticks (~200ms).
+                    # Single-tick gaps from key repeat don't trigger a stop,
+                    # preventing turn/stop alternation that confuses motor PID.
+                    if empty_ticks >= 2:
+                        control_angular_vel = 0.0
                 else:
                     if (key == '\x03'):
                         break
