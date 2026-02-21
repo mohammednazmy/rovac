@@ -1,0 +1,28 @@
+[Unit]
+Description=ROVAC BST-4WD Motor Driver (TB6612FNG + Nano Encoder Bridge)
+After=network.target dev-encoder_bridge.device
+PartOf=rovac-edge.target
+Before=rovac-edge-mux.service rovac-edge-obstacle.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/home/pi/robots/rovac/hardware/yahboom-bst-4wd-expansion-board
+
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
+
+ExecStart=/home/pi/robots/rovac/hardware/yahboom-bst-4wd-expansion-board/launch_bst4wd.sh
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rovac-bst4wd
+
+MemoryMax=256M
+CPUQuota=50%
+
+[Install]
+WantedBy=rovac-edge.target
