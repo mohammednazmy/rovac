@@ -97,18 +97,18 @@ start_pi_edge() {
             return 0
         fi
         log_error "Failed to start Pi edge stack via systemd"
-        log_error "Check: ssh $PI_HOST 'systemctl --no-pager -l status rovac-edge.target rovac-edge-yahboom.service rovac-edge-mux.service rovac-edge-tf.service'"
+        log_error "Check: ssh $PI_HOST 'systemctl --no-pager -l status rovac-edge.target rovac-edge-bst4wd.service rovac-edge-mux.service rovac-edge-tf.service'"
         return 1
     fi
     
-    # Note: "yahboom node running" does NOT imply the whole edge stack is healthy.
-    # We need yahboom + mux + tf for full controller functionality (drive + transforms).
-    local yahboom_running=0
+    # Note: "bst4wd driver running" does NOT imply the whole edge stack is healthy.
+    # We need bst4wd + mux + tf for full controller functionality (drive + transforms).
+    local bst4wd_running=0
     local mux_running=0
     local tf_running=0
 
-    if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "pgrep -f 'yahboom_ros2_node\\.py' >/dev/null" 2>/dev/null; then
-        yahboom_running=1
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "pgrep -f 'bst4wd_driver\\.py' >/dev/null" 2>/dev/null; then
+        bst4wd_running=1
     fi
     if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "pgrep -f 'cmd_vel_mux' >/dev/null" 2>/dev/null; then
         mux_running=1
@@ -117,26 +117,26 @@ start_pi_edge() {
         tf_running=1
     fi
 
-    if [ "$yahboom_running" = "1" ] && [ "$mux_running" = "1" ] && [ "$tf_running" = "1" ]; then
-        log_info "Pi edge stack already running (yahboom + mux + tf)"
+    if [ "$bst4wd_running" = "1" ] && [ "$mux_running" = "1" ] && [ "$tf_running" = "1" ]; then
+        log_info "Pi edge stack already running (bst4wd + mux + tf)"
         return 0
     fi
 
     log_warn "Pi edge stack partially running:"
-    [ "$yahboom_running" = "1" ] && echo "  [+] yahboom_board_node" || echo "  [-] yahboom_board_node"
+    [ "$bst4wd_running" = "1" ] && echo "  [+] bst4wd_driver" || echo "  [-] bst4wd_driver"
     [ "$mux_running" = "1" ] && echo "  [+] cmd_vel_mux" || echo "  [-] cmd_vel_mux"
     [ "$tf_running" = "1" ] && echo "  [+] robot_state_publisher" || echo "  [-] robot_state_publisher"
 
     # If nothing is up, try starting the systemd target as a fallback.
-    if [ "$yahboom_running" = "0" ] && [ "$mux_running" = "0" ] && [ "$tf_running" = "0" ]; then
+    if [ "$bst4wd_running" = "0" ] && [ "$mux_running" = "0" ] && [ "$tf_running" = "0" ]; then
         log_info "Starting Pi edge stack via systemd target..."
         ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" \
             "sudo systemctl start rovac-edge.target" 2>/dev/null || true
     else
         log_info "Starting missing Pi edge components via systemd..."
-        if [ "$yahboom_running" = "0" ]; then
+        if [ "$bst4wd_running" = "0" ]; then
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" \
-                "sudo systemctl start rovac-edge-yahboom.service" 2>/dev/null || true
+                "sudo systemctl start rovac-edge-bst4wd.service" 2>/dev/null || true
         fi
         if [ "$mux_running" = "0" ]; then
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" \
@@ -152,11 +152,11 @@ start_pi_edge() {
     sleep 3
 
     # Verify it started
-    if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "pgrep -f 'yahboom_ros2_node\\.py' >/dev/null" 2>/dev/null; then
-        log_info "Pi edge yahboom board node running"
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "pgrep -f 'bst4wd_driver\\.py' >/dev/null" 2>/dev/null; then
+        log_info "Pi edge bst4wd driver running"
     else
         log_error "Failed to start Pi edge stack"
-        log_error "Check logs: ssh $PI_HOST 'sudo journalctl -u rovac-edge-yahboom -n 50 --no-pager'"
+        log_error "Check logs: ssh $PI_HOST 'sudo journalctl -u rovac-edge-bst4wd -n 50 --no-pager'"
         return 1
     fi
 }
@@ -260,7 +260,7 @@ topics = [t for t, _ in node.get_topic_names_and_types()]
 node.destroy_node()
 rclpy.shutdown()
 
-required = ['/imu/data', '/cmd_vel_joy', '/tank/joy']
+required = ['/cmd_vel_joy', '/tank/joy', '/odom']
 found = []
 missing = []
 for t in required:
@@ -274,28 +274,19 @@ for t in found:
     print(f'  [+] {t}')
 for t in missing:
     print(f'  [-] {t}')
-
-if '/odom' in topics:
-    print('  [+] /odom')
-else:
-    print('  [-] /odom (optional)')
-if '/battery_voltage' in topics:
-    print('  [+] /battery_voltage')
-else:
-    print('  [-] /battery_voltage (optional)')
 " 2>&1 | grep -v -E "selected interface|deprecated|localhost_only"
 
     # Quick Pi health checks (ensure non-drive controls can work)
     if check_pi 2>/dev/null; then
         if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "systemctl cat rovac-edge.target >/dev/null 2>&1"; then
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "
-                systemctl is-active --quiet rovac-edge-yahboom.service && echo '  [+] Pi yahboom service active' || echo '  [-] Pi yahboom service NOT active'
+                systemctl is-active --quiet rovac-edge-bst4wd.service && echo '  [+] Pi bst4wd service active' || echo '  [-] Pi bst4wd service NOT active'
                 systemctl is-active --quiet rovac-edge-mux.service && echo '  [+] Pi cmd_vel_mux service active' || echo '  [-] Pi cmd_vel_mux service NOT active'
                 systemctl is-active --quiet rovac-edge-tf.service && echo '  [+] Pi TF publisher active' || echo '  [-] Pi TF publisher NOT active'
             " 2>/dev/null || true
         else
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "
-                pgrep -f 'yahboom_ros2_node\\.py' >/dev/null && echo '  [+] Pi yahboom node running' || echo '  [-] Pi yahboom node NOT running'
+                pgrep -f 'bst4wd_driver\\.py' >/dev/null && echo '  [+] Pi bst4wd driver running' || echo '  [-] Pi bst4wd driver NOT running'
                 pgrep -f 'cmd_vel_mux' >/dev/null && echo '  [+] Pi cmd_vel_mux running' || echo '  [-] Pi cmd_vel_mux NOT running'
             " 2>/dev/null || true
         fi
@@ -350,7 +341,7 @@ stop_all() {
                 ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "sudo systemctl stop rovac-edge.target" 2>/dev/null || true
             else
                 ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "
-                    pkill -f 'yahboom_ros2_node' 2>/dev/null || true
+                    pkill -f 'bst4wd_driver' 2>/dev/null || true
                     pkill -f 'robot_state_publisher' 2>/dev/null || true
                     pkill -f 'cmd_vel_mux' 2>/dev/null || true
                     pkill -f 'super_sensor_ros2_node' 2>/dev/null || true
@@ -382,7 +373,7 @@ show_status() {
         if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "systemctl cat rovac-edge.target >/dev/null 2>&1"; then
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "
                 systemctl is-active --quiet rovac-edge.target && echo '  [+] rovac-edge.target (systemd)' || echo '  [-] rovac-edge.target (systemd)'
-                systemctl is-active --quiet rovac-edge-yahboom.service && echo '  [+] yahboom (systemd)' || echo '  [-] yahboom (systemd)'
+                systemctl is-active --quiet rovac-edge-bst4wd.service && echo '  [+] bst4wd (systemd)' || echo '  [-] bst4wd (systemd)'
                 systemctl is-active --quiet rovac-edge-tf.service && echo '  [+] tf (systemd)' || echo '  [-] tf (systemd)'
                 systemctl is-active --quiet rovac-edge-mux.service && echo '  [+] mux (systemd)' || echo '  [-] mux (systemd)'
                 systemctl is-active --quiet rovac-edge-lidar.service && echo '  [+] lidar (systemd)' || echo '  [-] lidar (systemd)'
@@ -390,7 +381,7 @@ show_status() {
             " 2>/dev/null || true
         else
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "
-                pgrep -f 'yahboom_ros2_node' >/dev/null && echo '  [+] yahboom_board_node' || echo '  [-] yahboom_board_node'
+                pgrep -f 'bst4wd_driver' >/dev/null && echo '  [+] bst4wd_driver' || echo '  [-] bst4wd_driver'
                 pgrep -f 'robot_state_publisher' >/dev/null && echo '  [+] robot_state_publisher' || echo '  [-] robot_state_publisher'
                 pgrep -f 'cmd_vel_mux' >/dev/null && echo '  [+] cmd_vel_mux' || echo '  [-] cmd_vel_mux'
             " 2>/dev/null || echo "  [!] Cannot connect to Pi"
@@ -409,7 +400,7 @@ time.sleep(2)
 topics = sorted([t for t, _ in node.get_topic_names_and_types()])
 node.destroy_node()
 rclpy.shutdown()
-key_topics = ['/imu/data', '/cmd_vel_joy', '/tank/joy', '/odom', '/battery_voltage']
+key_topics = ['/cmd_vel_joy', '/tank/joy', '/odom', '/cmd_vel']
 for t in key_topics:
     if t in topics:
         print(f'  [+] {t}')

@@ -56,13 +56,9 @@ class ObstacleAvoidanceNode(Node):
             self.ranges_callback, 10
         )
         
-        self.cmd_vel_sub = self.create_subscription(
-            Twist, "/cmd_vel_input",
-            self.cmd_vel_callback, 10
-        )
-
         # Publishers
-        self.cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel", 10)
+        # Publish to /cmd_vel_obstacle so the mux can prioritize emergency stops
+        self.cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel_obstacle", 10)
         
         if self.enable_costmap:
             self.points_pub = self.create_publisher(
@@ -99,52 +95,6 @@ class ObstacleAvoidanceNode(Node):
             # Publish point cloud for costmap
             if self.enable_costmap:
                 self.publish_obstacle_points()
-
-    def cmd_vel_callback(self, msg):
-        """Process incoming velocity command with obstacle avoidance."""
-        safe_vel = self.apply_obstacle_avoidance(msg)
-        self.cmd_vel_pub.publish(safe_vel)
-
-    def apply_obstacle_avoidance(self, cmd):
-        """Apply obstacle avoidance to velocity command."""
-        safe_cmd = Twist()
-        safe_cmd.linear.x = cmd.linear.x
-        safe_cmd.linear.y = cmd.linear.y
-        safe_cmd.linear.z = cmd.linear.z
-        safe_cmd.angular.x = cmd.angular.x
-        safe_cmd.angular.y = cmd.angular.y
-        safe_cmd.angular.z = cmd.angular.z
-
-        # Emergency stop
-        if self.emergency_stop:
-            if safe_cmd.linear.x > 0:
-                safe_cmd.linear.x = 0.0
-                self.get_logger().warn("EMERGENCY STOP - obstacle too close!")
-            return safe_cmd
-
-        # Check directional obstacles
-        front_min = min(self.current_ranges[0], self.current_ranges[3])
-        front_clear = front_min > self.slow_down_dist
-        left_clear = self.current_ranges[1] > self.slow_down_dist
-        right_clear = self.current_ranges[2] > self.slow_down_dist
-
-        # Speed reduction based on proximity
-        if not front_clear and safe_cmd.linear.x > 0:
-            if front_min < self.emergency_stop_dist:
-                speed_factor = 0.0
-            else:
-                speed_factor = (front_min - self.emergency_stop_dist) / \
-                              (self.slow_down_dist - self.emergency_stop_dist)
-                speed_factor = max(self.min_speed_factor, min(1.0, speed_factor))
-            safe_cmd.linear.x *= speed_factor
-
-        # Side obstacle avoidance
-        if not left_clear and safe_cmd.linear.x > 0:
-            safe_cmd.angular.z -= 0.2
-        if not right_clear and safe_cmd.linear.x > 0:
-            safe_cmd.angular.z += 0.2
-
-        return safe_cmd
 
     def publish_obstacle_points(self):
         """Publish ultrasonic readings as PointCloud2 for costmap."""
@@ -183,7 +133,10 @@ class ObstacleAvoidanceNode(Node):
         self.points_pub.publish(msg)
 
     def update_callback(self):
-        """Periodic LED status update."""
+        """Periodic safety check: publish zero velocity on emergency stop."""
+        if self.emergency_stop:
+            self.cmd_vel_pub.publish(Twist())
+
         if self.enable_led:
             led_msg = Int32MultiArray()
             

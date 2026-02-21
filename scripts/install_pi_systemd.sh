@@ -42,14 +42,12 @@ remote_install_if_missing() {
 }
 
 check_hardware_notes() {
-  # Verify Hiwonder board is detected
+  # Verify encoder bridge (Arduino Nano) is detected
   ssh "$PI_HOST" "
-    if [ -e /dev/hiwonder_board ]; then
-      echo '  [+] Hiwonder board detected at /dev/hiwonder_board'
-    elif [ -e /dev/ttyACM0 ]; then
-      echo '  [!] /dev/ttyACM0 found but /dev/hiwonder_board symlink missing (check udev rules)'
+    if [ -e /dev/encoder_bridge ]; then
+      echo '  [+] Encoder bridge detected at /dev/encoder_bridge'
     else
-      echo '  [!] No Hiwonder board detected (no /dev/ttyACM0 or /dev/hiwonder_board)'
+      echo '  [!] No encoder bridge detected (no /dev/encoder_bridge — check Nano USB + udev rules)'
     fi
   " 2>/dev/null || true
 }
@@ -70,7 +68,7 @@ install_units() {
   fi
 
   remote_sudo_install "/etc/systemd/system/rovac-edge.target" "$UNIT_DIR/rovac-edge.target"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-hiwonder.service" "$UNIT_DIR/rovac-edge-hiwonder.service"
+  remote_sudo_install "/etc/systemd/system/rovac-edge-bst4wd.service" "$UNIT_DIR/rovac-edge-bst4wd.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-mux.service" "$UNIT_DIR/rovac-edge-mux.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-tf.service" "$UNIT_DIR/rovac-edge-tf.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-lidar.service" "$UNIT_DIR/rovac-edge-lidar.service"
@@ -92,8 +90,8 @@ install_units() {
   # Stop any ad-hoc instances to avoid duplicates (safe if already stopped).
   ssh "$PI_HOST" "
     sudo systemctl stop rovac-edge.target 2>/dev/null || true
-    sudo systemctl stop rovac-edge-hiwonder.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-lidar.service rovac-edge-supersensor.service rovac-edge-obstacle.service rovac-camera.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service 2>/dev/null || true
-    pkill -f 'hiwonder_driver\\.py' 2>/dev/null || true
+    sudo systemctl stop rovac-edge-bst4wd.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-lidar.service rovac-edge-supersensor.service rovac-edge-obstacle.service rovac-camera.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service 2>/dev/null || true
+    pkill -f 'bst4wd_driver\\.py' 2>/dev/null || true
     pkill -f 'cmd_vel_mux\\.py' 2>/dev/null || true
     pkill -f 'xv11_lidar' 2>/dev/null || true
     pkill -f 'scrcpy --video-source=camera' 2>/dev/null || true
@@ -112,7 +110,7 @@ show_status() {
     systemctl is-enabled rovac-edge.target 2>/dev/null || true
     systemctl is-active rovac-edge.target 2>/dev/null || true
     echo
-    systemctl --no-pager -l status rovac-edge.target rovac-edge-hiwonder.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-lidar.service rovac-edge-supersensor.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service || true
+    systemctl --no-pager -l status rovac-edge.target rovac-edge-bst4wd.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-lidar.service rovac-edge-supersensor.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service || true
   "
 }
 
@@ -124,8 +122,9 @@ uninstall_units() {
   echo "Disabling and removing units from $PI_HOST..."
   ssh "$PI_HOST" "
     sudo systemctl disable --now rovac-edge.target 2>/dev/null || true
-    sudo systemctl disable --now rovac-edge-hiwonder.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-lidar.service rovac-edge-supersensor.service rovac-edge-obstacle.service rovac-edge-map-tf.service rovac-edge-stereo-depth.service rovac-edge-stereo-obstacle.service rovac-edge-phone-sensors.service rovac-phone-cameras.service rovac-camera.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service 2>/dev/null || true
+    sudo systemctl disable --now rovac-edge-bst4wd.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-lidar.service rovac-edge-supersensor.service rovac-edge-obstacle.service rovac-edge-map-tf.service rovac-edge-stereo-depth.service rovac-edge-stereo-obstacle.service rovac-edge-phone-sensors.service rovac-phone-cameras.service rovac-camera.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service 2>/dev/null || true
     sudo rm -f /etc/systemd/system/rovac-edge.target
+    sudo rm -f /etc/systemd/system/rovac-edge-bst4wd.service
     sudo rm -f /etc/systemd/system/rovac-edge-hiwonder.service
     sudo rm -f /etc/systemd/system/rovac-edge-mux.service
     sudo rm -f /etc/systemd/system/rovac-edge-tf.service

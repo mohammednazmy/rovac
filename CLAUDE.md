@@ -62,10 +62,7 @@ ssh pi 'sudo systemctl status rovac-edge.target'
 |-------|------|-------------|
 | `/scan` | LaserScan | XV11 LIDAR (360 ranges, ~2.8 Hz) — currently disconnected |
 | `/sensors/ultrasonic/range` | Range | HC-SR04 distance |
-| `/imu/data` | Imu | QMI8658 IMU (accel + gyro, 6-axis, ~72 Hz) — no magnetometer |
-| `/odom` | Odometry | Dead-reckoning from commanded speeds + IMU gyro Z (20 Hz) |
-| `/battery_voltage` | Float32 | Battery voltage (V) |
-| `/diagnostics` | DiagnosticArray | Board health diagnostics (1 Hz) |
+| `/odom` | Odometry | Dead-reckoning from encoder ticks + commanded speeds (20 Hz) |
 | `/phone/camera/image_raw` | Image | Phone camera (640x480 BGR8) |
 | `/cmd_vel_joy` | Twist | Joystick velocity commands |
 
@@ -94,16 +91,16 @@ ssh pi 'sudo systemctl status rovac-edge.target'
 
 | Component | Details |
 |-----------|---------|
-| Motor/IMU Board | Hiwonder ROS Robot Controller V1.2 (STM32F407VET6, USB serial `/dev/hiwonder_board`, CH9102 `1a86:55d4`, baud 1000000) |
+| Motor Driver Board | Yahboom BST-4WD V4.5 (TB6612FNG dual H-bridge, GPIO HAT — no microcontroller). Left: AIN2=GPIO20 fwd, AIN1=GPIO21 rev, PWMA=GPIO16. Right: BIN2=GPIO19 fwd, BIN1=GPIO26 rev, PWMB=GPIO13. |
+| Encoder Bridge | Arduino Nano V3.0 (ATmega328P + CH340) at `/dev/encoder_bridge` (115200 baud). Protocol: `E <left> <right>\n` at 50Hz. Firmware: `hardware/nano_encoder_bridge/nano_encoder_bridge.ino` |
 | Computer | Raspberry Pi 5 (8GB), Ubuntu 24.04, hostname `rovac-pi` |
-| Motors | 4x 520 DC Gear Motors with Hall Encoders (12V) — 2 active (M1 left, M2 right, tank config) |
-| IMU | QMI8658 6-axis (accel + gyro only, NO magnetometer) on Hiwonder board |
+| Motors | 2x JGB37-520R60-12 (12V DC gear motors with Hall quadrature encoders, tank config) |
 | LIDAR | XV11 (Neato) via ESP32 bridge, USB `/dev/esp32_lidar` (currently disconnected) |
 | Camera | Samsung Galaxy A16 via ADB + scrcpy |
 | Ultrasonic | 4x HC-SR04 (Super Sensor module, Arduino Nano) |
 | Stereo Cameras | 2x USB cameras (102.67mm baseline, StereoSGBM depth) |
 | Webcam | NexiGo N930E USB `/dev/webcam` |
-| Power Input | 6-12V DC (board supplies 5V/5A to Pi via USB-C). **Motor power switch must be ON for motors.** |
+| Power Input | 6-12V DC. **Motor power switch must be ON for motors.** |
 
 ## Project Structure
 
@@ -132,7 +129,8 @@ Both Mac and Pi clone the same repo to `~/robots/rovac/`. The tree below shows t
 │   ├── nav2_params.yaml        # Navigation2 config
 │   └── systemd/                # Pi unit files (deployed via install_pi_systemd.sh)
 │       ├── rovac-edge.target
-│       ├── rovac-edge-hiwonder.service
+│       ├── rovac-edge-bst4wd.service
+│       ├── rovac-edge-hiwonder.service     # Legacy (kept for reference)
 │       ├── rovac-edge-tf.service
 │       ├── rovac-edge-map-tf.service
 │       ├── rovac-edge-mux.service
@@ -147,8 +145,10 @@ Both Mac and Pi clone the same repo to `~/robots/rovac/`. The tree below shows t
 │       ├── rovac-camera.service
 │       └── rovac-phone-cameras.service
 ├── hardware/
-│   ├── hiwonder-ros-controller/         # Motor/IMU board (active) — Hiwonder V1.2
-│   ├── yahboom-ros-expansion-board-v3/  # Old motor/IMU board (replaced by Hiwonder)
+│   ├── yahboom-bst-4wd-expansion-board/ # Motor driver (active) — BST-4WD V4.5 TB6612FNG
+│   ├── nano_encoder_bridge/             # Arduino Nano encoder bridge firmware
+│   ├── hiwonder-ros-controller/         # Legacy motor/IMU board (replaced by BST-4WD)
+│   ├── yahboom-ros-expansion-board-v3/  # Legacy motor/IMU board (replaced)
 │   ├── esp32_xv11_bridge/               # ESP32 LIDAR bridge firmware + docs
 │   ├── super_sensor/                    # Pi-side ROS2 nodes (supersensor, obstacle)
 │   ├── health_monitor/                  # Pi health monitor node
