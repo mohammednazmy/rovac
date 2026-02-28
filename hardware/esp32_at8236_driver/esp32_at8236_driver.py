@@ -178,6 +178,7 @@ class ESP32AT8236Driver(Node):
         self.declare_parameter("base_frame_id", "base_link")
         self.declare_parameter("publish_tf", True)
         self.declare_parameter("left_encoder_invert", False)    # ESP32 firmware already corrects sign
+        self.declare_parameter("right_encoder_invert", False)
         self.declare_parameter("serial_port", DEFAULT_SERIAL_PORT)
         self.declare_parameter("serial_baud", DEFAULT_SERIAL_BAUD)
         self.declare_parameter("stream_rate", DEFAULT_STREAM_HZ)
@@ -192,6 +193,7 @@ class ESP32AT8236Driver(Node):
         self._base_frame = self.get_parameter("base_frame_id").value
         self._publish_tf = self.get_parameter("publish_tf").value
         self._left_enc_invert = self.get_parameter("left_encoder_invert").value
+        self._right_enc_invert = self.get_parameter("right_encoder_invert").value
         self._serial_port = self.get_parameter("serial_port").value
         self._serial_baud = self.get_parameter("serial_baud").value
         self._stream_rate = self.get_parameter("stream_rate").value
@@ -205,12 +207,13 @@ class ESP32AT8236Driver(Node):
         self._cmd_count = 0
         self._odom_count = 0
         self._firmware_id = ""
+        self._motors_stopped = True  # Track to avoid redundant serial stop spam
 
         # ---- Serial connection ----
         self._ser = None
         self._serial_lock = threading.Lock()
         self._enc_reader = EncoderReader()
-        self._running = True
+        self._shutdown_event = threading.Event()
         self._serial_thread = threading.Thread(
             target=self._serial_loop, daemon=True)
         self._serial_thread.start()
@@ -280,7 +283,7 @@ class ESP32AT8236Driver(Node):
         buf = b''
         logged_waiting = False
 
-        while self._running:
+        while not self._shutdown_event.is_set():
             # Connect / reconnect
             if self._ser is None:
                 ser = self._open_serial()
@@ -289,7 +292,7 @@ class ESP32AT8236Driver(Node):
                         self.get_logger().warn(
                             f"Waiting for ESP32 at {self._serial_port}...")
                         logged_waiting = True
-                    time.sleep(2.0)
+                    self._shutdown_event.wait(2.0)
                     continue
 
                 with self._serial_lock:
@@ -309,13 +312,16 @@ class ESP32AT8236Driver(Node):
                 self.get_logger().info(
                     f"Encoder streaming requested at {self._stream_rate} Hz")
 
+                # Reset ESP32 encoder counters for clean baseline after reconnect
+                self._send_serial("!enc reset\n")
+
             # Read data
             try:
                 chunk = self._ser.read(256)
             except (serial.SerialException, OSError):
                 self.get_logger().warn("Serial read error, reconnecting...")
                 self._close_serial()
-                time.sleep(2.0)
+                self._shutdown_event.wait(2.0)
                 continue
 
             if not chunk:
@@ -325,7 +331,7 @@ class ESP32AT8236Driver(Node):
                     self.get_logger().warn(
                         "Encoder data timeout, reconnecting...")
                     self._close_serial()
-                    time.sleep(2.0)
+                    self._shutdown_event.wait(2.0)
                 continue
 
             buf += chunk
@@ -344,6 +350,8 @@ class ESP32AT8236Driver(Node):
                     self.get_logger().info(f"Firmware: {self._firmware_id}")
                 elif line.startswith('!'):
                     self.get_logger().info(f"ESP32: {line}")
+                elif line.startswith('ERR'):
+                    self.get_logger().warn(f"ESP32 error: {line}")
 
             # Prevent buffer from growing unbounded on garbage data
             if len(buf) > 1024:
@@ -370,10 +378,13 @@ class ESP32AT8236Driver(Node):
         right = max(-self._max_motor_speed,
                     min(self._max_motor_speed, int(right)))
         self._send_serial(f"M {left} {right}\n")
+        self._motors_stopped = False
 
     def _stop_motors(self):
-        """Send coast stop command."""
-        self._send_serial("S\n")
+        """Send coast stop command (skips if motors already stopped)."""
+        if not self._motors_stopped:
+            self._send_serial("S\n")
+            self._motors_stopped = True
 
     # -----------------------------------------------------------------
     # cmd_vel handling
@@ -443,9 +454,18 @@ class ESP32AT8236Driver(Node):
         # Get encoder ticks since last call
         left_ticks, right_ticks = self._enc_reader.get_and_reset()
 
-        # Apply left encoder inversion (motor is physically mirrored)
+        # Apply encoder inversions if configured
         if self._left_enc_invert:
             left_ticks = -left_ticks
+        if self._right_enc_invert:
+            right_ticks = -right_ticks
+
+        # Reject unreasonable deltas (serial glitch, reconnect artifact)
+        max_ticks = 2000  # ~4x max motor speed at 20Hz odom rate
+        if abs(left_ticks) > max_ticks or abs(right_ticks) > max_ticks:
+            self.get_logger().warn(
+                f"Encoder delta outlier rejected: L={left_ticks} R={right_ticks}")
+            return
 
         # Convert ticks to distance (meters)
         wheel_circumference = 2.0 * math.pi * self._wheel_rad
@@ -490,11 +510,13 @@ class ESP32AT8236Driver(Node):
         odom.pose.pose.orientation = q
         odom.twist.twist.linear.x = v_linear
         odom.twist.twist.angular.z = v_angular
-        odom.pose.covariance[0] = 0.01   # x
-        odom.pose.covariance[7] = 0.01   # y
-        odom.pose.covariance[35] = 0.03  # yaw
-        odom.twist.covariance[0] = 0.01
-        odom.twist.covariance[35] = 0.03
+        # Covariance scales with speed — dead reckoning drifts more at higher velocity
+        speed_factor = 1.0 + abs(v_linear) * 2.0 + abs(v_angular) * 0.5
+        odom.pose.covariance[0] = 0.01 * speed_factor   # x
+        odom.pose.covariance[7] = 0.01 * speed_factor   # y
+        odom.pose.covariance[35] = 0.03 * speed_factor  # yaw
+        odom.twist.covariance[0] = 0.01 * speed_factor
+        odom.twist.covariance[35] = 0.03 * speed_factor
         self._odom_pub.publish(odom)
 
         if self._publish_tf:
@@ -553,8 +575,8 @@ class ESP32AT8236Driver(Node):
 
     def destroy_node(self):
         self.get_logger().info("Shutting down ESP32 AT8236 driver...")
-        self._running = False
-        self._serial_thread.join(timeout=2)
+        self._shutdown_event.set()
+        self._serial_thread.join(timeout=3)
 
         # Stop motors and disable streaming before closing
         self._send_serial("S\n")
