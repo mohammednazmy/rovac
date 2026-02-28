@@ -91,8 +91,9 @@ ssh pi 'sudo systemctl status rovac-edge.target'
 
 | Component | Details |
 |-----------|---------|
-| Motor Driver Board | Yahboom BST-4WD V4.5 (TB6612FNG dual H-bridge, GPIO HAT — no microcontroller). Left: AIN2=GPIO20 fwd, AIN1=GPIO21 rev, PWMA=GPIO16. Right: BIN2=GPIO19 fwd, BIN1=GPIO26 rev, PWMB=GPIO13. |
-| Encoder Bridge | Arduino Nano V3.0 (ATmega328P + CH340) at `/dev/encoder_bridge` (115200 baud). Protocol: `E <left> <right>\n` at 50Hz. Firmware: `hardware/nano_encoder_bridge/nano_encoder_bridge.ino` |
+| Motor + Encoder | ESP32-S3 + Yahboom AT8236 2-Channel H-bridge. Single USB-serial at `/dev/esp32_motor` (115200 baud). Motor: `M <left> <right>` (-255 to 255). Encoder: ESP32 PCNT hardware, `E <left> <right>` at 50Hz streaming. Firmware: `hardware/ESP32-S3-WROOM/examples/10_at8236_motor_control/`. Driver: `hardware/esp32_at8236_driver/esp32_at8236_driver.py` |
+| Motor Driver (legacy) | Yahboom BST-4WD V4.5 (TB6612FNG GPIO HAT) — replaced by ESP32+AT8236. Driver kept at `hardware/yahboom-bst-4wd-expansion-board/` |
+| Encoder Bridge (legacy) | Arduino Nano V3.0 at `/dev/encoder_bridge` — replaced by ESP32 PCNT. Firmware kept at `hardware/nano_encoder_bridge/` |
 | Computer | Raspberry Pi 5 (8GB), Ubuntu 24.04, hostname `rovac-pi` |
 | Motors | 2x JGB37-520R60-12 (12V DC gear motors with Hall quadrature encoders, tank config) |
 | LIDAR | XV11 (Neato) via ESP32 bridge, USB `/dev/esp32_lidar` (currently disconnected) |
@@ -129,7 +130,8 @@ Both Mac and Pi clone the same repo to `~/robots/rovac/`. The tree below shows t
 │   ├── nav2_params.yaml        # Navigation2 config
 │   └── systemd/                # Pi unit files (deployed via install_pi_systemd.sh)
 │       ├── rovac-edge.target
-│       ├── rovac-edge-bst4wd.service
+│       ├── rovac-edge-esp32.service
+│       ├── rovac-edge-bst4wd.service       # Legacy (kept for reference)
 │       ├── rovac-edge-hiwonder.service     # Legacy (kept for reference)
 │       ├── rovac-edge-tf.service
 │       ├── rovac-edge-map-tf.service
@@ -145,8 +147,9 @@ Both Mac and Pi clone the same repo to `~/robots/rovac/`. The tree below shows t
 │       ├── rovac-camera.service
 │       └── rovac-phone-cameras.service
 ├── hardware/
-│   ├── yahboom-bst-4wd-expansion-board/ # Motor driver (active) — BST-4WD V4.5 TB6612FNG
-│   ├── nano_encoder_bridge/             # Arduino Nano encoder bridge firmware
+│   ├── esp32_at8236_driver/              # Motor + encoder driver (active) — ESP32-S3 + AT8236
+│   ├── yahboom-bst-4wd-expansion-board/ # Legacy motor driver — BST-4WD V4.5 TB6612FNG
+│   ├── nano_encoder_bridge/             # Legacy encoder bridge — Arduino Nano
 │   ├── hiwonder-ros-controller/         # Legacy motor/IMU board (replaced by BST-4WD)
 │   ├── yahboom-ros-expansion-board-v3/  # Legacy motor/IMU board (replaced)
 │   ├── esp32_xv11_bridge/               # ESP32 LIDAR bridge firmware + docs

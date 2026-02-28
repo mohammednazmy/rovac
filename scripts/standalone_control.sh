@@ -97,18 +97,18 @@ start_pi_edge() {
             return 0
         fi
         log_error "Failed to start Pi edge stack via systemd"
-        log_error "Check: ssh $PI_HOST 'systemctl --no-pager -l status rovac-edge.target rovac-edge-bst4wd.service rovac-edge-mux.service rovac-edge-tf.service'"
+        log_error "Check: ssh $PI_HOST 'systemctl --no-pager -l status rovac-edge.target rovac-edge-esp32.service rovac-edge-mux.service rovac-edge-tf.service'"
         return 1
     fi
     
-    # Note: "bst4wd driver running" does NOT imply the whole edge stack is healthy.
-    # We need bst4wd + mux + tf for full controller functionality (drive + transforms).
-    local bst4wd_running=0
+    # Note: "esp32 driver running" does NOT imply the whole edge stack is healthy.
+    # We need esp32 + mux + tf for full controller functionality (drive + transforms).
+    local esp32_running=0
     local mux_running=0
     local tf_running=0
 
-    if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "pgrep -f 'bst4wd_driver\\.py' >/dev/null" 2>/dev/null; then
-        bst4wd_running=1
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "pgrep -f 'esp32_at8236_driver\\.py' >/dev/null" 2>/dev/null; then
+        esp32_running=1
     fi
     if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "pgrep -f 'cmd_vel_mux' >/dev/null" 2>/dev/null; then
         mux_running=1
@@ -117,26 +117,26 @@ start_pi_edge() {
         tf_running=1
     fi
 
-    if [ "$bst4wd_running" = "1" ] && [ "$mux_running" = "1" ] && [ "$tf_running" = "1" ]; then
-        log_info "Pi edge stack already running (bst4wd + mux + tf)"
+    if [ "$esp32_running" = "1" ] && [ "$mux_running" = "1" ] && [ "$tf_running" = "1" ]; then
+        log_info "Pi edge stack already running (esp32 + mux + tf)"
         return 0
     fi
 
     log_warn "Pi edge stack partially running:"
-    [ "$bst4wd_running" = "1" ] && echo "  [+] bst4wd_driver" || echo "  [-] bst4wd_driver"
+    [ "$esp32_running" = "1" ] && echo "  [+] esp32_at8236_driver" || echo "  [-] esp32_at8236_driver"
     [ "$mux_running" = "1" ] && echo "  [+] cmd_vel_mux" || echo "  [-] cmd_vel_mux"
     [ "$tf_running" = "1" ] && echo "  [+] robot_state_publisher" || echo "  [-] robot_state_publisher"
 
     # If nothing is up, try starting the systemd target as a fallback.
-    if [ "$bst4wd_running" = "0" ] && [ "$mux_running" = "0" ] && [ "$tf_running" = "0" ]; then
+    if [ "$esp32_running" = "0" ] && [ "$mux_running" = "0" ] && [ "$tf_running" = "0" ]; then
         log_info "Starting Pi edge stack via systemd target..."
         ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" \
             "sudo systemctl start rovac-edge.target" 2>/dev/null || true
     else
         log_info "Starting missing Pi edge components via systemd..."
-        if [ "$bst4wd_running" = "0" ]; then
+        if [ "$esp32_running" = "0" ]; then
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" \
-                "sudo systemctl start rovac-edge-bst4wd.service" 2>/dev/null || true
+                "sudo systemctl start rovac-edge-esp32.service" 2>/dev/null || true
         fi
         if [ "$mux_running" = "0" ]; then
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" \
@@ -152,11 +152,11 @@ start_pi_edge() {
     sleep 3
 
     # Verify it started
-    if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "pgrep -f 'bst4wd_driver\\.py' >/dev/null" 2>/dev/null; then
-        log_info "Pi edge bst4wd driver running"
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "pgrep -f 'esp32_at8236_driver\\.py' >/dev/null" 2>/dev/null; then
+        log_info "Pi edge ESP32 motor driver running"
     else
         log_error "Failed to start Pi edge stack"
-        log_error "Check logs: ssh $PI_HOST 'sudo journalctl -u rovac-edge-bst4wd -n 50 --no-pager'"
+        log_error "Check logs: ssh $PI_HOST 'sudo journalctl -u rovac-edge-esp32 -n 50 --no-pager'"
         return 1
     fi
 }
@@ -280,13 +280,13 @@ for t in missing:
     if check_pi 2>/dev/null; then
         if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "systemctl cat rovac-edge.target >/dev/null 2>&1"; then
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "
-                systemctl is-active --quiet rovac-edge-bst4wd.service && echo '  [+] Pi bst4wd service active' || echo '  [-] Pi bst4wd service NOT active'
+                systemctl is-active --quiet rovac-edge-esp32.service && echo '  [+] Pi esp32 motor service active' || echo '  [-] Pi esp32 motor service NOT active'
                 systemctl is-active --quiet rovac-edge-mux.service && echo '  [+] Pi cmd_vel_mux service active' || echo '  [-] Pi cmd_vel_mux service NOT active'
                 systemctl is-active --quiet rovac-edge-tf.service && echo '  [+] Pi TF publisher active' || echo '  [-] Pi TF publisher NOT active'
             " 2>/dev/null || true
         else
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "
-                pgrep -f 'bst4wd_driver\\.py' >/dev/null && echo '  [+] Pi bst4wd driver running' || echo '  [-] Pi bst4wd driver NOT running'
+                pgrep -f 'esp32_at8236_driver\\.py' >/dev/null && echo '  [+] Pi esp32 motor driver running' || echo '  [-] Pi esp32 motor driver NOT running'
                 pgrep -f 'cmd_vel_mux' >/dev/null && echo '  [+] Pi cmd_vel_mux running' || echo '  [-] Pi cmd_vel_mux NOT running'
             " 2>/dev/null || true
         fi
@@ -341,7 +341,7 @@ stop_all() {
                 ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "sudo systemctl stop rovac-edge.target" 2>/dev/null || true
             else
                 ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "
-                    pkill -f 'bst4wd_driver' 2>/dev/null || true
+                    pkill -f 'esp32_at8236_driver' 2>/dev/null || true
                     pkill -f 'robot_state_publisher' 2>/dev/null || true
                     pkill -f 'cmd_vel_mux' 2>/dev/null || true
                     pkill -f 'super_sensor_ros2_node' 2>/dev/null || true
@@ -373,7 +373,7 @@ show_status() {
         if ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "systemctl cat rovac-edge.target >/dev/null 2>&1"; then
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "
                 systemctl is-active --quiet rovac-edge.target && echo '  [+] rovac-edge.target (systemd)' || echo '  [-] rovac-edge.target (systemd)'
-                systemctl is-active --quiet rovac-edge-bst4wd.service && echo '  [+] bst4wd (systemd)' || echo '  [-] bst4wd (systemd)'
+                systemctl is-active --quiet rovac-edge-esp32.service && echo '  [+] esp32 motor (systemd)' || echo '  [-] esp32 motor (systemd)'
                 systemctl is-active --quiet rovac-edge-tf.service && echo '  [+] tf (systemd)' || echo '  [-] tf (systemd)'
                 systemctl is-active --quiet rovac-edge-mux.service && echo '  [+] mux (systemd)' || echo '  [-] mux (systemd)'
                 systemctl is-active --quiet rovac-edge-lidar.service && echo '  [+] lidar (systemd)' || echo '  [-] lidar (systemd)'
@@ -381,7 +381,7 @@ show_status() {
             " 2>/dev/null || true
         else
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" "
-                pgrep -f 'bst4wd_driver' >/dev/null && echo '  [+] bst4wd_driver' || echo '  [-] bst4wd_driver'
+                pgrep -f 'esp32_at8236_driver' >/dev/null && echo '  [+] esp32_at8236_driver' || echo '  [-] esp32_at8236_driver'
                 pgrep -f 'robot_state_publisher' >/dev/null && echo '  [+] robot_state_publisher' || echo '  [-] robot_state_publisher'
                 pgrep -f 'cmd_vel_mux' >/dev/null && echo '  [+] cmd_vel_mux' || echo '  [-] cmd_vel_mux'
             " 2>/dev/null || echo "  [!] Cannot connect to Pi"
