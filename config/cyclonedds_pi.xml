@@ -8,6 +8,10 @@
     </General>
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>
+      <!-- Pi has ~10 DDS participants, Mac has ~5; 32 gives headroom + cuts SPDP from 100 to 33 packets/round -->
+      <MaxAutoParticipantIndex>32</MaxAutoParticipantIndex>
+      <SPDPInterval>1s</SPDPInterval>
+      <LeaseDuration>5s</LeaseDuration>
       <Peers>
         <!-- Mac -->
         <Peer address="192.168.1.104"/>
@@ -15,6 +19,16 @@
         <Peer address="192.168.1.200"/>
       </Peers>
     </Discovery>
+    <Internal>
+      <!-- Speed up SEDP endpoint matching (halves discovery handshake time) -->
+      <HeartbeatInterval min="5ms" minsched="20ms" max="2s">50ms</HeartbeatInterval>
+      <NackDelay>20ms</NackDelay>
+      <PreEmptiveAckDelay>5ms</PreEmptiveAckDelay>
+      <AckDelay>5ms</AckDelay>
+      <SPDPResponseMaxDelay>0ms</SPDPResponseMaxDelay>
+      <!-- Keep deleted reliable writers alive long enough for late discovery + data delivery -->
+      <WriterLingerDuration>5s</WriterLingerDuration>
+    </Internal>
     <Tracing>
       <Verbosity>warning</Verbosity>
     </Tracing>

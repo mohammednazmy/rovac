@@ -171,7 +171,7 @@ class ESP32AT8236Driver(Node):
         self.declare_parameter("wheel_separation", 0.155)
         self.declare_parameter("wheel_radius", 0.032)
         self.declare_parameter("max_linear_speed", 0.5)        # m/s
-        self.declare_parameter("max_angular_speed", 3.0)        # rad/s
+        self.declare_parameter("max_angular_speed", 6.5)        # rad/s — full motor power in-place turn
         self.declare_parameter("max_motor_speed", 255)          # 0-255 (full range)
         self.declare_parameter("cmd_vel_timeout", 0.5)
         self.declare_parameter("odom_frame_id", "odom")

@@ -108,10 +108,10 @@ class PS2JoyMapper(Node):
 
         # Drive parameters
         self.button_linear_base = 0.6   # Base linear speed for L2/R2
-        self.button_angular_base = 1.5  # Base angular speed for L1/R1
+        self.button_angular_base = 6.5  # Base angular speed for L1/R1 (full motor power at 100%)
         self.stick_deadzone = 0.25  # Large deadzone — PS2 sticks drift up to ±0.19 at rest
         self.stick_linear_scale = 1.0
-        self.stick_angular_scale = 3.0  # Generous turning from stick
+        self.stick_angular_scale = 6.5  # Full motor power in-place turn at full stick
 
         # Servo state
         self.servo_angle = 0.0
