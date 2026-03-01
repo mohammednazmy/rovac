@@ -50,9 +50,9 @@
 #define DEVICE_NAME      "ESP32_XV11_BRIDGE"
 #define FIRMWARE_VERSION "2.1.0"
 
-// UART pins for LIDAR (ACTIVE ACTIVE - verified working)
-#define LIDAR_RX_PIN     16    // GPIO16 - receives data FROM LIDAR (Brown/TX wire)
-#define LIDAR_TX_PIN     17    // GPIO17 - transmits TO LIDAR (Orange/RX wire)
+// UART pins for LIDAR (VERIFIED WORKING 2026-03-01)
+#define LIDAR_RX_PIN     17    // GPIO17 - receives data FROM LIDAR (Brown/TX wire)  
+#define LIDAR_TX_PIN     16    // GPIO16 - transmits TO LIDAR (Orange/RX wire)
 
 // Motor PWM configuration
 #define MOTOR_PWM_PIN    25    // GPIO25 - PWM to TIP120 base (via 1K resistor)
@@ -117,10 +117,9 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
-  // Initialize PWM for motor control
-  ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-  ledcAttachPin(MOTOR_PWM_PIN, PWM_CHANNEL);
-  ledcWrite(PWM_CHANNEL, INITIAL_PWM);
+  // Initialize PWM for motor control (ESP32 Arduino Core 3.x API)
+  ledcAttach(MOTOR_PWM_PIN, PWM_FREQ, PWM_RESOLUTION);
+  ledcWrite(MOTOR_PWM_PIN, INITIAL_PWM);
 
   // Initialize serial ports
   Serial.begin(USB_BAUD);
@@ -251,7 +250,7 @@ void adjustPWMForRPM() {
   if (millis() - lastRPMUpdate > 1000) {
     if (currentPWM < MAX_PWM) {
       currentPWM += 5;
-      ledcWrite(PWM_CHANNEL, currentPWM);
+      ledcWrite(MOTOR_PWM_PIN, currentPWM);
     }
     return;
   }
@@ -274,7 +273,7 @@ void adjustPWMForRPM() {
 
     if (newPWM != currentPWM) {
       currentPWM = newPWM;
-      ledcWrite(PWM_CHANNEL, currentPWM);
+      ledcWrite(MOTOR_PWM_PIN, currentPWM);
     }
   }
 }
@@ -319,7 +318,7 @@ void processCommand(String cmd) {
     if (newPWM >= 0 && newPWM <= 255) {
       currentPWM = newPWM;
       autoMode = false;
-      ledcWrite(PWM_CHANNEL, currentPWM);
+      ledcWrite(MOTOR_PWM_PIN, currentPWM);
       Serial.print("!PWM_SET: ");
       Serial.print(currentPWM);
       Serial.println(" (AUTO disabled)");
