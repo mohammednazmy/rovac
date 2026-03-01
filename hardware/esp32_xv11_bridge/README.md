@@ -32,15 +32,21 @@ The ESP32 XV11 Bridge provides:
 ### 1. Wire the LIDAR to ESP32
 
 ```
-LIDAR Main Connector:
+LIDAR Main Connector (VERIFIED 2026-03-01):
   Red (5V)     → ESP32 5V
   Black (GND)  → ESP32 GND
   Orange (RX)  → ESP32 GPIO16
-  Brown (TX)   → ESP32 GPIO17
+  Brown (TX)   → ESP32 GPIO17  ← LIDAR data output (CRITICAL!)
 
-LIDAR Motor Connector:
-  Red (Motor)  → ESP32 5V
-  Black (GND)  → ESP32 GND
+Motor Control (via TIP120 + 1N4004 diode):
+  Motor Red (+)          → ESP32 5V
+  Motor Black (-)        → TIP120 Collector (middle pin)
+  TIP120 Base (left)     → 1KΩ resistor → ESP32 GPIO25
+  TIP120 Emitter (right) → ESP32 GND
+  1N4004 Cathode (stripe) → Motor Red (+)
+  1N4004 Anode           → Motor Black (-)
+
+Note: TIP120 enables PWM motor control. Flyback diode is REQUIRED.
 ```
 
 ### 2. Upload Firmware
@@ -58,9 +64,16 @@ Connect ESP32 USB to your Raspberry Pi or computer. The device appears as `/dev/
 ### 4. Verify Operation
 
 ```bash
-# Check for XV11 data packets
+# Run diagnostic test
+python3 test_lidar.py
+# Expected: ✅ Found 200+ packets, RPM 200-300, ALL TESTS PASSED
+
+# Manual verification (Linux)
 stty -F /dev/ttyUSB2 115200 raw -echo
-timeout 2 cat /dev/ttyUSB2 | xxd | head -10
+timeout 2 cat /dev/ttyUSB2 | xxd | grep fa
+
+# Manual verification (macOS)
+timeout 2 cat /dev/cu.usbserial-XXXX | xxd | grep fa
 # Should see 0xFA bytes (XV11 packet markers)
 ```
 
