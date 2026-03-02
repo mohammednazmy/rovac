@@ -5,7 +5,7 @@ After=network-online.target
 Wants=network-online.target
 
 # Core services
-Wants=rovac-edge-esp32.service
+Wants=rovac-edge-bst4wd.service
 Wants=rovac-edge-lidar.service
 Wants=rovac-edge-supersensor.service
 Wants=rovac-edge-mux.service

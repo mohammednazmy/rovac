@@ -74,6 +74,7 @@ install_units() {
 
   remote_sudo_install "/etc/systemd/system/rovac-edge.target" "$UNIT_DIR/rovac-edge.target"
   remote_sudo_install "/etc/systemd/system/rovac-edge-esp32.service" "$UNIT_DIR/rovac-edge-esp32.service"
+  remote_sudo_install "/etc/systemd/system/rovac-edge-bst4wd.service" "$UNIT_DIR/rovac-edge-bst4wd.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-mux.service" "$UNIT_DIR/rovac-edge-mux.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-tf.service" "$UNIT_DIR/rovac-edge-tf.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-lidar.service" "$UNIT_DIR/rovac-edge-lidar.service"
@@ -116,7 +117,7 @@ show_status() {
     systemctl is-enabled rovac-edge.target 2>/dev/null || true
     systemctl is-active rovac-edge.target 2>/dev/null || true
     echo
-    systemctl --no-pager -l status rovac-edge.target rovac-edge-esp32.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-lidar.service rovac-edge-supersensor.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service || true
+    systemctl --no-pager -l status rovac-edge.target rovac-edge-bst4wd.service rovac-edge-esp32.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-lidar.service rovac-edge-supersensor.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service || true
   "
 }
 

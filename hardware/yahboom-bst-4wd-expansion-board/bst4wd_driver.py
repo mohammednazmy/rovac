@@ -3,27 +3,24 @@
 ROS2 Driver for BST-4WD Expansion Board (TB6612FNG) + Encoder Bridge
 
 Controls motors via the BST-4WD's TB6612FNG H-bridge through Pi 5 GPIO,
-and reads quadrature encoders from a microcontroller (Arduino Nano) over USB serial.
+and reads quadrature encoders from a microcontroller over USB serial.
 
 Hardware:
   Motor driver: Yahboom BST-4WD V4.5 (TB6612FNG), connected via 8 jumper wires
   Motors: 2x JGB37-520R60-12 (12V, 60:1 gear ratio, 11 PPR Hall encoder)
-  Encoder: Arduino Nano (ATmega328P) interrupt-driven decoder, USB serial to Pi
+  Encoder: ESP32-S3 PCNT decoder over USB serial to Pi (primary),
+           Arduino Nano bridge also supported
 
 Pin mapping (BCM) — motor control on Pi GPIO:
   Left motor:   AIN2=GPIO20(fwd), AIN1=GPIO21(rev), PWMA=GPIO16
   Right motor:  BIN2=GPIO19(fwd), BIN1=GPIO26(rev), PWMB=GPIO13
 
-Nano encoder pins:
-  Left encoder:  A=D2(INT0), B=D4
-  Right encoder: A=D3(INT1), B=D5
-
-Serial protocol (Nano → Pi, 50 Hz):
+Serial protocol (encoder bridge → Pi, 50 Hz):
   "E <left_count> <right_count>\n"  — cumulative signed tick counts
 
 Notes:
   - lgpio.tx_pwm() is BROKEN on Pi 5 RP1 — uses gpiozero PWMOutputDevice instead
-  - Pi 5 RP1 GPIO edge detection unreliable — encoders offloaded to Nano via interrupts
+  - Pi 5 RP1 GPIO edge detection unreliable — encoders offloaded to ESP32/Nano
 
 Publishes:
   /odom              (nav_msgs/Odometry)       - Encoder-based odometry
@@ -76,15 +73,16 @@ TICKS_PER_REV = ENCODER_PPR * 4 * GEAR_RATIO  # 2640
 # PWM frequency for motor control
 MOTOR_PWM_FREQ = 1000  # 1 kHz
 
-# Default serial port for Nano encoder bridge
-DEFAULT_ENCODER_PORT = "/dev/encoder_bridge"
+# Default serial port for ESP32-S3 USB-CDC encoder bridge
+DEFAULT_ENCODER_PORT = "/dev/esp32_motor"
 DEFAULT_ENCODER_BAUD = 115200
+DEFAULT_STREAM_HZ = 50
 
 
 class SerialEncoderReader:
-    """Reads encoder ticks from Nano encoder bridge over USB serial.
+    """Reads encoder ticks from encoder bridge over USB serial.
 
-    The Nano streams "E <left> <right>\n" lines with cumulative counts.
+    The bridge streams "E <left> <right>\n" lines with cumulative counts.
     This class tracks deltas between reads to provide get_and_reset() semantics
     matching the old gpiod-based EncoderReader.
     """
@@ -146,6 +144,12 @@ class SerialEncoderReader:
         with self._lock:
             return self._left_total, self._right_total
 
+    def reset_baseline(self):
+        """Clear previous counts so first line after reconnect starts fresh."""
+        with self._lock:
+            self._prev_left = None
+            self._prev_right = None
+
     @property
     def connected(self):
         with self._lock:
@@ -158,6 +162,10 @@ class SerialEncoderReader:
     @property
     def error_count(self):
         return self._error_count
+
+    @property
+    def last_data_time(self):
+        return self._last_data_time
 
 
 class BST4WDDriver(Node):
@@ -179,6 +187,7 @@ class BST4WDDriver(Node):
         self.declare_parameter("left_encoder_invert", True)    # left motor is mirrored
         self.declare_parameter("encoder_port", DEFAULT_ENCODER_PORT)
         self.declare_parameter("encoder_baud", DEFAULT_ENCODER_BAUD)
+        self.declare_parameter("encoder_stream_hz", DEFAULT_STREAM_HZ)
 
         self._wheel_sep = self.get_parameter("wheel_separation").value
         self._wheel_rad = self.get_parameter("wheel_radius").value
@@ -193,6 +202,11 @@ class BST4WDDriver(Node):
         self._left_enc_invert = self.get_parameter("left_encoder_invert").value
         self._encoder_port = self.get_parameter("encoder_port").value
         self._encoder_baud = self.get_parameter("encoder_baud").value
+        self._encoder_stream_hz = self.get_parameter("encoder_stream_hz").value
+        if self._encoder_stream_hz < 0:
+            self._encoder_stream_hz = 0
+        if self._encoder_stream_hz > 100:
+            self._encoder_stream_hz = 100
 
         # ---- State ----
         self._odom_x = 0.0
@@ -258,7 +272,7 @@ class BST4WDDriver(Node):
             f"BST-4WD driver started — "
             f"wheel_sep={self._wheel_sep}m, wheel_rad={self._wheel_rad}m, "
             f"max_pwm={self._max_pwm}%, ticks/rev={TICKS_PER_REV}, "
-            f"encoder_port={self._encoder_port}"
+            f"encoder_port={self._encoder_port}, stream_hz={self._encoder_stream_hz}"
         )
 
     # -----------------------------------------------------------------
@@ -299,8 +313,36 @@ class BST4WDDriver(Node):
 
         return fd
 
+    def _write_serial_line(self, text):
+        """Write one command line to encoder bridge. Returns True on success."""
+        if self._serial_fd is None:
+            return False
+        payload = (text.strip() + "\n").encode("ascii", errors="ignore")
+        try:
+            os.write(self._serial_fd, payload)
+            return True
+        except OSError:
+            return False
+
+    def _initialize_encoder_bridge(self):
+        """Send startup commands for ESP32/Nano-compatible encoder streaming."""
+        cmds = [
+            "!id",
+            "!status",
+            "!enc reset",  # ESP32 AT8236 firmware
+            "!reset",      # Nano / esp32_encoder_bridge firmware
+        ]
+        if self._encoder_stream_hz > 0:
+            cmds.append(f"!stream {self._encoder_stream_hz}")
+            cmds.append(f"!rate {self._encoder_stream_hz}")
+
+        for cmd in cmds:
+            self._write_serial_line(cmd)
+            # Small spacing helps slower bridges parse reliably.
+            time.sleep(0.03)
+
     def _serial_encoder_loop(self):
-        """Background thread: connect to Nano encoder bridge, read encoder lines."""
+        """Background thread: connect to encoder bridge and read tick lines."""
         buf = b''
         logged_waiting = False
 
@@ -318,13 +360,10 @@ class BST4WDDriver(Node):
 
                 self._serial_fd = fd
                 logged_waiting = False
+                self._enc_reader.reset_baseline()
                 self.get_logger().info(
                     f"Encoder bridge connected: {self._encoder_port}")
-                # Send !id to verify device
-                try:
-                    os.write(fd, b'!id\n')
-                except OSError:
-                    pass
+                self._initialize_encoder_bridge()
 
             # Read data
             try:
@@ -338,7 +377,7 @@ class BST4WDDriver(Node):
             if not chunk:
                 # VTIME timeout with no data — check if still connected
                 if (self._enc_reader.connected and
-                        time.monotonic() - self._enc_reader._last_data_time > 3.0):
+                        time.monotonic() - self._enc_reader.last_data_time > 3.0):
                     self.get_logger().warn("Encoder data timeout, reconnecting...")
                     self._close_serial()
                     time.sleep(1.0)
@@ -356,8 +395,7 @@ class BST4WDDriver(Node):
                 if line.startswith('E '):
                     self._enc_reader.process_line(line)
                 elif line.startswith('!'):
-                    # Command response from Nano — log it
-                    self.get_logger().info(f"Nano: {line}")
+                    self.get_logger().info(f"Encoder bridge: {line}")
 
             # Prevent buffer from growing unbounded on garbage data
             if len(buf) > 1024:

@@ -1,7 +1,7 @@
 [Unit]
 Description=ROVAC cmd_vel mux (/cmd_vel_obstacle + /cmd_vel_joy + /cmd_vel_smoothed -> /cmd_vel)
 Wants=network-online.target
-After=network-online.target rovac-edge-esp32.service
+After=network-online.target rovac-edge-bst4wd.service rovac-edge-esp32.service
 PartOf=rovac-edge.target
 StartLimitIntervalSec=300
 StartLimitBurst=10
