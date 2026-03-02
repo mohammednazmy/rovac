@@ -1,5 +1,5 @@
 [Unit]
-Description=ROVAC ESP32 AT8236 Motor Driver (USB-serial motor + encoder)
+Description=ROVAC ESP32 Motor Driver (USB-serial motor + encoder)
 After=network.target dev-esp32_motor.device
 BindsTo=dev-esp32_motor.device
 PartOf=rovac-edge.target

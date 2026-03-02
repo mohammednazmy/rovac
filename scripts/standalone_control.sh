@@ -136,7 +136,7 @@ start_pi_edge() {
         log_info "Starting missing Pi edge components via systemd..."
         if [ "$motor_running" = "0" ]; then
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" \
-                "sudo systemctl start rovac-edge-bst4wd.service || sudo systemctl start rovac-edge-esp32.service" 2>/dev/null || true
+                "sudo systemctl start rovac-edge-esp32.service || sudo systemctl start rovac-edge-bst4wd.service" 2>/dev/null || true
         fi
         if [ "$mux_running" = "0" ]; then
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$PI_HOST" \

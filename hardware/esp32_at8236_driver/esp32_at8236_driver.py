@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-ROS2 Driver for ESP32 AT8236 Motor Controller + Encoder Reader
+ROS2 Driver for ESP32 USB Motor Controller + Encoder Reader
 
 Controls motors and reads quadrature encoders via a single USB-serial
-connection to an ESP32-S3 running the AT8236_MOTOR_ENCODER firmware (v2.1.0+).
+connection to an ESP32-S3 running protocol-compatible motor firmware
+(AT8236 or BST-4WD TB6612 bridge).
 
 Hardware:
-  Motor driver: Yahboom AT8236 2-Channel (H-bridge), controlled by ESP32-S3
+  Motor driver: H-bridge controlled by ESP32-S3 (AT8236 or BST-4WD TB6612)
   Motors: 2x JGB37-520R60-12 (12V, 60:1 gear ratio, 11 PPR Hall encoder)
   Encoder: ESP32-S3 PCNT hardware peripheral (zero CPU overhead)
   Bridge: Espressif USB-CDC serial at 115200 baud → /dev/esp32_motor
