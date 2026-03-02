@@ -283,6 +283,9 @@ class ESP32AT8236Driver(Node):
         """Background thread: manage connection, read encoder data."""
         buf = b''
         logged_waiting = False
+        consecutive_errors = 0
+        max_consecutive_errors = 10  # Allow some transient errors before reconnecting
+        connection_time = 0.0
 
         while not self._shutdown_event.is_set():
             # Connect / reconnect
@@ -300,6 +303,8 @@ class ESP32AT8236Driver(Node):
                     self._ser = ser
                 logged_waiting = False
                 buf = b''
+                consecutive_errors = 0
+                connection_time = time.monotonic()
                 self._enc_reader.reset_baseline()
                 self.get_logger().info(
                     f"ESP32 connected: {self._serial_port}")
@@ -316,13 +321,25 @@ class ESP32AT8236Driver(Node):
                 # Reset ESP32 encoder counters for clean baseline after reconnect
                 self._send_serial("!enc reset\n")
 
+                # Give USB CDC time to settle (ESP32-S3 native USB needs this)
+                time.sleep(0.5)
+
             # Read data
             try:
                 chunk = self._ser.read(256)
-            except (serial.SerialException, OSError):
-                self.get_logger().warn("Serial read error, reconnecting...")
-                self._close_serial()
-                self._shutdown_event.wait(2.0)
+                consecutive_errors = 0  # Reset on successful read
+            except (serial.SerialException, OSError) as e:
+                consecutive_errors += 1
+                # Tolerate transient errors, especially during initial settling
+                settling = time.monotonic() - connection_time < 2.0
+                if consecutive_errors >= max_consecutive_errors and not settling:
+                    self.get_logger().warn(
+                        f"Serial read error ({consecutive_errors} consecutive), reconnecting: {e}")
+                    self._close_serial()
+                    self._shutdown_event.wait(2.0)
+                else:
+                    # Transient error, just retry
+                    time.sleep(0.05)
                 continue
 
             if not chunk:
