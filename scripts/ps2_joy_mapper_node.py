@@ -114,10 +114,8 @@ class PS2JoyMapper(Node):
         self.last_cmd_vel_time = 0.0
         self.pending_twist = None
 
-        # Wireless dropout filter — the ShanWan PS2 receiver drops signal
-        # briefly (~50-150ms), causing zero-axis reports mid-drive. Hold the
-        # last non-zero command for up to 200ms before accepting a zero.
-        self.dropout_hold_sec = 0.2
+        # Wireless dropout filter — disabled (was causing perceptible delay)
+        self.dropout_hold_sec = 0.0
         self.last_nonzero_twist = None
         self.last_nonzero_time = 0.0
 
