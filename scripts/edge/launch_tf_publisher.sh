@@ -1,8 +1,11 @@
 #!/bin/bash
-source /opt/ros/jazzy/setup.bash
-source /home/pi/robots/rovac/config/ros2_env.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROVAC_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-URDF_FILE="/home/pi/robots/rovac/ros2_ws/src/tank_description/urdf/tank.urdf"
+source /opt/ros/jazzy/setup.bash
+source "$ROVAC_DIR/config/ros2_env.sh"
+
+URDF_FILE="$ROVAC_DIR/ros2_ws/src/tank_description/urdf/tank.urdf"
 
 if [ ! -f "$URDF_FILE" ]; then
     echo "ERROR: URDF file not found: $URDF_FILE"

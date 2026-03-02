@@ -3,31 +3,28 @@
   <Domain id="any">
     <General>
       <Interfaces>
-        <!-- Use en0 (WiFi) for home network communication -->
-        <NetworkInterface address="192.168.1.104" priority="default" multicast="false"/>
+        <!-- Lenovo ThinkCentre M910q WiFi (USB adapter wlx00c0caaff5e3) -->
+        <NetworkInterface address="192.168.1.218" priority="default" multicast="false"/>
       </Interfaces>
     </General>
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>
-      <!-- Pi has ~10 DDS participants, Mac has ~5; 32 gives headroom + cuts SPDP from 100 to 33 packets/round -->
       <MaxAutoParticipantIndex>32</MaxAutoParticipantIndex>
       <SPDPInterval>1s</SPDPInterval>
       <LeaseDuration>5s</LeaseDuration>
       <Peers>
-        <!-- Local Mac participants -->
+        <!-- Mac (brain) -->
         <Peer address="192.168.1.104"/>
-        <!-- Lenovo edge (replaced Pi at 192.168.1.200) -->
+        <!-- Self (for local Lenovo-to-Lenovo communication) -->
         <Peer address="192.168.1.218"/>
       </Peers>
     </Discovery>
     <Internal>
-      <!-- Speed up SEDP endpoint matching (halves discovery handshake time) -->
       <HeartbeatInterval min="5ms" minsched="20ms" max="2s">50ms</HeartbeatInterval>
       <NackDelay>20ms</NackDelay>
       <PreEmptiveAckDelay>5ms</PreEmptiveAckDelay>
       <AckDelay>5ms</AckDelay>
       <SPDPResponseMaxDelay>0ms</SPDPResponseMaxDelay>
-      <!-- Keep deleted reliable writers alive long enough for late discovery + data delivery -->
       <WriterLingerDuration>5s</WriterLingerDuration>
     </Internal>
     <Tracing>

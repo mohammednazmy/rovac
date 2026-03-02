@@ -1,52 +1,56 @@
 #!/usr/bin/env python3
 """
-PS2 Joy Mapper Node — Maps Hiwonder PS2 Wireless Controller to robot functions.
+PS2 Joy Mapper Node — Maps Hiwonder controller to ROVAC tank drive.
 
 Runs on the Pi alongside joy_node. Subscribes to /joy (sensor_msgs/Joy)
-and publishes drive commands, servo, LED, buzzer, and speed topics.
+and publishes drive commands on /cmd_vel_joy.
 
-Controller: Hiwonder PS2 Wireless (ShanWan ZD-V+ USB HID receiver)
-  Product: https://www.hiwonder.com/products/ps2-wireless-handle-with-usb-receiver
+Controller: Hiwonder PS2-style (ShanWan ZD-V+ USB HID receiver)
+  - Xbox-style face buttons: Y/B/A/X
+  - Only LEFT stick is analog (right stick has click only)
+  - D-Pad is digital axes (±1)
+  - L1/R1 bumpers, L2/R2 triggers (all digital)
 
-Linux joydev axis/button mapping (confirmed via jstest/evtest):
+Button mapping (verified via live scan 2026-03-02):
+  Index  Button
+  0      Y (top face)
+  1      B (right face)
+  2      A (bottom face)
+  3      X (left face)
+  4      L1 (left bumper)
+  5      R1 (right bumper)
+  6      L2 (left trigger)
+  7      R2 (right trigger)
+  8      SELECT
+  9      START
+  10     L3 (left stick click)
+  11     R3 (right stick click)
+  12     (MODE — hardware toggle, not reported)
 
-  Axes (normalized -1.0 to +1.0 by joy_node via SDL2):
-    0: Left Stick X   (left=-1, right=+1)
-    1: Left Stick Y   (SDL2 mapped gamepad — convention varies)
-    2: Right Stick X   (left=-1, right=+1)
-    3: Right Stick Y   (SDL2 mapped gamepad — convention varies)
-    4: D-Pad X         (left=-1, right=+1)
-    5: D-Pad Y         (up=-1, down=+1)
-
-  Buttons (0/1):
-    0: Cross (X)       — BTN_SOUTH
-    1: Circle (O)      — BTN_EAST
-    2: L3 / BtnC       — BTN_C  (left stick click, if present)
-    3: Triangle        — BTN_NORTH
-    4: Square          — BTN_WEST
-    5: R3 / BtnZ       — BTN_Z  (right stick click, if present)
-    6: L1              — BTN_TL
-    7: R1              — BTN_TR
-    8: L2              — BTN_TL2  (digital, not analog)
-    9: R2              — BTN_TR2  (digital, not analog)
-   10: Select          — BTN_SELECT
-   11: Start           — BTN_START
-   12: Mode/Analog     — BTN_MODE
+Axis mapping (verified via live scan 2026-03-02):
+  Index  Input           Polarity
+  0      Left Stick X    left=+1, right=-1 (inverted)
+  1      Left Stick Y    up=+1, down=-1
+  2      (unused — right stick not analog)
+  3      (unused — right stick not analog)
+  4      D-Pad X         left=+1, right=-1
+  5      D-Pad Y         up=+1, down=-1
 
 Controls:
-  Right Stick:   Drive (Y=forward/back, X=turn)
-  R2:            Forward (fixed speed)
-  L2:            Reverse (fixed speed)
-  L1:            Turn left
-  R1:            Turn right
-  Left Stick X:  Servo pan (camera)
-  D-Pad Up/Down: Speed adjust ±10%
-  Triangle:      Cycle speed modes (SLOW/MEDIUM/FAST)
-  Cross:         Buzzer (hold)
-  Circle:        LED on/off toggle
-  Square:        Cycle LED colors
-  Select:        Speed down 10%
-  Start:         Speed up 10%
+  Left Stick:    Drive (analog — Y=forward/back, X=turn)
+  D-Pad:         Drive (digital — Up/Down=fwd/back, Left/Right=turn)
+  R2 (hold):     Forward at current speed
+  L2 (hold):     Reverse at current speed
+  R1 (hold):     Turn right
+  L1 (hold):     Turn left
+  Y (press):     Cycle speed mode: SLOW(30%) → MED(60%) → FAST(90%) → MAX(100%)
+  A (press):     Emergency stop (zero all motor output)
+
+  Default speed: 100% (MAX)
+
+Motor driver: ESP32-S3 + AT8236 via /cmd_vel
+  - max_linear_speed=0.5 → M 255 (full motor power)
+  - max_angular_speed=3.0 → full differential turn
 """
 
 import rclpy
@@ -54,95 +58,74 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
 from geometry_msgs.msg import Twist
-from std_msgs.msg import Float32MultiArray, Int32MultiArray, Int32, Bool
 import time
 
 
-# --- Button indices (Hiwonder PS2 via Linux joydev) ---
-BTN_CROSS = 0       # X / South
-BTN_CIRCLE = 1      # O / East
-BTN_L3 = 2          # Left stick click (BtnC)
-BTN_TRIANGLE = 3    # Triangle / North
-BTN_SQUARE = 4      # Square / West
-BTN_R3 = 5          # Right stick click (BtnZ)
-BTN_L1 = 6          # Left bumper
-BTN_R1 = 7          # Right bumper
-BTN_L2 = 8          # Left trigger (digital)
-BTN_R2 = 9          # Right trigger (digital)
-BTN_SELECT = 10
-BTN_START = 11
-BTN_MODE = 12       # Analog / Mode toggle
+# --- Button indices (verified live scan 2026-03-02) ---
+BTN_Y = 0
+BTN_B = 1
+BTN_A = 2
+BTN_X = 3
+BTN_L1 = 4
+BTN_R1 = 5
+BTN_L2 = 6
+BTN_R2 = 7
+BTN_SELECT = 8
+BTN_START = 9
+BTN_L3 = 10
+BTN_R3 = 11
 
-# --- Axis indices ---
-AXIS_LSTICK_X = 0   # Left stick horizontal
-AXIS_LSTICK_Y = 1   # Left stick vertical (up=-1 on Linux!)
-AXIS_RSTICK_X = 2   # Right stick horizontal
-AXIS_RSTICK_Y = 3   # Right stick vertical
-AXIS_DPAD_X = 4     # D-pad horizontal
-AXIS_DPAD_Y = 5     # D-pad vertical (up=-1 on Linux!)
+# --- Axis indices (verified live scan 2026-03-02) ---
+AXIS_LSTICK_X = 0   # left=+1, right=-1 (inverted from standard)
+AXIS_LSTICK_Y = 1   # up=+1, down=-1
+AXIS_DPAD_X = 4     # left=+1, right=-1
+AXIS_DPAD_Y = 5     # up=+1, down=-1
 
 
 class PS2JoyMapper(Node):
     def __init__(self):
         super().__init__("ps2_joy_mapper")
 
-        # LED color palette: [R, G, B] — each 0 or 1
-        self.LED_COLORS = [
-            [0, 0, 0],  # Off
-            [1, 0, 0],  # Red
-            [0, 1, 0],  # Green
-            [0, 0, 1],  # Blue
-            [1, 1, 0],  # Yellow
-            [1, 0, 1],  # Magenta
-            [0, 1, 1],  # Cyan
-            [1, 1, 1],  # White
-        ]
-        self.led_color_index = 0
-        self.led_on = True
-
-        # Speed control
-        self.SPEED_MODES = [30, 60, 100]
-        self.speed_mode_index = 1  # Start at MEDIUM
+        # Speed modes: cycle with Y button
+        self.SPEED_MODES = [30, 60, 90, 100]
+        self.SPEED_NAMES = ["SLOW (30%)", "MED (60%)", "FAST (90%)", "MAX (100%)"]
+        self.speed_mode_index = 3  # Start at MAX (100%)
         self.speed_percent = self.SPEED_MODES[self.speed_mode_index]
-        self.speed_step = 10
 
-        # Drive parameters
-        self.button_linear_base = 0.6   # Base linear speed for L2/R2
-        self.button_angular_base = 6.5  # Base angular speed for L1/R1 (full motor power at 100%)
-        self.stick_deadzone = 0.25  # Large deadzone — PS2 sticks drift up to ±0.19 at rest
-        self.stick_linear_scale = 1.0
-        self.stick_angular_scale = 6.5  # Full motor power in-place turn at full stick
+        # Drive parameters — matched to ESP32 AT8236 driver limits
+        # Driver: max_linear_speed=0.5 → M 255, max_angular_speed=6.5
+        # Pure turn math: motor_cmd = angular * wheel_sep/2 * scale
+        #   scale = 255/0.5 = 510, wheel_sep = 0.155m
+        #   angular=6.5 → 6.5 * 0.0775 * 510 = 256.9 → M 255 (full power)
+        self.linear_max = 0.5    # linear.x value for full motor power
+        self.angular_max = 6.5   # angular.z value for full turn power
 
-        # Servo state
-        self.servo_angle = 0.0
-        self.servo_deadzone = 0.15
-        self.last_right_x = 0.0
+        # Stick config
+        self.stick_deadzone = 0.25  # PS2 sticks drift up to ±0.19
 
         # Button edge detection + cooldown
         self.last_button_states = {}
         self.button_cooldowns = {}
         self.BUTTON_COOLDOWN = 0.3
 
-        # D-pad edge tracking
-        self.dpad_up_active = False
-        self.dpad_down_active = False
-
-        # Debug logging (throttled)
-        self.last_debug_time = 0.0
-        self.debug_interval = 0.25  # Log at most 4x/sec
-
-        # Rate limiting for cmd_vel (prevents motor jitter from high-freq joy msgs)
+        # Rate limiting for cmd_vel (prevents motor jitter)
         self.cmd_vel_rate_hz = 20.0
         self.cmd_vel_interval = 1.0 / self.cmd_vel_rate_hz
         self.last_cmd_vel_time = 0.0
         self.pending_twist = None
 
+        # Wireless dropout filter — the ShanWan PS2 receiver drops signal
+        # briefly (~50-150ms), causing zero-axis reports mid-drive. Hold the
+        # last non-zero command for up to 200ms before accepting a zero.
+        self.dropout_hold_sec = 0.2
+        self.last_nonzero_twist = None
+        self.last_nonzero_time = 0.0
+
+        # Emergency stop state
+        self.e_stopped = False
+
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel_joy", 10)
-        self.servo_pub = self.create_publisher(Float32MultiArray, "/sensors/servo_cmd", 10)
-        self.led_pub = self.create_publisher(Int32MultiArray, "/sensors/led_cmd", 10)
-        self.buzzer_pub = self.create_publisher(Bool, "/sensors/buzzer_cmd", 10)
-        self.speed_pub = self.create_publisher(Int32, "/tank/speed", 10)
 
         # Subscriber
         self.create_subscription(Joy, "/joy", self.joy_callback, 10)
@@ -150,21 +133,16 @@ class PS2JoyMapper(Node):
         # Timer to flush pending cmd_vel
         self.create_timer(self.cmd_vel_interval, self.flush_pending_cmd_vel)
 
-        self.get_logger().info("PS2 Joy Mapper started")
+        self.get_logger().info("PS2 Joy Mapper started (v2.0)")
+        self.get_logger().info(f"  Speed: {self.SPEED_NAMES[self.speed_mode_index]}")
         self.get_logger().info(f"  cmd_vel rate: {self.cmd_vel_rate_hz} Hz")
-        self.get_logger().info(f"  speed: {self.speed_percent}%")
         self.get_logger().info("Controls:")
-        self.get_logger().info("  Right Stick: Drive (forward/back + turn)")
-        self.get_logger().info("  Left Stick : Servo pan")
+        self.get_logger().info("  Left Stick : Drive (analog)")
+        self.get_logger().info("  D-Pad      : Drive (digital)")
         self.get_logger().info("  L2/R2      : Reverse / Forward")
         self.get_logger().info("  L1/R1      : Turn left / right")
-        self.get_logger().info("  D-Pad U/D  : Speed ±10%")
-        self.get_logger().info("  Triangle   : Cycle speed mode")
-        self.get_logger().info("  Cross      : Buzzer (hold)")
-        self.get_logger().info("  Circle     : LED toggle")
-        self.get_logger().info("  Square     : LED color cycle")
-
-        self.publish_speed()
+        self.get_logger().info("  Y          : Cycle speed mode")
+        self.get_logger().info("  A          : Emergency stop")
 
     # ─── Helpers ───────────────────────────────────────────────
 
@@ -198,8 +176,23 @@ class PS2JoyMapper(Node):
         return buttons[btn_id] == 1
 
     def publish_cmd_vel(self, twist):
-        """Rate-limited cmd_vel to prevent motor jitter."""
+        """Rate-limited cmd_vel with wireless dropout filtering."""
         now = time.time()
+        is_zero = abs(twist.linear.x) < 0.01 and abs(twist.angular.z) < 0.01
+
+        if not is_zero:
+            # Non-zero command — update hold state and publish
+            self.last_nonzero_twist = twist
+            self.last_nonzero_time = now
+        elif self.last_nonzero_twist is not None:
+            # Zero command but we were driving recently — check hold period
+            if now - self.last_nonzero_time < self.dropout_hold_sec:
+                # Within hold period — substitute last non-zero command
+                twist = self.last_nonzero_twist
+            else:
+                # Hold expired — accept the zero (user actually released)
+                self.last_nonzero_twist = None
+
         self.pending_twist = twist
         if now - self.last_cmd_vel_time >= self.cmd_vel_interval:
             self.cmd_vel_pub.publish(twist)
@@ -207,28 +200,11 @@ class PS2JoyMapper(Node):
             self.pending_twist = None
 
     def flush_pending_cmd_vel(self):
-        """Timer callback — publish any pending cmd_vel so last command isn't dropped."""
+        """Timer callback — publish any pending cmd_vel."""
         if self.pending_twist is not None:
             self.cmd_vel_pub.publish(self.pending_twist)
             self.last_cmd_vel_time = time.time()
             self.pending_twist = None
-
-    def publish_servo(self):
-        msg = Float32MultiArray()
-        msg.data = [float(self.servo_angle)]
-        self.servo_pub.publish(msg)
-
-    def publish_led(self):
-        msg = Int32MultiArray()
-        color = self.LED_COLORS[self.led_color_index]
-        intensity = 1 if self.led_on else 0
-        msg.data = [c * intensity for c in color]
-        self.led_pub.publish(msg)
-
-    def publish_speed(self):
-        msg = Int32()
-        msg.data = int(self.speed_percent)
-        self.speed_pub.publish(msg)
 
     # ─── Main callback ────────────────────────────────────────
 
@@ -236,125 +212,81 @@ class PS2JoyMapper(Node):
         axes = msg.axes
         buttons = msg.buttons
 
-        if len(axes) < 6 or len(buttons) < 12:
+        if len(axes) < 6 or len(buttons) < 10:
             return
 
+        # === A: Emergency stop ===
+        if self.button_pressed(BTN_A, buttons):
+            self.e_stopped = not self.e_stopped
+            if self.e_stopped:
+                self.get_logger().warn("EMERGENCY STOP activated! Press A again to resume.")
+                self.publish_cmd_vel(Twist())
+                return
+            else:
+                self.get_logger().info("Emergency stop released. Driving enabled.")
+
+        if self.e_stopped:
+            self.publish_cmd_vel(Twist())
+            return
+
+        # === Y: Cycle speed mode ===
+        if self.button_pressed(BTN_Y, buttons):
+            self.speed_mode_index = (self.speed_mode_index + 1) % len(self.SPEED_MODES)
+            self.speed_percent = self.SPEED_MODES[self.speed_mode_index]
+            self.get_logger().info(f"Speed: {self.SPEED_NAMES[self.speed_mode_index]}")
+
         speed_ratio = self.speed_percent / 100.0
-        trigger_drive = False
-        bumper_drive = False
 
-        # Build a single twist from all drive inputs. Always publish
-        # (even zero) so the mux never holds a stale command.
+        # Build drive command from all inputs
         twist = Twist()
+        has_button_drive = False
 
-        # === R2: Forward ===
+        # === Triggers: R2=forward, L2=reverse ===
         if self.button_held(BTN_R2, buttons):
-            twist.linear.x = self.button_linear_base * speed_ratio
-            trigger_drive = True
-
-        # === L2: Reverse ===
+            twist.linear.x = self.linear_max * speed_ratio
+            has_button_drive = True
         if self.button_held(BTN_L2, buttons):
-            twist.linear.x = -self.button_linear_base * speed_ratio
-            trigger_drive = True
+            twist.linear.x = -self.linear_max * speed_ratio
+            has_button_drive = True
 
-        # === L1: Turn left ===
+        # === Bumpers: L1=turn left, R1=turn right ===
         if self.button_held(BTN_L1, buttons):
-            twist.angular.z = self.button_angular_base * speed_ratio
-            bumper_drive = True
-
-        # === R1: Turn right ===
+            twist.angular.z = self.angular_max * speed_ratio
+            has_button_drive = True
         if self.button_held(BTN_R1, buttons):
-            twist.angular.z = -self.button_angular_base * speed_ratio
-            bumper_drive = True
+            twist.angular.z = -self.angular_max * speed_ratio
+            has_button_drive = True
 
-        # === Right stick drive (only when no button drive active) ===
-        if not trigger_drive and not bumper_drive:
-            raw_x = axes[AXIS_RSTICK_X]
-            raw_y = axes[AXIS_RSTICK_Y]
-            stick_x = self.apply_deadzone(raw_x, self.stick_deadzone)
-            # Negate Y: SDL2 joydev reports forward (up) as negative
-            stick_y = -self.apply_deadzone(raw_y, self.stick_deadzone)
+        # === D-Pad drive (digital, full speed) ===
+        dpad_y = axes[AXIS_DPAD_Y]  # up=+1, down=-1
+        dpad_x = axes[AXIS_DPAD_X]  # left=+1, right=-1
 
-            twist.linear.x = stick_y * self.stick_linear_scale * speed_ratio
-            twist.angular.z = -stick_x * self.stick_angular_scale * speed_ratio
+        has_dpad_drive = abs(dpad_y) > 0.5 or abs(dpad_x) > 0.5
 
-            # Debug: log when stick is active (throttled)
-            now = time.time()
-            if (stick_x != 0.0 or stick_y != 0.0) and now - self.last_debug_time > self.debug_interval:
-                self.last_debug_time = now
-                self.get_logger().info(
-                    f"STICK raw_y={raw_y:+.3f}→neg={stick_y:+.3f} "
-                    f"raw_x={raw_x:+.3f}→{stick_x:+.3f} "
-                    f"cmd=(lin={twist.linear.x:+.3f},ang={twist.angular.z:+.3f})"
-                )
+        if has_dpad_drive and not has_button_drive:
+            if dpad_y > 0.5:
+                twist.linear.x = self.linear_max * speed_ratio
+            elif dpad_y < -0.5:
+                twist.linear.x = -self.linear_max * speed_ratio
+            # D-pad left=+1 should turn left (positive angular.z)
+            if dpad_x > 0.5:
+                twist.angular.z = self.angular_max * speed_ratio
+            elif dpad_x < -0.5:
+                twist.angular.z = -self.angular_max * speed_ratio
+
+        # === Left stick drive (analog, proportional) ===
+        if not has_button_drive and not has_dpad_drive:
+            # Axis polarity: Y up=+1 (forward), X left=+1/right=-1
+            stick_y = self.apply_deadzone(axes[AXIS_LSTICK_Y], self.stick_deadzone)
+            stick_x = self.apply_deadzone(axes[AXIS_LSTICK_X], self.stick_deadzone)
+
+            # stick_y positive = forward = positive linear.x (correct)
+            twist.linear.x = stick_y * self.linear_max * speed_ratio
+            # stick_x positive = left = positive angular.z (turn left, correct)
+            twist.angular.z = stick_x * self.angular_max * speed_ratio
 
         # Always publish — zero twist when idle ensures reliable stopping
         self.publish_cmd_vel(twist)
-
-        # === Left stick X → servo pan ===
-        left_x = axes[AXIS_LSTICK_X]
-        if abs(left_x) > self.servo_deadzone:
-            if abs(left_x - self.last_right_x) >= 0.05:
-                self.last_right_x = left_x
-                self.servo_angle = max(-90.0, min(90.0, left_x * 90.0))
-                self.publish_servo()
-
-        # === D-Pad Y: speed adjust ===
-        dpad_y = axes[AXIS_DPAD_Y]
-        # Up (dpad_y = -1) → speed up
-        if dpad_y < -0.5:
-            if not self.dpad_up_active:
-                self.dpad_up_active = True
-                self.speed_percent = min(100, self.speed_percent + self.speed_step)
-                self.publish_speed()
-                self.get_logger().info(f"Speed: {self.speed_percent}%")
-        else:
-            self.dpad_up_active = False
-        # Down (dpad_y = +1) → speed down
-        if dpad_y > 0.5:
-            if not self.dpad_down_active:
-                self.dpad_down_active = True
-                self.speed_percent = max(10, self.speed_percent - self.speed_step)
-                self.publish_speed()
-                self.get_logger().info(f"Speed: {self.speed_percent}%")
-        else:
-            self.dpad_down_active = False
-
-        # === Cross: Buzzer (hold) ===
-        buzzer_msg = Bool()
-        buzzer_msg.data = self.button_held(BTN_CROSS, buttons)
-        self.buzzer_pub.publish(buzzer_msg)
-
-        # === Circle: LED on/off toggle ===
-        if self.button_pressed(BTN_CIRCLE, buttons):
-            self.led_on = not self.led_on
-            self.publish_led()
-            self.get_logger().info(f"LED: {'ON' if self.led_on else 'OFF'}")
-
-        # === Square: Cycle LED colors ===
-        if self.button_pressed(BTN_SQUARE, buttons):
-            self.led_color_index = (self.led_color_index + 1) % len(self.LED_COLORS)
-            self.publish_led()
-            names = ["Off", "Red", "Green", "Blue", "Yellow", "Magenta", "Cyan", "White"]
-            self.get_logger().info(f"LED color: {names[self.led_color_index]}")
-
-        # === Triangle: Cycle speed modes ===
-        if self.button_pressed(BTN_TRIANGLE, buttons):
-            self.speed_mode_index = (self.speed_mode_index + 1) % len(self.SPEED_MODES)
-            self.speed_percent = self.SPEED_MODES[self.speed_mode_index]
-            self.publish_speed()
-            modes = ["SLOW (30%)", "MEDIUM (60%)", "FAST (100%)"]
-            self.get_logger().info(f"Speed mode: {modes[self.speed_mode_index]}")
-
-        # === Select: Speed down / Start: Speed up ===
-        if self.button_pressed(BTN_SELECT, buttons):
-            self.speed_percent = max(10, self.speed_percent - self.speed_step)
-            self.publish_speed()
-            self.get_logger().info(f"Speed: {self.speed_percent}%")
-        if self.button_pressed(BTN_START, buttons):
-            self.speed_percent = min(100, self.speed_percent + self.speed_step)
-            self.publish_speed()
-            self.get_logger().info(f"Speed: {self.speed_percent}%")
 
 
 def main(args=None):

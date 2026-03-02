@@ -1,12 +1,13 @@
 #!/bin/bash
-# ROS2 Multi-Machine Environment Configuration (Mac <-> Pi)
+# ROS2 Multi-Machine Environment Configuration (Mac <-> Edge)
 # Source this file before running ROS2 commands.
+# Edge computer: Lenovo ThinkCentre M910q at 192.168.1.218 (replaced Pi 5)
 
 set -u
 
 ROVAC_DOMAIN_ID_DEFAULT=42
 ROVAC_MAC_IP_DEFAULT=192.168.1.104
-ROVAC_PI_IP_DEFAULT=192.168.1.200
+ROVAC_EDGE_IP_DEFAULT=192.168.1.218
 
 # Optional selector: set ROVAC_DDS=fastdds|cyclonedds to switch RMW automatically.
 case "${ROVAC_DDS:-}" in
@@ -18,9 +19,13 @@ case "${ROVAC_DDS:-}" in
         ;;
 esac
 
-# Common settings for both Mac and Pi
-: "${ROS_DOMAIN_ID:=$ROVAC_DOMAIN_ID_DEFAULT}"
-export ROS_DOMAIN_ID
+# Force ROVAC domain ID (unconditional — overrides ROS2 default of 0)
+export ROS_DOMAIN_ID=$ROVAC_DOMAIN_ID_DEFAULT
+
+# Default to CycloneDDS unless ROVAC_DDS explicitly selects otherwise
+if [ -z "${ROVAC_DDS:-}" ]; then
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+fi
 
 # Discovery settings for better multi-machine communication
 : "${ROS_AUTOMATIC_DISCOVERY_RANGE:=SUBNET}"
@@ -39,14 +44,14 @@ fi
 ROVAC_OS="$(uname -s 2>/dev/null || echo unknown)"
 if [ "$ROVAC_OS" = "Darwin" ]; then
     ROVAC_LOCAL_IP_DEFAULT="$ROVAC_MAC_IP_DEFAULT"
-    ROVAC_REMOTE_IP_DEFAULT="$ROVAC_PI_IP_DEFAULT"
+    ROVAC_REMOTE_IP_DEFAULT="$ROVAC_EDGE_IP_DEFAULT"
     FASTDDS_PROFILE_DEFAULT="$ROVAC_CONFIG_DIR/fastdds_mac.xml"
     CYCLONE_PROFILE_DEFAULT="$ROVAC_CONFIG_DIR/cyclonedds_mac.xml"
 else
-    ROVAC_LOCAL_IP_DEFAULT="$ROVAC_PI_IP_DEFAULT"
+    ROVAC_LOCAL_IP_DEFAULT="$ROVAC_EDGE_IP_DEFAULT"
     ROVAC_REMOTE_IP_DEFAULT="$ROVAC_MAC_IP_DEFAULT"
     FASTDDS_PROFILE_DEFAULT="$ROVAC_CONFIG_DIR/fastdds_pi.xml"
-    CYCLONE_PROFILE_DEFAULT="$ROVAC_CONFIG_DIR/cyclonedds_pi.xml"
+    CYCLONE_PROFILE_DEFAULT="$ROVAC_CONFIG_DIR/cyclonedds_lenovo.xml"
 fi
 
 : "${ROVAC_LOCAL_IP:=$ROVAC_LOCAL_IP_DEFAULT}"
@@ -55,7 +60,7 @@ fi
 # Static peers (optional). Multicast discovery works on this network; keep this OFF by default.
 # Enable with: export ROVAC_USE_STATIC_PEERS=1
 if [ "${ROVAC_USE_STATIC_PEERS:-0}" = "1" ] || [ -n "${ROS_STATIC_PEERS:-}" ]; then
-    export ROS_STATIC_PEERS="${ROS_STATIC_PEERS:-${ROVAC_MAC_IP_DEFAULT};${ROVAC_PI_IP_DEFAULT}}"
+    export ROS_STATIC_PEERS="${ROS_STATIC_PEERS:-${ROVAC_MAC_IP_DEFAULT};${ROVAC_EDGE_IP_DEFAULT}}"
 else
     unset ROS_STATIC_PEERS 2>/dev/null || true
 fi

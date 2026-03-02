@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-cmd_vel Multiplexer with Obstacle Priority
+cmd_vel Multiplexer — Human Override Priority
 
 Priority order (highest to lowest):
-1. cmd_vel_obstacle - Emergency stop from obstacle detector (0.5s timeout)
-2. cmd_vel_joy - Joystick commands (1.0s timeout)
-3. cmd_vel_smoothed - Navigation commands (continuous)
+1. cmd_vel_joy      - Joystick / human driver (ALWAYS wins)
+2. cmd_vel_obstacle - Obstacle avoidance (only blocks nav, never human)
+3. cmd_vel_smoothed - Autonomous navigation (lowest priority)
 
-The obstacle detector publishes zero-velocity Twist when danger is detected,
-which immediately stops the robot regardless of other inputs.
+Design principle: the human driver is always in control. Obstacle
+avoidance only overrides autonomous navigation commands. When a human
+is actively driving (joystick messages within timeout), obstacle
+avoidance is ignored — the human takes responsibility.
 """
 
 import rclpy
@@ -23,96 +25,83 @@ class CmdVelMux(Node):
         # Publisher to final cmd_vel
         self.cmd_pub = self.create_publisher(Twist, "cmd_vel", 10)
 
-        # Subscribers (in priority order)
-        self.obstacle_sub = self.create_subscription(
-            Twist, "cmd_vel_obstacle", self.obstacle_callback, 10)
+        # Subscribers
         self.joy_sub = self.create_subscription(
             Twist, "cmd_vel_joy", self.joy_callback, 10)
+        self.obstacle_sub = self.create_subscription(
+            Twist, "cmd_vel_obstacle", self.obstacle_callback, 10)
         self.nav_sub = self.create_subscription(
             Twist, "cmd_vel_smoothed", self.nav_callback, 10)
 
-        # Timeouts
-        self.obstacle_timeout = 0.5  # Short timeout - emergency stop
-        self.joy_timeout = 1.0       # Medium timeout - manual control
+        # Timeouts (seconds)
+        self.joy_timeout = 1.0       # Human control window
+        self.obstacle_timeout = 0.5  # Obstacle stop window
 
-        # Timestamps
-        now = self.get_clock().now()
-        self.last_obstacle_time = now
-        self.last_joy_time = now
+        # Timestamps — initialize to epoch so nothing is "active" at start
+        self.last_joy_time = self.get_clock().now()
+        self.last_obstacle_time = self.get_clock().now()
+        self._joy_ever_received = False
+        self._obstacle_ever_received = False
 
         # Last received commands
-        self.last_obstacle_cmd = Twist()
         self.last_joy_cmd = Twist()
+        self.last_obstacle_cmd = Twist()
         self.last_nav_cmd = Twist()
 
-        # Track if obstacle stop is active
-        self.obstacle_active = False
+        # Logging state
+        self._active_source = ""
 
         # Publish at 20Hz
         self.timer = self.create_timer(0.05, self.publish_cmd)
 
-        self.get_logger().info("cmd_vel_mux with OBSTACLE PRIORITY ready")
-        self.get_logger().info("Priority: obstacle > joystick > navigation")
-
-    def obstacle_callback(self, msg):
-        """Handle emergency stop from obstacle detector"""
-        self.last_obstacle_cmd = msg
-        self.last_obstacle_time = self.get_clock().now()
-
-        # Check if this is an emergency stop (zero velocity)
-        is_stop = (abs(msg.linear.x) < 0.01 and
-                   abs(msg.linear.y) < 0.01 and
-                   abs(msg.angular.z) < 0.01)
-
-        if is_stop and not self.obstacle_active:
-            self.get_logger().warn("OBSTACLE EMERGENCY STOP activated!")
-            self.obstacle_active = True
-        elif not is_stop and self.obstacle_active:
-            self.get_logger().info("Obstacle cleared, resuming normal operation")
-            self.obstacle_active = False
-
-        # Immediately publish obstacle command for fastest response
-        self.cmd_pub.publish(msg)
+        self.get_logger().info("cmd_vel_mux ready — HUMAN OVERRIDE priority")
+        self.get_logger().info("Priority: joystick > obstacle > navigation")
 
     def joy_callback(self, msg):
-        """Handle joystick commands"""
+        """Human driver — highest priority, always forwarded immediately."""
         self.last_joy_cmd = msg
         self.last_joy_time = self.get_clock().now()
+        self._joy_ever_received = True
+        self.cmd_pub.publish(msg)
 
-        # Only publish immediately if no active obstacle stop
-        now = self.get_clock().now()
-        obstacle_elapsed = (now - self.last_obstacle_time).nanoseconds / 1e9
-
-        if obstacle_elapsed >= self.obstacle_timeout:
-            self.cmd_pub.publish(msg)
+    def obstacle_callback(self, msg):
+        """Obstacle avoidance — only effective when human is NOT driving."""
+        self.last_obstacle_cmd = msg
+        self.last_obstacle_time = self.get_clock().now()
+        self._obstacle_ever_received = True
 
     def nav_callback(self, msg):
-        """Handle navigation commands"""
+        """Autonomous navigation — lowest priority."""
         self.last_nav_cmd = msg
 
     def publish_cmd(self):
-        """Periodic command publication with priority logic"""
+        """Periodic command publication with priority logic."""
         now = self.get_clock().now()
-        obstacle_elapsed = (now - self.last_obstacle_time).nanoseconds / 1e9
+
         joy_elapsed = (now - self.last_joy_time).nanoseconds / 1e9
+        obstacle_elapsed = (now - self.last_obstacle_time).nanoseconds / 1e9
 
-        # Priority 1: Obstacle emergency stop
-        if obstacle_elapsed < self.obstacle_timeout:
-            self.cmd_pub.publish(self.last_obstacle_cmd)
-            return
-
-        # Clear obstacle active flag if timeout expired
-        if self.obstacle_active:
-            self.obstacle_active = False
-            self.get_logger().info("Obstacle timeout expired, resuming control")
-
-        # Priority 2: Joystick control
-        if joy_elapsed < self.joy_timeout:
+        # Priority 1: Human joystick (always wins)
+        if self._joy_ever_received and joy_elapsed < self.joy_timeout:
             self.cmd_pub.publish(self.last_joy_cmd)
+            if self._active_source != "joy":
+                self._active_source = "joy"
+                self.get_logger().info("Active source: JOYSTICK (human override)")
             return
 
-        # Priority 3: Navigation
+        # Priority 2: Obstacle avoidance (only when human is NOT driving)
+        if self._obstacle_ever_received and obstacle_elapsed < self.obstacle_timeout:
+            self.cmd_pub.publish(self.last_obstacle_cmd)
+            if self._active_source != "obstacle":
+                self._active_source = "obstacle"
+                self.get_logger().warn("Active source: OBSTACLE avoidance")
+            return
+
+        # Priority 3: Autonomous navigation
         self.cmd_pub.publish(self.last_nav_cmd)
+        if self._active_source != "nav":
+            self._active_source = "nav"
+            self.get_logger().info("Active source: NAVIGATION")
 
 
 def main(args=None):

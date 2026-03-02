@@ -12,6 +12,11 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi
 
+# DDS Configuration
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
+
 # Logging configuration
 StandardOutput=journal
 StandardError=journal

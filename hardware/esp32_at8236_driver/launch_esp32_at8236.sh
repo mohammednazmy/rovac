@@ -7,10 +7,11 @@
 set -eo pipefail
 
 # Source ROS2 environment
-source /opt/ros/jazzy/setup.bash
-source /home/pi/robots/rovac/config/ros2_env.sh
-
 DRIVER_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROVAC_DIR="$(cd "$DRIVER_DIR/../.." && pwd)"
+
+source /opt/ros/jazzy/setup.bash
+source "$ROVAC_DIR/config/ros2_env.sh"
 
 echo "[esp32] Starting ESP32 motor driver..."
 echo "[esp32] Motor: H-bridge controlled by ESP32-S3 USB-serial (/dev/esp32_motor)"

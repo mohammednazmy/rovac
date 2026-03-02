@@ -77,7 +77,7 @@ case "$MODE" in
     slam)
         log_info "Starting SLAM Toolbox (Online Async mode)..."
         ros2 launch slam_toolbox online_async_launch.py \
-            slam_params_file:=~/robots/rovac/config/slam_params.yaml \
+            slam_params_file:=$HOME/robots/rovac/config/slam_params.yaml \
             use_sim_time:=false &
         SLAM_PID=$!
 
@@ -97,7 +97,7 @@ case "$MODE" in
         ros2 launch nav2_bringup bringup_launch.py \
             map:="$MAP_FILE" \
             use_sim_time:=false \
-            params_file:=~/robots/rovac/config/nav2_params.yaml &
+            params_file:=$HOME/robots/rovac/config/nav2_params.yaml &
         NAV_PID=$!
 
         log_info "Starting Foxglove Bridge..."
@@ -116,7 +116,7 @@ case "$MODE" in
 
         # Start SLAM first
         ros2 launch slam_toolbox online_async_launch.py \
-            slam_params_file:=~/robots/rovac/config/slam_params.yaml \
+            slam_params_file:=$HOME/robots/rovac/config/slam_params.yaml \
             use_sim_time:=false &
         SLAM_PID=$!
         sleep 3
@@ -124,7 +124,7 @@ case "$MODE" in
         # Start Nav2
         ros2 launch nav2_bringup navigation_launch.py \
             use_sim_time:=false \
-            params_file:=~/robots/rovac/config/nav2_params.yaml &
+            params_file:=$HOME/robots/rovac/config/nav2_params.yaml &
         NAV_PID=$!
 
         # Start Foxglove

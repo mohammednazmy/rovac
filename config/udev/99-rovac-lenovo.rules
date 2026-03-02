@@ -1,0 +1,7 @@
+# ROVAC udev rules for Lenovo ThinkCentre M910q edge computer
+#
+# ESP32-S3 Motor Controller (Espressif USB-CDC) -> /dev/esp32_motor
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", SYMLINK+="esp32_motor", MODE="0666", TAG+="systemd"
+
+# ESP32 LIDAR Bridge (Silicon Labs CP2102) -> /dev/esp32_lidar
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="esp32_lidar", MODE="0666", TAG+="systemd"
