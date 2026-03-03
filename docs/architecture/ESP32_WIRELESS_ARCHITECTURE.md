@@ -1,7 +1,7 @@
 # ROVAC ESP32 Wireless Architecture Plan
 
-**Date:** 2026-03-02
-**Status:** PROPOSED — awaiting implementation
+**Date:** 2026-03-03 (updated)
+**Status:** PROPOSED — pre-implementation decisions finalized
 **Replaces:** Lenovo/Pi on-board computer architecture
 
 ## 1. Vision
@@ -66,7 +66,8 @@ ON THE ROBOT (ESP32s only — no Linux computer)
               │  │  Publishes:                      │    │
               │  │    /odom      (20 Hz)            │    │
               │  │    /scan      (5 Hz)             │    │
-              │  │    /tf        (20 Hz)            │    │
+              │  │    /tf        (20 Hz, odom→      │    │
+              │  │               base_link ONLY)    │    │
               │  │    /diagnostics (1 Hz)           │    │
               │  │  Subscribes:                     │    │
               │  │    /cmd_vel                      │    │
@@ -120,7 +121,27 @@ micro-ROS uses XRCE-DDS over UDP. UDP avoids TCP's head-of-line blocking — if 
 |-------|------|--------|-----------|
 | ESP32-S3 WROOM (Lonely Binary 2518V5) #1 | Motor controller + encoder reader | Existing, deployed | Arduino |
 | ESP32-WROOM-32 (38-pin devboard) | XV11 LIDAR bridge | Existing, deployed | Arduino |
-| ESP32-S3 WROOM (Lonely Binary 2518V5) #2 | **Gateway** (new role) | Available (spare) | **ESP-IDF + micro-ROS** |
+| ESP32-S3 WROOM (Lonely Binary 2518V5) #2 | **Gateway** (new role) | **Verified healthy** (2026-03-03) | **ESP-IDF + micro-ROS** |
+
+### Gateway Board Verification (2026-03-03)
+
+Health check confirmed all subsystems operational:
+
+| Check | Result |
+|-------|--------|
+| USB-CDC Serial | OK — `/dev/cu.usbmodem1101` on Mac |
+| Chip | ESP32-S3 (QFN56) rev v0.2, dual-core LX7 240 MHz |
+| Flash | 16,384 KB @ 80 MHz |
+| PSRAM | 8,388,608 bytes (8 MB OPI), 8,386,096 free |
+| Free Heap | 317,156 bytes |
+| MAC | `dc:b4:d9:08:59:54` |
+| WS2812 LED (GPIO48) | OK — green flash verified |
+| WiFi scan | 6 networks found, **"Hurry" at RSSI -28 dBm** (excellent) |
+| UART1 (GPIO15 TX / GPIO16 RX) | Configured at 921600 baud — OK |
+| UART2 (GPIO13 TX / GPIO14 RX) | Configured at 921600 baud — OK |
+| Arduino compile + upload | OK — via `arduino-cli` (esp32:esp32@3.3.5) |
+
+The board is ready for Gateway firmware development. No hardware issues detected.
 
 ### Wiring
 
@@ -280,8 +301,14 @@ The Gateway should expose these as compile-time constants at first, then move th
 |-------|-------------|-----|------|
 | `/odom` | nav_msgs/Odometry | Best Effort, Keep Last 5 | 20 Hz |
 | `/scan` | sensor_msgs/LaserScan | Best Effort, Keep Last 5 | ~5 Hz |
-| `/tf` | tf2_msgs/TFMessage | Best Effort, Keep Last 10 | 20 Hz |
+| `/tf` | tf2_msgs/TFMessage | Best Effort, Keep Last 10 | 20 Hz (only `odom→base_link`) |
 | `/diagnostics` | diagnostic_msgs/DiagnosticArray | Reliable, Keep Last 1 | 1 Hz |
+
+**TF responsibility split (ROS2 standard pattern):**
+- **Gateway** publishes **only** `odom → base_link` on `/tf` (the one dynamic transform it computes from odometry)
+- **Mac `robot_state_publisher`** publishes all static URDF transforms on `/tf` (`base_link → laser_frame`, `base_link → imu_link`, etc.)
+- **SLAM / localization** (Mac) publishes `map → odom` on `/tf`
+- The Gateway does **not** need to know the URDF. If robot geometry changes (add a sensor, change mounting), update the URDF on the Mac — no firmware reflash.
 
 **Subscribers:**
 
@@ -315,17 +342,47 @@ Note: if RAM becomes tight, drop `/scan.intensities` (or publish at a lower rate
 - **IP conflict avoidance:** reserve `192.168.1.220` in the router DHCP settings so it cannot be assigned to another device
 - **mDNS hostname:** `rovac-gateway` (discoverable as `rovac-gateway.local`)
 - **Power save:** `WIFI_PS_NONE` (disabled — lowest latency)
-- **SSID/password:** Compiled in or stored in NVS flash (configurable via USB debug console)
 - **Auto-reconnect:** Yes, with exponential backoff
+
+**WiFi Credentials (NVS-backed with compiled defaults):**
+
+| Setting | Compiled Default | NVS Key |
+|---------|-----------------|---------|
+| SSID | `Hurry` | `wifi_ssid` |
+| Password | `Gaza@2023` | `wifi_pass` |
+
+On first boot, the compiled defaults are written to NVS. All subsequent connections read from NVS. To change the WiFi network (e.g., move the robot to a different location), use the USB debug console — no firmware reflash required.
+
+**Provisioning via USB debug console:**
+
+| Command | Effect |
+|---------|--------|
+| `!wifi` | Show current SSID, IP, RSSI, channel, NVS-stored values |
+| `!wifi_ssid <SSID>` | Store new SSID in NVS (takes effect on `!reconnect` or `!restart`) |
+| `!wifi_pass <PASSWORD>` | Store new password in NVS |
+| `!wifi_ip <IP>` | Store new static IP in NVS (default: `192.168.1.220`) |
+| `!reconnect` | Disconnect WiFi and reconnect with current NVS settings |
+
+The `!wifi` command always shows **both** the active connection state and the NVS-stored values, so the operator can see if a change is pending (NVS differs from active).
 
 ### micro-ROS Agent Addressing (Critical)
 
 micro-ROS over UDP is *client → agent*. The Gateway must know the agent's IP address and port.
 
-- **Agent default port:** `8888` (UDP)
-- **Agent default IP:** the Mac's LAN IP (currently `192.168.1.104` in this repo's DDS config)
-- **Provisioning:** store agent IP/port in NVS and allow changing it via the USB debug console
-- **Failure mode:** if the agent address is wrong, WiFi can be "connected" but micro-ROS will never connect (LED should stay Yellow)
+| Setting | Compiled Default | NVS Key |
+|---------|-----------------|---------|
+| Agent IP | `192.168.1.104` (Mac's LAN IP) | `agent_ip` |
+| Agent Port | `8888` (UDP) | `agent_port` |
+
+Same NVS-backed provisioning pattern as WiFi:
+
+| Command | Effect |
+|---------|--------|
+| `!agent` | Show current agent IP, port, connection state |
+| `!agent_ip <IP>` | Store new agent IP in NVS (takes effect on `!reconnect`) |
+| `!agent_port <PORT>` | Store new agent port in NVS |
+
+- **Failure mode:** if the agent address is wrong, WiFi can be "connected" but micro-ROS will never connect (LED stays Yellow). The `!agent` command helps diagnose this — it shows the target IP/port and whether pings are reaching the agent.
 
 ### Motor Command Forwarding Policy (Safety + Smoothness)
 
@@ -381,17 +438,37 @@ The Motor ESP32's 1-second hardware watchdog is independent of the Gateway. If t
 
 ### USB-CDC Debug Console
 
-The Gateway exposes a debug shell on USB-CDC (UART0) for development and troubleshooting. Commands:
+The Gateway exposes a debug shell on USB-CDC (UART0) for development and troubleshooting.
+
+**Diagnostic commands:**
 
 | Command | Response |
 |---------|----------|
-| `!id` | Device identification |
+| `!id` | Device identification (name, firmware version, chip, MAC) |
 | `!status` | Uptime, WiFi RSSI, micro-ROS state, UART bytes/sec per channel |
-| `!odom` | Current odometry pose (x, y, θ) |
-| `!lidar` | LIDAR stats (packets/sec, RPM, valid points) |
-| `!wifi` | WiFi connection details (IP, SSID, RSSI, channel) |
-| `!reconnect` | Force micro-ROS reconnection |
-| `!restart` | Restart Gateway ESP32 |
+| `!odom` | Current odometry pose (x, y, θ) and velocity |
+| `!lidar` | LIDAR stats (packets/sec, RPM, valid points, errors) |
+| `!wifi` | WiFi state (active SSID/IP/RSSI/channel) + NVS-stored values |
+| `!agent` | micro-ROS agent target IP/port, connection state, ping status |
+
+**Provisioning commands (NVS-backed, persist across reboots):**
+
+| Command | Effect |
+|---------|--------|
+| `!wifi_ssid <SSID>` | Store new WiFi SSID in NVS |
+| `!wifi_pass <PASSWORD>` | Store new WiFi password in NVS |
+| `!wifi_ip <IP>` | Store new static IP in NVS (default: `192.168.1.220`) |
+| `!agent_ip <IP>` | Store new micro-ROS agent IP in NVS (default: `192.168.1.104`) |
+| `!agent_port <PORT>` | Store new micro-ROS agent UDP port in NVS (default: `8888`) |
+
+**Action commands:**
+
+| Command | Effect |
+|---------|--------|
+| `!reconnect` | Disconnect WiFi + micro-ROS, reconnect with current NVS settings |
+| `!restart` | Full ESP32 restart |
+| `!nvs_dump` | Show all NVS key-value pairs (for debugging) |
+| `!nvs_reset` | Erase all NVS data, revert to compiled defaults on next boot |
 
 ### Status LED (WS2812 on GPIO48)
 
@@ -541,8 +618,9 @@ All files in `config/systemd/` become historical reference. They are not deploye
 |-------|-----------|-----------|-----------|
 | `/scan` | `xv11_lidar_publisher.py` on Lenovo | Gateway ESP32 micro-ROS | SLAM, Nav2, Foxglove |
 | `/odom` | `esp32_at8236_driver.py` on Lenovo | Gateway ESP32 micro-ROS | Nav2, Foxglove |
-| `/tf` (odom→base_link) | `esp32_at8236_driver.py` on Lenovo | Gateway ESP32 micro-ROS | SLAM, Nav2 |
-| `/tf` (base_link→laser_frame, etc.) | `robot_state_publisher` on Lenovo | `robot_state_publisher` on Mac | SLAM, Nav2 |
+| `/tf` (`odom→base_link`) | `esp32_at8236_driver.py` on Lenovo | **Gateway ESP32 micro-ROS** (only this one dynamic transform) | SLAM, Nav2 |
+| `/tf` (`base_link→laser_frame`, etc.) | `robot_state_publisher` on Lenovo | **`robot_state_publisher` on Mac** (all static URDF transforms) | SLAM, Nav2 |
+| `/tf` (`map→odom`) | N/A (SLAM on Lenovo was not active) | **SLAM Toolbox / AMCL on Mac** | Nav2 |
 | `/cmd_vel` | `cmd_vel_mux.py` on Lenovo | `cmd_vel_mux.py` on Mac → micro-ROS Agent → Gateway | Gateway → Motor ESP32 |
 | `/cmd_vel_joy` | `ps2_joy_mapper_node.py` on Lenovo | `ps2_joy_mapper_node.py` on Mac | cmd_vel_mux |
 | `/diagnostics` | `esp32_at8236_driver.py` on Lenovo | Gateway ESP32 micro-ROS | Foxglove |
