@@ -13,7 +13,17 @@ Remove the on-board Linux computer (Lenovo ThinkCentre / Raspberry Pi) from the 
 - Simplify the power system (no 65W AC adapter for Lenovo)
 - Establish an extensible ESP32 sensor network (add future sensors by adding more ESP32s)
 - Native ROS2 integration via micro-ROS on the Gateway ESP32
-- Any ROS2 machine on the network can interact with the robot (not just one Mac)
+- Any ROS2 machine on the LAN can interact with the robot *as long as* it can join the same ROS2 DDS graph (CycloneDDS peer config). The micro-ROS Agent remains a single endpoint that the Gateway connects to.
+
+**Non-Goals (initial implementation):**
+- No phone integration, cameras, stereo, ultrasonic, or obstacle stack (motors + encoders + XV11 only)
+- No on-robot Linux computer (Pi/Lenovo are completely removed from runtime)
+- No hard real-time guarantees over WiFi (safety relies on watchdogs + timeouts)
+
+**Assumptions:**
+- Mac runs ROS2 Jazzy and remains the only "heavy compute" machine (Nav2/SLAM/Foxglove/etc.)
+- ROS2 uses `ROS_DOMAIN_ID=42` (same as today)
+- Robot and Mac are on the same WiFi network and can reach each other (UDP for micro-ROS XRCE-DDS)
 
 ## 2. Architecture Overview
 
@@ -94,10 +104,10 @@ ON THE MAC                          │
 The WiFi stack consumes significant CPU and causes timing jitter. The Motor ESP32 does real-time PWM switching and hardware PCNT counting. The LIDAR ESP32 does 115200-baud UART forwarding with inline packet parsing. Keeping WiFi off these boards preserves their real-time behavior. The Gateway's only job is data processing and networking — it has no timing-critical hardware I/O that WiFi could disrupt.
 
 **micro-ROS on the Gateway (not a transparent TCP bridge):**
-Instead of forwarding raw serial bytes over TCP and running custom Python drivers on the Mac, the Gateway parses serial data, computes odometry, accumulates LIDAR scans, and publishes standard ROS2 topics via micro-ROS. This means the Mac runs only standard ROS2 nodes — no custom serial drivers needed. Any ROS2 machine on the network can interact with the robot.
+Instead of forwarding raw serial bytes over TCP and running custom Python drivers on the Mac, the Gateway parses serial data, computes odometry, accumulates LIDAR scans, and publishes standard ROS2 topics via micro-ROS. This means the Mac runs only standard ROS2 nodes — no custom serial drivers needed. Other ROS2 machines interact by joining the same DDS graph as the Mac (they do not connect directly to the ESP32).
 
 **UART between on-board ESP32s (not ESP-NOW or WiFi):**
-Wired UART over short cables (<30cm) provides sub-millisecond, zero-jitter, zero-packet-loss communication. ESP-NOW and WiFi both have documented jitter and reliability issues. The real-time peripherals should have the most reliable link possible.
+Wired UART over short cables (<30cm) provides extremely low jitter and loss compared to wireless, and is easy to reason about/debug. The real-time peripherals should have the most reliable link possible. The Gateway firmware must still implement framing/resync and maintain UART error counters (noise/loose wires can still corrupt bytes).
 
 **WiFi UDP for micro-ROS (not TCP):**
 micro-ROS uses XRCE-DDS over UDP. UDP avoids TCP's head-of-line blocking — if one packet is lost, subsequent packets aren't delayed. For sensor data that's continuously refreshed (odometry at 20Hz, scans at 5Hz), a dropped packet is harmless.
@@ -251,6 +261,17 @@ These values from `esp32_at8236_driver.py` must be compiled into the Gateway fir
 #define CMD_VEL_TIMEOUT_MS 500      // ms (driver-side watchdog)
 ```
 
+### Calibration + Sign Conventions (Don’t Skip)
+
+Before trusting Nav2/SLAM, explicitly validate conventions end-to-end:
+
+- Twist convention: `linear.x > 0` drives forward, `angular.z > 0` turns left (CCW)
+- Motor mapping: which side is "left" vs "right" and whether either side needs inversion
+- Encoder mapping: tick sign must match motor direction so forward motion produces positive forward odom
+- Wheel parameters: wheel radius and wheel separation should be calibrated (even small errors cause drift)
+
+The Gateway should expose these as compile-time constants at first, then move them to runtime-configurable settings (NVS + debug console) once the pipeline works.
+
 ### micro-ROS Configuration
 
 **Publishers:**
@@ -259,7 +280,7 @@ These values from `esp32_at8236_driver.py` must be compiled into the Gateway fir
 |-------|-------------|-----|------|
 | `/odom` | nav_msgs/Odometry | Best Effort, Keep Last 5 | 20 Hz |
 | `/scan` | sensor_msgs/LaserScan | Best Effort, Keep Last 5 | ~5 Hz |
-| `/tf` | tf2_msgs/TFMessage | Reliable, Keep Last 10 | 20 Hz |
+| `/tf` | tf2_msgs/TFMessage | Best Effort, Keep Last 10 | 20 Hz |
 | `/diagnostics` | diagnostic_msgs/DiagnosticArray | Reliable, Keep Last 1 | 1 Hz |
 
 **Subscribers:**
@@ -271,12 +292,14 @@ These values from `esp32_at8236_driver.py` must be compiled into the Gateway fir
 **Buffer configuration:**
 
 ```
-RMW_UXRCE_MAX_OUTPUT_BUFFER_SIZE = 4096   // LaserScan with 360 ranges is ~3KB
+RMW_UXRCE_MAX_OUTPUT_BUFFER_SIZE = 8192   // budget for LaserScan (+ intensities) and framing overhead
 RMW_UXRCE_MAX_INPUT_BUFFER_SIZE  = 512    // cmd_vel is small
 RMW_UXRCE_MAX_PUBLISHERS         = 4
 RMW_UXRCE_MAX_SUBSCRIBERS        = 1
 RMW_UXRCE_MAX_HISTORY            = 10
 ```
+
+Note: if RAM becomes tight, drop `/scan.intensities` (or publish at a lower rate) before reducing buffer sizes.
 
 ### Dual-Core Task Pinning
 
@@ -289,10 +312,45 @@ RMW_UXRCE_MAX_HISTORY            = 10
 
 - **Mode:** STA (station — connects to home WiFi)
 - **Static IP:** `192.168.1.220` (gateway `192.168.1.254`, subnet `255.255.255.0`)
+- **IP conflict avoidance:** reserve `192.168.1.220` in the router DHCP settings so it cannot be assigned to another device
 - **mDNS hostname:** `rovac-gateway` (discoverable as `rovac-gateway.local`)
 - **Power save:** `WIFI_PS_NONE` (disabled — lowest latency)
 - **SSID/password:** Compiled in or stored in NVS flash (configurable via USB debug console)
 - **Auto-reconnect:** Yes, with exponential backoff
+
+### micro-ROS Agent Addressing (Critical)
+
+micro-ROS over UDP is *client → agent*. The Gateway must know the agent's IP address and port.
+
+- **Agent default port:** `8888` (UDP)
+- **Agent default IP:** the Mac's LAN IP (currently `192.168.1.104` in this repo's DDS config)
+- **Provisioning:** store agent IP/port in NVS and allow changing it via the USB debug console
+- **Failure mode:** if the agent address is wrong, WiFi can be "connected" but micro-ROS will never connect (LED should stay Yellow)
+
+### Motor Command Forwarding Policy (Safety + Smoothness)
+
+Do not rely on "only forward when /cmd_vel arrives" because publishers can be bursty and the Motor ESP32 has an independent watchdog.
+
+- Gateway maintains a **fixed-rate motor TX loop** (example: 20 Hz) that sends the most recent motor command over UART.
+- Gateway enforces **CMD_VEL_TIMEOUT_MS**: if no fresh `/cmd_vel` has arrived within the timeout, Gateway sends a STOP (0,0) and continues sending STOP at the fixed rate.
+- On micro-ROS disconnect (agent down) or WiFi down: Gateway immediately transitions to STOP (0,0) and keeps sending STOP at the fixed rate.
+
+### Peripheral UART Bringup / Handshake (Missing Today)
+
+At boot, the Gateway should actively validate both UART links and put peripherals into a known state.
+
+- Motor ESP32:
+  - Verify it is alive (identify/version/status)
+  - Ensure encoder streaming is enabled at `ENCODER_STREAM_HZ`
+  - Reset encoder baseline at a well-defined moment (and track resets to avoid odom jumps)
+- LIDAR ESP32:
+  - Verify it is alive (identify/version/status)
+  - If supported, set/confirm target RPM
+  - Detect stalled streams and resync packet boundaries
+
+UART robustness requirements:
+- Maintain per-UART counters: bytes/sec, framing/parse errors, buffer overruns, time-since-last-valid-message
+- Implement resync logic that can recover from a single dropped/inserted byte without needing a full reboot
 
 ### micro-ROS Reconnection State Machine
 
@@ -402,10 +460,10 @@ The LIDAR ESP32-WROOM-32 keeps its existing Arduino firmware with one change: ho
 | Process | What It Does | How to Start |
 |---------|-------------|-------------|
 | **micro-ROS Agent** | Bridges ESP32 micro-ROS ↔ ROS2 DDS | `ros2 run micro_ros_agent micro_ros_agent udp4 --port 8888` |
-| **robot_state_publisher** | Publishes URDF TF tree (base_link→laser_frame, etc.) | `ros2 run robot_state_publisher robot_state_publisher --ros-args -p robot_description:="$(cat tank.urdf)"` |
-| **cmd_vel_mux** | Priority routing: joystick > obstacle > navigation → /cmd_vel | `python3 cmd_vel_mux.py` |
+| **robot_state_publisher** | Publishes URDF TF tree (base_link→laser_frame, etc.) | `ros2 run robot_state_publisher robot_state_publisher --ros-args -p robot_description:="$(cat ~/robots/rovac/ros2_ws/src/tank_description/urdf/tank.urdf)"` |
+| **cmd_vel_mux** | Priority routing: joystick > obstacle > navigation → /cmd_vel | `python3 ~/robots/rovac/ros2_ws/src/tank_description/tank_description/cmd_vel_mux.py` |
 | **joy_node** | Reads PS2 USB receiver on Mac | `ros2 run joy joy_node` |
-| **ps2_joy_mapper_node** | Maps PS2 /joy → /cmd_vel_joy | `python3 ps2_joy_mapper_node.py` |
+| **ps2_joy_mapper_node** | Maps PS2 /joy → /cmd_vel_joy | `python3 ~/robots/rovac/scripts/ps2_joy_mapper_node.py` |
 | **static TF (map→odom)** | Fallback when SLAM is not running | `ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 map odom` |
 
 ### New Mac Bringup Script
@@ -419,12 +477,16 @@ A new script `scripts/mac_wireless_bringup.sh` replaces `standalone_control.sh`:
 # Optional: slam, nav, foxglove (via mac_brain_launch.sh)
 ```
 
+Bringup script requirements:
+- Activate the `ros_jazzy` conda env and source `config/ros2_env.sh` first (so `ROS_DOMAIN_ID=42` and CycloneDDS settings are consistent across all processes)
+- Start the micro-ROS Agent in the same environment as the rest of the ROS2 graph
+
 ### Install micro-ROS Agent on Mac
 
 ```bash
 # Option 1: Install from apt/brew (if available for Jazzy)
 # Option 2: Build from source
-cd ~/ros2_ws
+cd ~/robots/rovac/ros2_ws
 git clone -b jazzy https://github.com/micro-ROS/micro-ROS-Agent.git src/micro_ros_agent
 colcon build --packages-select micro_ros_agent
 ```
@@ -432,26 +494,28 @@ colcon build --packages-select micro_ros_agent
 ### DDS Configuration Changes
 
 **`config/ros2_env.sh`** — Update:
-- Remove `ROVAC_EDGE_IP` variable and edge-related peer configuration
-- The micro-ROS Agent communicates with the Gateway over UDP (not DDS peers)
-- CycloneDDS on Mac only needs localhost peers (all ROS2 nodes are local)
+- Edge IP is no longer required for runtime (no Pi/Lenovo participants)
+- The micro-ROS Agent communicates with the Gateway over UDP (this is separate from DDS peer discovery)
+- Keep CycloneDDS unicast behavior consistent with the existing setup: include the Mac's own IP as a peer (multicast is disabled)
+- If you want the "any ROS2 machine can interact" goal, add those machines as CycloneDDS peers (or maintain a separate "LAN" CycloneDDS profile)
 
 **`config/cyclonedds_mac.xml`** — Simplify:
-- Remove `192.168.1.218` (Lenovo) from peers
-- Add `127.0.0.1` as peer (all ROS2 traffic is local to Mac)
+- Keep `<Peer address="192.168.1.104"/>` for local Mac participant discovery (unicast-only)
+- Remove the Linux edge peer (Lenovo/Pi) from `<Peers>` if it is no longer present
+- Optionally add additional LAN peers if you want other machines to join the ROS2 graph
 
 ### Files to Remove/Update in config/
 
 | File | Action |
 |------|--------|
-| `config/cyclonedds_pi.xml` | **Remove** (no Pi) |
-| `config/cyclonedds_lenovo.xml` | **Remove** (no Lenovo) |
-| `config/fastdds_pi.xml` | **Remove** |
-| `config/fastdds_peers.xml` | **Remove** |
-| `config/udev/99-rovac-esp32.rules` | **Remove** (no Linux edge) |
-| `config/udev/99-rovac-lenovo.rules` | **Remove** (no Lenovo) |
-| `config/cyclonedds_mac.xml` | **Update** (remove edge peer) |
-| `config/ros2_env.sh` | **Update** (remove edge IP, simplify) |
+| `config/cyclonedds_pi.xml` | Legacy (keep for reference) |
+| `config/cyclonedds_lenovo.xml` | Legacy (keep for reference) |
+| `config/fastdds_pi.xml` | Legacy (keep for reference) |
+| `config/fastdds_peers.xml` | Legacy (keep for reference) |
+| `config/udev/99-rovac-esp32.rules` | Legacy (keep for reference) |
+| `config/udev/99-rovac-lenovo.rules` | Legacy (keep for reference) |
+| `config/cyclonedds_mac.xml` | **Update** (remove edge peer, keep Mac self peer) |
+| `config/ros2_env.sh` | **Update** (no edge required; keep LAN option) |
 | `config/slam_params.yaml` | **Keep** (unchanged) |
 | `config/nav2_params.yaml` | **Keep** (unchanged) |
 
@@ -581,7 +645,7 @@ These files no longer have a runtime role but should be kept in the repo for ref
 1. Install micro-ROS Agent on Mac (build from source for Jazzy)
 2. Create `scripts/mac_wireless_bringup.sh` bringup script
 3. Update `config/ros2_env.sh` (remove edge IP references)
-4. Update `config/cyclonedds_mac.xml` (localhost only)
+4. Update `config/cyclonedds_mac.xml` (remove edge peer, keep Mac self peer; LAN peers optional)
 5. Adapt `scripts/ps2_joy_mapper_node.py` for Mac (verify topic names)
 6. Test PS2 controller → joy_node → mapper → /cmd_vel_joy on Mac
 7. Test full topic chain: /cmd_vel_joy → mux → /cmd_vel → Agent → Gateway → Motor ESP32
@@ -608,6 +672,8 @@ These files no longer have a runtime role but should be kept in the repo for ref
 
 ## 11. Testing Plan
 
+**macOS note:** when using `ros2 topic ...` commands, prefer `--no-daemon` (the ROS2 daemon can hang with CycloneDDS on macOS).
+
 ### Unit Tests (per component)
 
 | Component | Test Method |
@@ -617,14 +683,14 @@ These files no longer have a runtime role but should be kept in the repo for ref
 | Gateway UART parsing | Send known E/M data on UART, verify parsing via USB debug |
 | Gateway odometry | Send known encoder sequences, verify computed pose matches expected |
 | Gateway LIDAR accumulation | Send known XV11 packets, verify LaserScan output |
-| Gateway micro-ROS | Run Agent on Mac, verify topics appear with `ros2 topic list` |
+| Gateway micro-ROS | Run Agent on Mac, verify topics appear with `ros2 topic list --no-daemon` |
 
 ### Integration Tests
 
 | Test | Pass Criteria |
 |------|--------------|
-| `/scan` visible on Mac | `ros2 topic hz /scan` shows ~5 Hz |
-| `/odom` visible on Mac | `ros2 topic hz /odom` shows ~20 Hz |
+| `/scan` visible on Mac | `ros2 topic hz /scan --no-daemon` shows ~5 Hz |
+| `/odom` visible on Mac | `ros2 topic hz /odom --no-daemon` shows ~20 Hz |
 | `/tf` chain complete | `ros2 run tf2_ros tf2_echo map base_link` resolves |
 | PS2 → motor | Joystick input moves motors within 50ms |
 | SLAM mapping | `slam_toolbox` produces occupancy grid from /scan |
