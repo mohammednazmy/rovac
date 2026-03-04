@@ -36,12 +36,15 @@ class CmdVelMux(Node):
         # Timeouts (seconds)
         self.joy_timeout = 1.0       # Human control window
         self.obstacle_timeout = 0.5  # Obstacle stop window
+        self.nav_timeout = 1.0       # Nav command staleness window
 
         # Timestamps — initialize to epoch so nothing is "active" at start
         self.last_joy_time = self.get_clock().now()
         self.last_obstacle_time = self.get_clock().now()
+        self.last_nav_time = self.get_clock().now()
         self._joy_ever_received = False
         self._obstacle_ever_received = False
+        self._nav_ever_received = False
 
         # Last received commands
         self.last_joy_cmd = Twist()
@@ -73,6 +76,8 @@ class CmdVelMux(Node):
     def nav_callback(self, msg):
         """Autonomous navigation — lowest priority."""
         self.last_nav_cmd = msg
+        self.last_nav_time = self.get_clock().now()
+        self._nav_ever_received = True
 
     def publish_cmd(self):
         """Periodic command publication with priority logic."""
@@ -80,6 +85,7 @@ class CmdVelMux(Node):
 
         joy_elapsed = (now - self.last_joy_time).nanoseconds / 1e9
         obstacle_elapsed = (now - self.last_obstacle_time).nanoseconds / 1e9
+        nav_elapsed = (now - self.last_nav_time).nanoseconds / 1e9
 
         # Priority 1: Human joystick (always wins)
         if self._joy_ever_received and joy_elapsed < self.joy_timeout:
@@ -97,11 +103,19 @@ class CmdVelMux(Node):
                 self.get_logger().warn("Active source: OBSTACLE avoidance")
             return
 
-        # Priority 3: Autonomous navigation
-        self.cmd_pub.publish(self.last_nav_cmd)
-        if self._active_source != "nav":
-            self._active_source = "nav"
-            self.get_logger().info("Active source: NAVIGATION")
+        # Priority 3: Autonomous navigation (only if fresh)
+        if self._nav_ever_received and nav_elapsed < self.nav_timeout:
+            self.cmd_pub.publish(self.last_nav_cmd)
+            if self._active_source != "nav":
+                self._active_source = "nav"
+                self.get_logger().info("Active source: NAVIGATION")
+            return
+
+        # No active source — publish zero (safe stop)
+        if self._active_source != "idle":
+            self._active_source = "idle"
+            self.get_logger().info("Active source: IDLE (all timed out)")
+        self.cmd_pub.publish(Twist())
 
 
 def main(args=None):

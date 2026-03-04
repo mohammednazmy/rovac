@@ -2,15 +2,15 @@
 """
 ROS2 Driver for ESP32 USB Motor Controller + Encoder Reader
 
-Controls motors and reads quadrature encoders via a single USB-serial
-connection to an ESP32-S3 running protocol-compatible motor firmware
-(AT8236 or BST-4WD TB6612 bridge).
+Closed-loop PID motor control with encoder-based odometry. Each wheel
+has its own PID controller that compares commanded velocity (m/s) against
+measured velocity (from encoder ticks) and adjusts PWM output to match.
 
 Hardware:
-  Motor driver: H-bridge controlled by ESP32-S3 (AT8236 or BST-4WD TB6612)
+  Motor driver: L298N dual H-bridge (or protocol-compatible AT8236/TB6612)
   Motors: 2x JGB37-520R60-12 (12V, 60:1 gear ratio, 11 PPR Hall encoder)
-  Encoder: ESP32-S3 PCNT hardware peripheral (zero CPU overhead)
-  Bridge: Espressif USB-CDC serial at 115200 baud → /dev/esp32_motor
+  Encoder: ESP32 PCNT hardware peripheral (zero CPU overhead)
+  Bridge: USB-serial at 115200 baud → /dev/esp32_motor
 
 Serial Protocol (115200 baud, newline-terminated):
   Commands (Pi → ESP32):
@@ -27,7 +27,7 @@ Serial Protocol (115200 baud, newline-terminated):
     ! ...                Info/status messages
 
 Notes:
-  - ESP32 firmware handles motor dead zone internally (maps 1-255 → 90-255)
+  - ESP32 firmware handles motor dead zone internally (maps 1-255 → 60-255)
   - ESP32 firmware has its own 1s watchdog (stops motors if no commands)
   - No GPIO / root access needed — USB serial only
 
@@ -163,6 +163,56 @@ class EncoderReader:
         return self._last_data_time
 
 
+class WheelPID:
+    """PID controller for a single wheel.
+
+    Converts velocity error (m/s) into PWM adjustment. The output is
+    accumulated (integral) so the PWM ramps up to whatever value is
+    needed to maintain the target velocity — no open-loop scaling needed.
+    """
+
+    def __init__(self, kp=150.0, ki=400.0, kd=5.0, max_output=255.0):
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+        self.max_output = max_output
+
+        self._integral = 0.0
+        self._prev_error = 0.0
+        self._output = 0.0
+
+    def update(self, target_vel, measured_vel, dt):
+        """Compute PID output given target and measured velocity (m/s).
+        Returns PWM value in [-max_output, max_output]."""
+        if dt <= 0:
+            return self._output
+
+        error = target_vel - measured_vel
+
+        # Proportional
+        p_term = self.kp * error
+
+        # Integral with anti-windup clamp
+        self._integral += error * dt
+        max_integral = self.max_output / max(self.ki, 1.0)
+        self._integral = max(-max_integral, min(max_integral, self._integral))
+        i_term = self.ki * self._integral
+
+        # Derivative
+        d_term = self.kd * (error - self._prev_error) / dt
+        self._prev_error = error
+
+        self._output = max(-self.max_output,
+                           min(self.max_output, p_term + i_term + d_term))
+        return self._output
+
+    def reset(self):
+        """Reset PID state (call when motors stop)."""
+        self._integral = 0.0
+        self._prev_error = 0.0
+        self._output = 0.0
+
+
 class ESP32AT8236Driver(Node):
 
     def __init__(self):
@@ -183,6 +233,9 @@ class ESP32AT8236Driver(Node):
         self.declare_parameter("serial_port", DEFAULT_SERIAL_PORT)
         self.declare_parameter("serial_baud", DEFAULT_SERIAL_BAUD)
         self.declare_parameter("stream_rate", DEFAULT_STREAM_HZ)
+        self.declare_parameter("pid_kp", 150.0)
+        self.declare_parameter("pid_ki", 400.0)
+        self.declare_parameter("pid_kd", 5.0)
 
         self._wheel_sep = self.get_parameter("wheel_separation").value
         self._wheel_rad = self.get_parameter("wheel_radius").value
@@ -209,6 +262,19 @@ class ESP32AT8236Driver(Node):
         self._odom_count = 0
         self._firmware_id = ""
         self._motors_stopped = True  # Track to avoid redundant serial stop spam
+
+        # ---- PID controllers (one per wheel) ----
+        _kp = self.get_parameter("pid_kp").value
+        _ki = self.get_parameter("pid_ki").value
+        _kd = self.get_parameter("pid_kd").value
+        self._pid_left = WheelPID(kp=_kp, ki=_ki, kd=_kd,
+                                  max_output=float(self._max_motor_speed))
+        self._pid_right = WheelPID(kp=_kp, ki=_ki, kd=_kd,
+                                   max_output=float(self._max_motor_speed))
+        # Target wheel velocities (m/s) — set by cmd_vel callback
+        self._target_v_left = 0.0
+        self._target_v_right = 0.0
+        self._pid_active = False  # True when cmd_vel is driving motors
 
         # ---- Serial connection ----
         self._ser = None
@@ -248,7 +314,8 @@ class ESP32AT8236Driver(Node):
             f"ESP32 AT8236 driver started — "
             f"wheel_sep={self._wheel_sep}m, wheel_rad={self._wheel_rad}m, "
             f"max_motor_speed={self._max_motor_speed}/255, "
-            f"ticks/rev={TICKS_PER_REV}, serial={self._serial_port}"
+            f"ticks/rev={TICKS_PER_REV}, serial={self._serial_port}, "
+            f"PID: kp={_kp} ki={_ki} kd={_kd}"
         )
 
     # -----------------------------------------------------------------
@@ -416,26 +483,19 @@ class ESP32AT8236Driver(Node):
         angular = max(-self._max_angular, min(self._max_angular, msg.angular.z))
 
         if abs(linear) < 0.01 and abs(angular) < 0.01:
-            self._stop_motors()
+            self._target_v_left = 0.0
+            self._target_v_right = 0.0
+            if self._pid_active:
+                self._pid_active = False
+                self._pid_left.reset()
+                self._pid_right.reset()
+                self._stop_motors()
             return
 
         # Differential drive kinematics: cmd_vel → wheel velocities (m/s)
-        v_left = linear - angular * self._wheel_sep / 2.0
-        v_right = linear + angular * self._wheel_sep / 2.0
-
-        # Convert m/s → motor speed (-255 to 255)
-        # Scale so max_linear maps to full motor speed. When turning adds
-        # extra wheel velocity it overflows and gets clamped — that's fine,
-        # it just means a hard turn at full speed saturates one side.
-        if self._max_linear > 0:
-            scale = self._max_motor_speed / self._max_linear
-            speed_left = v_left * scale
-            speed_right = v_right * scale
-        else:
-            speed_left = 0
-            speed_right = 0
-
-        self._send_motor_command(speed_left, speed_right)
+        self._target_v_left = linear - angular * self._wheel_sep / 2.0
+        self._target_v_right = linear + angular * self._wheel_sep / 2.0
+        self._pid_active = True
 
     # -----------------------------------------------------------------
     # Watchdog
@@ -445,6 +505,11 @@ class ESP32AT8236Driver(Node):
         if self._last_cmd_time > 0:
             elapsed = time.monotonic() - self._last_cmd_time
             if elapsed > self._cmd_timeout:
+                self._target_v_left = 0.0
+                self._target_v_right = 0.0
+                self._pid_active = False
+                self._pid_left.reset()
+                self._pid_right.reset()
                 self._stop_motors()
                 self._last_cmd_time = 0.0
 
@@ -497,6 +562,16 @@ class ESP32AT8236Driver(Node):
         # Velocity estimates
         v_linear = d_center / dt
         v_angular = d_theta / dt
+
+        # ---- PID motor control ----
+        if self._pid_active:
+            measured_v_left = left_dist / dt
+            measured_v_right = right_dist / dt
+            pwm_left = self._pid_left.update(
+                self._target_v_left, measured_v_left, dt)
+            pwm_right = self._pid_right.update(
+                self._target_v_right, measured_v_right, dt)
+            self._send_motor_command(pwm_left, pwm_right)
 
         # Integrate pose
         if abs(d_theta) < 1e-6:
