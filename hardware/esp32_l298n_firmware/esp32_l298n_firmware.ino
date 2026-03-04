@@ -122,12 +122,12 @@
 #define ENC_RIGHT_B  33   // Right encoder channel B
 
 // --- LEDC PWM ---
-#define PWM_FREQ_HZ    20000  // 20kHz — inaudible, good for TB6612FNG
+#define PWM_FREQ_HZ    20000  // 20kHz — inaudible, good for L298N
 #define PWM_RESOLUTION  8     // 8-bit: duty range 0-255
 
 // --- Dead zone ---
 // L298N with JGB37-520R60-12 at 12V. The L298N has a ~2V internal drop,
-// so motors see ~10V. May need slightly higher min duty than TB6612FNG.
+// so motors see ~10V.
 #define DEFAULT_MIN_DUTY  60
 
 // --- Safety ---
@@ -493,7 +493,7 @@ void processBangCommand(char* sub) {
         // Reinitialize
         initMotorPins();
         replyStream->println("!MOTB_RAW: Done. If Motor B spun here but not with M cmd, LEDC on GPIO5 is broken.");
-        replyStream->println("!MOTB_RAW: If Motor B still didn't spin, it's wiring between ESP32 and BST-4WD.");
+        replyStream->println("!MOTB_RAW: If Motor B still didn't spin, it's wiring between ESP32 and L298N.");
     }
     else if (strcmp(sub, "gpio_test") == 0) {
         // GPIO readback — drives each motor B pin HIGH individually and reads it back
@@ -783,7 +783,7 @@ void setup() {
     Serial.print(" v");
     Serial.println(FIRMWARE_VERSION);
     Serial.println("!========================================");
-    Serial.println("!Driver: TB6612FNG via BST-4WD V4.5");
+    Serial.println("!Driver: L298N dual H-bridge module");
     Serial.print("!Motor A (Left):  ENA=GPIO");
     Serial.print(ENA_PIN);
     Serial.print(" IN1=GPIO");
