@@ -3,7 +3,8 @@
   <Domain id="any">
     <General>
       <Interfaces>
-        <!-- Use en0 (WiFi) for home network communication -->
+        <!-- Use en0 (WiFi) for home network communication.
+             Multicast disabled — unicast peer discovery only. -->
         <NetworkInterface address="192.168.1.104" priority="default" multicast="false"/>
       </Interfaces>
     </General>
@@ -16,8 +17,8 @@
       <Peers>
         <!-- Local Mac participants -->
         <Peer address="192.168.1.104"/>
-        <!-- Lenovo edge (replaced Pi at 192.168.1.200) -->
-        <Peer address="192.168.1.218"/>
+        <!-- Raspberry Pi edge (on robot) -->
+        <Peer address="192.168.1.200"/>
       </Peers>
     </Discovery>
     <Internal>
