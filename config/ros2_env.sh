@@ -1,13 +1,13 @@
 #!/bin/bash
 # ROS2 Multi-Machine Environment Configuration (Mac <-> Edge)
 # Source this file before running ROS2 commands.
-# Edge computer: Lenovo ThinkCentre M910q at 192.168.1.218 (replaced Pi 5)
+# Edge computer: Raspberry Pi 5 at 192.168.1.200
 
 set -u
 
 ROVAC_DOMAIN_ID_DEFAULT=42
 ROVAC_MAC_IP_DEFAULT=192.168.1.104
-ROVAC_EDGE_IP_DEFAULT=192.168.1.218
+ROVAC_EDGE_IP_DEFAULT=192.168.1.200
 
 # Optional selector: set ROVAC_DDS=fastdds|cyclonedds to switch RMW automatically.
 case "${ROVAC_DDS:-}" in
@@ -51,7 +51,7 @@ else
     ROVAC_LOCAL_IP_DEFAULT="$ROVAC_EDGE_IP_DEFAULT"
     ROVAC_REMOTE_IP_DEFAULT="$ROVAC_MAC_IP_DEFAULT"
     FASTDDS_PROFILE_DEFAULT="$ROVAC_CONFIG_DIR/fastdds_pi.xml"
-    CYCLONE_PROFILE_DEFAULT="$ROVAC_CONFIG_DIR/cyclonedds_lenovo.xml"
+    CYCLONE_PROFILE_DEFAULT="$ROVAC_CONFIG_DIR/cyclonedds_pi.xml"
 fi
 
 : "${ROVAC_LOCAL_IP:=$ROVAC_LOCAL_IP_DEFAULT}"
