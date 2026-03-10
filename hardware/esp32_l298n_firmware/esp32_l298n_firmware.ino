@@ -103,7 +103,7 @@
 // ============================================================================
 
 #define DEVICE_NAME      "L298N_MOTOR_ENCODER"
-#define FIRMWARE_VERSION "1.3.2"
+#define FIRMWARE_VERSION "1.4.0"
 
 // --- Motor A (Left) — wired to L298N Motor B terminals ---
 #define ENA_PIN   5    // PWM speed control (L298N ENB)
@@ -751,11 +751,9 @@ void processCommand(char* buf, uint8_t bufLen) {
 void setup() {
     Serial.begin(SERIAL_BAUD);
 
-    // Initialize Gateway UART (Serial1) EARLY — before USB delay so the
-    // Gateway ESP32 can reach us as soon as possible after boot.
-    // NOTE: If Gateway is disconnected, pull GPIO27 (RX) HIGH externally
-    // or add a 10K pullup to prevent noise flooding.
-    Serial1.begin(GATEWAY_UART_BAUD, SERIAL_8N1, GATEWAY_UART_RX, GATEWAY_UART_TX);
+    // Gateway UART (Serial1) DISABLED — not used in Pi USB setup.
+    // GPIO27 (RX) picks up motor noise when floating, causing boot loops.
+    // If Gateway is needed again, re-enable Serial1 and add 10K pullup on GPIO27.
 
     // Initialize motor control pins (safe to do before USB is ready)
     initMotorPins();
@@ -850,21 +848,7 @@ void loop() {
         }
     }
 
-    // Read and process Gateway UART commands (Gateway ESP32)
-    while (Serial1.available()) {
-        char c = (char)Serial1.read();
-        if (c == '\n' || c == '\r') {
-            if (gwCmdLen > 0) {
-                replyStream = &Serial1;
-                processCommand(gwCmdBuffer, gwCmdLen);
-                gwCmdLen = 0;
-            }
-        } else {
-            if (gwCmdLen < CMD_BUF_SIZE - 1) {
-                gwCmdBuffer[gwCmdLen++] = c;
-            }
-        }
-    }
+    // Gateway UART disabled — Serial1 not initialized (see setup())
 
     // Watchdog: auto-stop if no commands
     if (watchdogTimeoutMs > 0 && !motorsStopped) {
@@ -888,11 +872,6 @@ void loop() {
             Serial.print(encL);
             Serial.print(' ');
             Serial.println(encR);
-
-            Serial1.print("E ");
-            Serial1.print(encL);
-            Serial1.print(' ');
-            Serial1.println(encR);
         }
     }
 
