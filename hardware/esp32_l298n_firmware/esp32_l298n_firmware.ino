@@ -103,23 +103,23 @@
 // ============================================================================
 
 #define DEVICE_NAME      "L298N_MOTOR_ENCODER"
-#define FIRMWARE_VERSION "1.3.0"
+#define FIRMWARE_VERSION "1.3.1"
 
-// --- Motor A (Left) ---
-#define ENA_PIN   4    // PWM speed control (L298N ENA)
-#define IN1_PIN  18    // Direction input 1  (L298N IN1)
-#define IN2_PIN  19    // Direction input 2  (L298N IN2)
+// --- Motor A (Left) — wired to L298N Motor B terminals ---
+#define ENA_PIN   5    // PWM speed control (L298N ENB)
+#define IN1_PIN  16    // Direction input 1  (L298N IN3)
+#define IN2_PIN  17    // Direction input 2  (L298N IN4)
 
-// --- Motor B (Right) ---
-#define ENB_PIN   5    // PWM speed control (L298N ENB)
-#define IN3_PIN  16    // Direction input 1  (L298N IN3)
-#define IN4_PIN  17    // Direction input 2  (L298N IN4)
+// --- Motor B (Right) — wired to L298N Motor A terminals ---
+#define ENB_PIN   4    // PWM speed control (L298N ENA)
+#define IN3_PIN  18    // Direction input 1  (L298N IN1)
+#define IN4_PIN  19    // Direction input 2  (L298N IN2)
 
 // --- Encoders ---
-#define ENC_LEFT_A   25   // Left encoder channel A
-#define ENC_LEFT_B   26   // Left encoder channel B
-#define ENC_RIGHT_A  32   // Right encoder channel A
-#define ENC_RIGHT_B  33   // Right encoder channel B
+#define ENC_LEFT_A   32   // Left encoder channel A
+#define ENC_LEFT_B   33   // Left encoder channel B
+#define ENC_RIGHT_A  25   // Right encoder channel A
+#define ENC_RIGHT_B  26   // Right encoder channel B
 
 // --- LEDC PWM ---
 #define PWM_FREQ_HZ    20000  // 20kHz — inaudible, good for L298N
