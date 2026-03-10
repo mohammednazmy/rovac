@@ -449,6 +449,86 @@ void processBangCommand(char* sub) {
 
         replyStream->println("!PINTEST: Complete. Check which motors moved and direction.");
     }
+    else if (strcmp(sub, "probe") == 0) {
+        // Brute-force pin probe: try every possible 2-pin HIGH combination
+        // across all 6 motor GPIOs to find which ones actually drive motors.
+        // For each combo: drive pin A HIGH (enable), pin B HIGH (direction),
+        // all others LOW. Check encoders for movement.
+        replyStream->println("!PROBE: Brute-force pin probe starting...");
+        replyStream->println("!PROBE: Testing all GPIO pairs — watch for encoder movement.");
+        stopMotors();
+
+        // Detach LEDC from all motor pins
+        ledcDetach(ENA_PIN);
+        ledcDetach(ENB_PIN);
+
+        int pins[] = {4, 5, 16, 17, 18, 19};
+        const char* names[] = {"GPIO4", "GPIO5", "GPIO16", "GPIO17", "GPIO18", "GPIO19"};
+        int numPins = 6;
+
+        // Configure all as GPIO output, LOW
+        for (int i = 0; i < numPins; i++) {
+            gpio_reset_pin((gpio_num_t)pins[i]);
+            gpio_set_direction((gpio_num_t)pins[i], GPIO_MODE_OUTPUT);
+            gpio_set_drive_capability((gpio_num_t)pins[i], GPIO_DRIVE_CAP_3);
+            gpio_set_level((gpio_num_t)pins[i], 0);
+        }
+
+        int found = 0;
+        for (int ena = 0; ena < numPins && found < 4; ena++) {
+            for (int dir = 0; dir < numPins && found < 4; dir++) {
+                if (ena == dir) continue;
+
+                // All LOW
+                for (int k = 0; k < numPins; k++)
+                    gpio_set_level((gpio_num_t)pins[k], 0);
+
+                // Reset encoders
+                encLeft.clearCount();
+                encRight.clearCount();
+
+                // Drive enable + direction HIGH
+                gpio_set_level((gpio_num_t)pins[ena], 1);
+                gpio_set_level((gpio_num_t)pins[dir], 1);
+                delay(400);
+
+                // Stop
+                gpio_set_level((gpio_num_t)pins[ena], 0);
+                gpio_set_level((gpio_num_t)pins[dir], 0);
+                delay(100);
+
+                int32_t encL = (int32_t)encLeft.getCount();
+                int32_t encR = (int32_t)encRight.getCount();
+
+                if (abs(encL) > 20 || abs(encR) > 20) {
+                    found++;
+                    replyStream->print("!PROBE: >>> HIT! ");
+                    replyStream->print(names[ena]);
+                    replyStream->print("=H + ");
+                    replyStream->print(names[dir]);
+                    replyStream->print("=H => EncL=");
+                    replyStream->print(encL);
+                    replyStream->print(" EncR=");
+                    replyStream->println(encR);
+                }
+            }
+        }
+
+        // All LOW, reinitialize
+        for (int i = 0; i < numPins; i++)
+            gpio_set_level((gpio_num_t)pins[i], 0);
+        initMotorPins();
+
+        if (found == 0) {
+            replyStream->println("!PROBE: No motor movement detected on ANY pin combination.");
+            replyStream->println("!PROBE: Wires from ESP32 to L298N are not connected.");
+        } else {
+            replyStream->print("!PROBE: Found ");
+            replyStream->print(found);
+            replyStream->println(" working combinations.");
+        }
+        replyStream->println("!PROBE: Done.");
+    }
     else if (strcmp(sub, "motb_raw") == 0) {
         // Drive Motor B using PLAIN GPIO (no LEDC PWM) — bypasses ledcWrite entirely
         // If motor spins here but not with normal M command, LEDC on GPIO5 is broken
