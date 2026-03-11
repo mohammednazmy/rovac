@@ -3,14 +3,19 @@
 cmd_vel Multiplexer — Human Override Priority
 
 Priority order (highest to lowest):
-1. cmd_vel_joy      - Joystick / human driver (ALWAYS wins)
-2. cmd_vel_obstacle - Obstacle avoidance (only blocks nav, never human)
-3. cmd_vel_smoothed - Autonomous navigation (lowest priority)
+1. cmd_vel_teleop   - Keyboard teleop (same priority as joystick)
+2. cmd_vel_joy      - Joystick / human driver
+3. cmd_vel_obstacle - Obstacle avoidance (only blocks nav, never human)
+4. cmd_vel_smoothed - Autonomous navigation (lowest priority)
 
-Design principle: the human driver is always in control. Obstacle
-avoidance only overrides autonomous navigation commands. When a human
-is actively driving (joystick messages within timeout), obstacle
-avoidance is ignored — the human takes responsibility.
+Design principle: the human driver is always in control. Both keyboard
+teleop and joystick are "human override" — whichever was active most
+recently wins. Obstacle avoidance only overrides autonomous navigation
+commands. When a human is actively driving, obstacle avoidance is
+ignored — the human takes responsibility.
+
+ALL velocity commands MUST go through this mux. Nothing else should
+publish directly to /cmd_vel.
 """
 
 import rclpy
@@ -25,7 +30,9 @@ class CmdVelMux(Node):
         # Publisher to final cmd_vel
         self.cmd_pub = self.create_publisher(Twist, "cmd_vel", 10)
 
-        # Subscribers
+        # Subscribers — human inputs (teleop + joy) at highest priority
+        self.teleop_sub = self.create_subscription(
+            Twist, "cmd_vel_teleop", self.teleop_callback, 10)
         self.joy_sub = self.create_subscription(
             Twist, "cmd_vel_joy", self.joy_callback, 10)
         self.obstacle_sub = self.create_subscription(
@@ -34,19 +41,24 @@ class CmdVelMux(Node):
             Twist, "cmd_vel_smoothed", self.nav_callback, 10)
 
         # Timeouts (seconds)
-        self.joy_timeout = 1.0       # Human control window
+        self.teleop_timeout = 0.5    # Keyboard teleop hold window
+        self.joy_timeout = 1.0       # Joystick control window
         self.obstacle_timeout = 0.5  # Obstacle stop window
         self.nav_timeout = 1.0       # Nav command staleness window
 
         # Timestamps — initialize to epoch so nothing is "active" at start
-        self.last_joy_time = self.get_clock().now()
-        self.last_obstacle_time = self.get_clock().now()
-        self.last_nav_time = self.get_clock().now()
+        now = self.get_clock().now()
+        self.last_teleop_time = now
+        self.last_joy_time = now
+        self.last_obstacle_time = now
+        self.last_nav_time = now
+        self._teleop_ever_received = False
         self._joy_ever_received = False
         self._obstacle_ever_received = False
         self._nav_ever_received = False
 
         # Last received commands
+        self.last_teleop_cmd = Twist()
         self.last_joy_cmd = Twist()
         self.last_obstacle_cmd = Twist()
         self.last_nav_cmd = Twist()
@@ -60,8 +72,15 @@ class CmdVelMux(Node):
         self.get_logger().info("cmd_vel_mux ready — HUMAN OVERRIDE priority")
         self.get_logger().info("Priority: joystick > obstacle > navigation")
 
+    def teleop_callback(self, msg):
+        """Keyboard teleop — highest priority, forwarded immediately."""
+        self.last_teleop_cmd = msg
+        self.last_teleop_time = self.get_clock().now()
+        self._teleop_ever_received = True
+        self.cmd_pub.publish(msg)
+
     def joy_callback(self, msg):
-        """Human driver — highest priority, always forwarded immediately."""
+        """Joystick driver — same human-override tier, forwarded immediately."""
         self.last_joy_cmd = msg
         self.last_joy_time = self.get_clock().now()
         self._joy_ever_received = True
@@ -83,11 +102,20 @@ class CmdVelMux(Node):
         """Periodic command publication with priority logic."""
         now = self.get_clock().now()
 
+        teleop_elapsed = (now - self.last_teleop_time).nanoseconds / 1e9
         joy_elapsed = (now - self.last_joy_time).nanoseconds / 1e9
         obstacle_elapsed = (now - self.last_obstacle_time).nanoseconds / 1e9
         nav_elapsed = (now - self.last_nav_time).nanoseconds / 1e9
 
-        # Priority 1: Human joystick (always wins)
+        # Priority 1: Keyboard teleop (human override — highest)
+        if self._teleop_ever_received and teleop_elapsed < self.teleop_timeout:
+            self.cmd_pub.publish(self.last_teleop_cmd)
+            if self._active_source != "teleop":
+                self._active_source = "teleop"
+                self.get_logger().info("Active source: TELEOP (human override)")
+            return
+
+        # Priority 2: Joystick (human override)
         if self._joy_ever_received and joy_elapsed < self.joy_timeout:
             self.cmd_pub.publish(self.last_joy_cmd)
             if self._active_source != "joy":
@@ -95,7 +123,7 @@ class CmdVelMux(Node):
                 self.get_logger().info("Active source: JOYSTICK (human override)")
             return
 
-        # Priority 2: Obstacle avoidance (only when human is NOT driving)
+        # Priority 3: Obstacle avoidance (only when human is NOT driving)
         if self._obstacle_ever_received and obstacle_elapsed < self.obstacle_timeout:
             self.cmd_pub.publish(self.last_obstacle_cmd)
             if self._active_source != "obstacle":
@@ -103,7 +131,7 @@ class CmdVelMux(Node):
                 self.get_logger().warn("Active source: OBSTACLE avoidance")
             return
 
-        # Priority 3: Autonomous navigation (only if fresh)
+        # Priority 4: Autonomous navigation (only if fresh)
         if self._nav_ever_received and nav_elapsed < self.nav_timeout:
             self.cmd_pub.publish(self.last_nav_cmd)
             if self._active_source != "nav":
@@ -114,11 +142,9 @@ class CmdVelMux(Node):
         # No active source — don't publish anything.
         # The motor controller has its own watchdog (500ms cmd_vel timeout)
         # that safely stops the motors when commands stop arriving.
-        # Publishing zeros here would override micro-ROS cmd_vel commands
-        # from external sources (e.g. wireless ESP32 motor controller).
         if self._active_source != "idle":
             self._active_source = "idle"
-            self.get_logger().info("Active source: IDLE (all timed out, not publishing)")
+            self.get_logger().info("Active source: IDLE (all timed out)")
 
 
 def main(args=None):

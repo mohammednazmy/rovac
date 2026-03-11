@@ -1,17 +1,185 @@
 # ROVAC Hardware Documentation
 
-This directory contains documentation for hardware components used in the ROVAC robot project.
+Hardware components for the ROVAC mobile robot (Yahboom G1 Tank chassis), March 2026.
 
-## Active Hardware (In Production)
+## Active Hardware
 
-| Component | Device Path | Purpose | Service |
-|-----------|-------------|---------|---------|
-| [Hiwonder ROS Controller V1.2](./hiwonder-ros-controller/) | `/dev/hiwonder_board` | Motor control, IMU (QMI8658), odometry, battery | `rovac-edge-hiwonder` |
-| [USB LIDAR (XV-11)](./lidar_usb/) | `/dev/esp32_lidar` | 360° laser scanning (currently disconnected) | `rovac-edge-lidar` |
-| [Super Sensor](./super_sensor/) | `/dev/super_sensor` | 4x ultrasonic + RGB LED + servo | `rovac-edge-supersensor` |
-| [Stereo Cameras](./stereo_cameras/) | `/dev/video0`, `/dev/video1` | Stereo depth + obstacle detection | `rovac-edge-stereo.target` |
+| Component | Interface | Purpose | Service / Agent |
+|-----------|-----------|---------|-----------------|
+| [NULLLAB Maker-ESP32](./maker_esp32/) | WiFi UDP (micro-ROS) | Motor control, encoders, odometry | micro-ROS Agent on Pi |
+| [ESP32 XV-11 LIDAR Bridge](./esp32_xv11_bridge/) | USB `/dev/esp32_lidar` | 360 laser scanning (not yet connected) | `rovac-edge-lidar` |
+| [Super Sensor](./super_sensor/) | USB `/dev/super_sensor` | 4x ultrasonic + RGB LED + servo | `rovac-edge-supersensor` |
+| [Stereo Cameras](./stereo_cameras/) | USB `/dev/video0`, `/dev/video1` | Stereo depth + obstacle detection | `rovac-edge-stereo.target` |
 | [Samsung Galaxy A16](./phone_sensors/) | USB (ADB) | GPS, IMU, cameras, magnetometer | `rovac-edge-phone-sensors` |
-| [NexiGo N930E Webcam](./webcam/) | `/dev/webcam` | USB webcam (1080p) | `rovac-edge-webcam` |
+| [NexiGo N930E Webcam](./webcam/) | USB `/dev/webcam` | USB webcam (1080p) | `rovac-edge-webcam` |
+
+## Architecture
+
+```
+                              12V DC Power
+                                  |
+            +---------------------+---------------------+
+            |                     |                     |
+            v                     v                     v
+   +------------------+  +------------------+  +------------------+
+   | NULLLAB Maker-   |  | Raspberry Pi 5   |  | Phone (USB pwr)  |
+   | ESP32 (motor)    |  | (Edge Computer)  |  | Samsung A16      |
+   | 192.168.1.221    |  | 192.168.1.200    |  |                  |
+   +------------------+  +------------------+  +------------------+
+   | ESP32-WROOM-32E  |  | Ubuntu 24.04     |  | Android 15       |
+   | TB67H450FNG x4   |  | ROS2 Jazzy       |  | SensorServer app |
+   | Hall encoders    |  | CycloneDDS       |  | GPS, IMU, Mag    |
+   | 50Hz PID loop    |  | micro-ROS Agent  |  | 4x cameras       |
+   +--------+---------+  +---+---------+----+  +--------+---------+
+            |                 |         |               |
+            |  WiFi UDP       |  USB    |  WiFi         |  USB (ADB)
+            |  (XRCE-DDS)     |  Serial |  CycloneDDS   |
+            |                 |         |               |
+            v                 v         |               v
+   +------------------+  +--------+    |    +------------------+
+   | micro-ROS Agent  |  | Super  |    |    | ADB port fwd     |
+   | on Pi :8888      |  | Sensor |    |    | scrcpy cameras   |
+   | bridges to DDS   |  | Nano   |    |    | phone_sensors    |
+   +------------------+  +--------+    |    +------------------+
+                                       |
+            +----------+               |
+            | XV-11    |  (not yet      |
+            | LIDAR    |   connected)   |
+            | ESP32    |               |
+            | bridge   |               |
+            +----------+               |
+                                       v
+                              +------------------+
+                              | MacBook Pro      |
+                              | (Brain)          |
+                              | 192.168.1.104    |
+                              +------------------+
+                              | ROS2 Jazzy       |
+                              | Nav2 stack       |
+                              | SLAM Toolbox     |
+                              | Path planning    |
+                              | Foxglove viz     |
+                              +------------------+
+
+Communication Flow:
+  ESP32 Motor --WiFi UDP--> micro-ROS Agent (Pi :8888)
+                               |
+                          XRCE-DDS <-> CycloneDDS bridge
+                               |
+  Pi (ROS2 nodes) <--CycloneDDS unicast--> Mac (Nav2/SLAM)
+
+  All nodes on ROS_DOMAIN_ID=42
+```
+
+## Motor System: NULLLAB Maker-ESP32
+
+The primary motor controller, running wireless micro-ROS firmware over WiFi.
+
+| Attribute | Value |
+|-----------|-------|
+| **Board** | NULLLAB Maker-ESP32 |
+| **MCU** | ESP32-WROOM-32E Rev V3.1 |
+| **USB Chip** | CH340 (vendor `1a86:7523`) |
+| **Motor Drivers** | 4x onboard TB67H450FNG (3.5A each, 2-pin control: IN1+IN2) |
+| **Motors** | 2x JGB37-520R60-12 (12V, 60:1 gear, Hall quadrature encoders) |
+| **Encoder Resolution** | 2640 ticks/rev |
+| **WiFi IP** | `192.168.1.221` (static, NVS key `wifi_ip`) |
+| **Agent** | micro-ROS Agent on Pi at `192.168.1.200:8888` (UDP) |
+| **PID Loop** | 50 Hz |
+| **Power Input** | 12V DC barrel jack (6-16V, center positive) |
+| **Motor Switch** | Physical switch must be ON for motors to spin |
+
+### PID Tuning (calibrated March 2026)
+
+| Parameter | Value |
+|-----------|-------|
+| kp | 25 |
+| ki | 60 |
+| kd | 3 |
+| ff_scale | 200 PWM/(m/s) |
+| ff_offset_left | 136 (stiction compensation) |
+| ff_offset_right | 132 (stiction compensation) |
+| max_linear_speed | 0.57 m/s |
+| max_angular_speed | 6.5 rad/s |
+
+Steady-state error <1%, settling time ~400ms, no oscillation at 50Hz loop rate.
+
+### Motor Pin Mapping
+
+Physical left = board M2, physical right = board M1:
+
+| Function | GPIO | Notes |
+|----------|------|-------|
+| Left motor IN1 | GPIO4 | PWM |
+| Left motor IN2 | GPIO2 | Direction only (strapping pin, LOW only) |
+| Right motor IN1 | GPIO13 | PWM |
+| Right motor IN2 | GPIO27 | Direction |
+| Left encoder A | GPIO19 | Forward = positive |
+| Left encoder B | GPIO23 | |
+| Right encoder A | GPIO5 | A/B swapped in firmware |
+| Right encoder B | GPIO18 | |
+
+### Firmware Options
+
+Two firmware modes are available for the same Maker-ESP32 board:
+
+1. **Wireless micro-ROS (active)** -- `hardware/esp32_motor_wireless/`
+   - ESP-IDF v5.2 + micro-ROS Jazzy
+   - WiFi UDP to Agent on Pi
+   - 50Hz PID loop, 3 publishers (/odom, /tf, /diagnostics), 1 subscriber (/cmd_vel)
+   - Build: `source ~/esp/esp-idf-v5.2/export.sh && idf.py build`
+   - Flash via Pi: `scp` build + `esptool.py`
+
+2. **USB serial (fallback)** -- `hardware/esp32_at8236_driver/`
+   - Python ROS2 driver on Pi reads USB serial `/dev/esp32_motor`
+   - Legacy Arduino firmware at `archive/legacy_hardware/maker_esp32_firmware/`
+   - Useful for debugging or when WiFi is unavailable
+
+### micro-ROS Entities
+
+| Type | Name | QoS | Rate | Notes |
+|------|------|-----|------|-------|
+| Publisher | `/odom` | best_effort | 20 Hz | ~730 bytes, MTU=1024 fits in single UDP packet |
+| Publisher | `/tf` | best_effort | 20 Hz | odom -> base_link transform |
+| Publisher | `/diagnostics` | best_effort | 1 Hz | WiFi RSSI, heap, uptime |
+| Subscriber | `/cmd_vel` | best_effort | — | Twist velocity commands, 500ms watchdog |
+
+See [maker_esp32/](./maker_esp32/) for board documentation and wiring guide.
+
+## XV-11 LIDAR
+
+360-degree laser scanner for SLAM and obstacle detection. Bridge firmware ready, not yet physically connected to Pi.
+
+| Attribute | Value |
+|-----------|-------|
+| **Sensor** | Neato XV-11 |
+| **Range** | 0.06 - 5.0 m |
+| **Resolution** | 360 points per scan |
+| **Frequency** | ~5 Hz (revolution accumulation) |
+| **Bridge** | ESP32-WROOM-32 with CP2102 USB |
+| **Bridge Firmware** | `hardware/esp32_xv11_bridge/` v2.1.0 |
+| **ROS2 Driver** | `ros2_ws/src/xv11_lidar_python/` v3.0.0 |
+| **Device** | `/dev/esp32_lidar` (when connected) |
+| **Next Step** | Convert to micro-ROS wireless node |
+
+**USB power note:** The XV-11 LIDAR draws 500-680 mA. It must be connected to a direct root hub port or a powered USB hub -- regular hub ports may not supply enough current.
+
+See [esp32_xv11_bridge/](./esp32_xv11_bridge/) for bridge firmware and [lidar_usb/](./lidar_usb/) for LIDAR documentation.
+
+## Super Sensor Module
+
+Arduino Nano-based sensor module with ultrasonic array.
+
+| Attribute | Value |
+|-----------|-------|
+| **MCU** | Arduino Nano (ATmega328P) |
+| **Ultrasonic** | 4x HC-SR04 |
+| **LED** | RGB LED |
+| **Servo** | 180-degree servo |
+| **Interface** | USB Serial |
+| **Device** | `/dev/super_sensor` |
+
+See [super_sensor/README.md](./super_sensor/README.md) for documentation.
 
 ## Phone Hardware (Samsung Galaxy A16)
 
@@ -50,50 +218,49 @@ The robot uses an Android phone as a sensor platform, providing GPS for outdoor 
 ### Phone Integration Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                   Samsung Galaxy A16                             │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ SensorServer App (WebSocket on port 8080)                 │  │
-│  │   • Accelerometer (500 Hz capable)                        │  │
-│  │   • Gyroscope (500 Hz capable)                            │  │
-│  │   • Magnetometer                                          │  │
-│  │   • Rotation Vector (fused orientation)                   │  │
-│  └─────────────────────────────────┬─────────────────────────┘  │
-│  ┌─────────────────────────────────┼─────────────────────────┐  │
-│  │ Cameras                         │                         │  │
-│  │   • Back (0): 4080x3060         │                         │  │
-│  │   • Front (1): 4128x3096        │                         │  │
-│  │   • Wide (2): 2576x1932         │                         │  │
-│  │   • Front2 (3): 3712x2556       │                         │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │ USB Cable
-                               ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                      Raspberry Pi 5                               │
-├──────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ ADB (Android Debug Bridge)                                  │ │
-│  │   • Port forward: tcp:8080 → phone:8080                     │ │
-│  │   • GPS polling via: adb shell dumpsys location             │ │
-│  │   • Camera via: scrcpy --video-source=camera                │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                                                                   │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ phone_sensors_ros2_node.py                                  │ │
-│  │   • WebSocket client → SensorServer                         │ │
-│  │   • Publishes: /phone/imu, /phone/magnetic_field            │ │
-│  │   • Publishes: /phone/gps/fix, /phone/orientation           │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                                                                   │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ v4l2loopback + scrcpy → multi_camera_publisher.py           │ │
-│  │   • /dev/video10-13 → /phone/camera/{name}/image_raw        │ │
-│  │   • Compressed: /phone/camera/{name}/image_raw/compressed   │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                                                                   │
-└──────────────────────────────────────────────────────────────────┘
++---------------------------------------------------------------+
+|                   Samsung Galaxy A16                           |
+|  +-----------------------------------------------------------+|
+|  | SensorServer App (WebSocket on port 8080)                  ||
+|  |   - Accelerometer (500 Hz capable)                         ||
+|  |   - Gyroscope (500 Hz capable)                             ||
+|  |   - Magnetometer                                           ||
+|  |   - Rotation Vector (fused orientation)                    ||
+|  +-----------------------------+-----------------------------+||
+|  | Cameras                     |                              ||
+|  |   - Back (0): 4080x3060    |                              ||
+|  |   - Front (1): 4128x3096   |                              ||
+|  |   - Wide (2): 2576x1932    |                              ||
+|  |   - Front2 (3): 3712x2556  |                              ||
+|  +-----------------------------------------------------------+|
++-------------------------------+-------------------------------+
+                                | USB Cable
+                                v
++---------------------------------------------------------------+
+|                      Raspberry Pi 5                           |
++---------------------------------------------------------------+
+|                                                               |
+|  +-----------------------------------------------------------+|
+|  | ADB (Android Debug Bridge)                                 ||
+|  |   - Port forward: tcp:8080 -> phone:8080                  ||
+|  |   - GPS polling via: adb shell dumpsys location            ||
+|  |   - Camera via: scrcpy --video-source=camera              ||
+|  +-----------------------------------------------------------+|
+|                                                               |
+|  +-----------------------------------------------------------+|
+|  | phone_sensors_ros2_node.py                                 ||
+|  |   - WebSocket client -> SensorServer                      ||
+|  |   - Publishes: /phone/imu, /phone/magnetic_field          ||
+|  |   - Publishes: /phone/gps/fix, /phone/orientation         ||
+|  +-----------------------------------------------------------+|
+|                                                               |
+|  +-----------------------------------------------------------+|
+|  | v4l2loopback + scrcpy -> multi_camera_publisher.py         ||
+|  |   - /dev/video10-13 -> /phone/camera/{name}/image_raw     ||
+|  |   - Compressed: /phone/camera/{name}/image_raw/compressed ||
+|  +-----------------------------------------------------------+|
+|                                                               |
++---------------------------------------------------------------+
 ```
 
 ### Phone Setup
@@ -107,187 +274,137 @@ See [phone_sensors/README.md](./phone_sensors/README.md) for sensor setup and [p
 4. Connect phone via USB to Pi
 5. Start services: `sudo systemctl start rovac-edge-phone-sensors rovac-phone-cameras`
 
-## Robot Board Hardware
+## Stereo Cameras
 
-### Hiwonder ROS Robot Controller V1.2 (Active)
-
-The main control board for motors and onboard IMU. Replaced the Yahboom ROS Expansion Board V3.0.
+Dual USB cameras for stereo depth estimation.
 
 | Attribute | Value |
 |-----------|-------|
-| **MCU** | STM32F407VET6 (Cortex-M4, 168 MHz) |
-| **IMU** | QMI8658 (6-axis: accel + gyro only, **NO magnetometer**) |
-| **USB Chip** | CH9102 (`1a86:55d4`) |
-| **Device** | `/dev/hiwonder_board` (udev symlink → `/dev/hiwonder_board`, matched by serial `5B32013768`) |
-| **Baud Rate** | 1,000,000 (1 Mbaud) |
-| **Motors** | 4x DC motor channels (2 active: M1 left, M2 right for tank) |
-| **Encoders** | Internal PID only (100 Hz TIM7 loop) — NOT sent to host |
-| **Motor Config** | TANKBLACK: left motor inverted, M1(left)/M2(right) |
-| **Firmware** | RRCLite (vendor docs removed from Pi during cleanup) |
-| **Power Input** | 6-12V DC |
-| **Motor Switch** | Physical switch must be ON for motors to spin |
+| **Cameras** | 2x USB cameras |
+| **Baseline** | 102.67 mm |
+| **Algorithm** | StereoSGBM depth |
+| **Devices** | `/dev/video0`, `/dev/video1` |
 
-See [hiwonder-ros-controller/README.md](./hiwonder-ros-controller/README.md) for full documentation.
+See [stereo_cameras/README.md](./stereo_cameras/README.md) for calibration and depth estimation.
 
-### Yahboom ROS Expansion Board V3.0 (Replaced)
-
-Previous motor/IMU board. Disabled and replaced by Hiwonder V1.2. Documentation retained for reference.
-
-See [yahboom-ros-expansion-board-v3/README.md](./yahboom-ros-expansion-board-v3/README.md) for legacy documentation.
-
-### XV-11 LIDAR (USB)
-
-360° laser scanner for SLAM and obstacle detection.
+## USB Webcam
 
 | Attribute | Value |
 |-----------|-------|
-| **Type** | Neato XV-11 |
-| **Range** | 0.06 - 5m |
-| **Resolution** | 360 points per scan |
-| **Frequency** | ~5-10 Hz |
-| **Interface** | USB (via CH340) |
-| **Device** | `/dev/usb_lidar` |
+| **Model** | NexiGo N930E |
+| **Resolution** | 1080p |
+| **Device** | `/dev/webcam` |
 
-See [lidar_usb/README.md](./lidar_usb/docs/README.md) for setup and calibration.
+See [webcam/README.md](./webcam/README.md) for setup.
 
-### Super Sensor Module
-
-Arduino Nano-based sensor module with ultrasonic array.
+## Edge Computer: Raspberry Pi 5
 
 | Attribute | Value |
 |-----------|-------|
-| **MCU** | Arduino Nano (ATmega328P) |
-| **Ultrasonic** | 4x HC-SR04 |
-| **LED** | RGB LED |
-| **Servo** | 180° servo |
-| **Interface** | USB Serial |
-| **Device** | `/dev/super_sensor` |
-
-See [super_sensor/README.md](./super_sensor/README.md) for documentation.
-
-## Deprecated Hardware
-
-| Component | Purpose | Status |
-|-----------|---------|--------|
-| [Yahboom ROS Expansion Board V3.0](./yahboom-ros-expansion-board-v3/) | Motor/IMU (STM32F103, MPU9250) | **Replaced** by Hiwonder V1.2 |
-| [Yahboom BST-4WD Expansion Board](./yahboom-bst-4wd-expansion-board/) | Motor driver (TB6612FNG) | **Deprecated** - Replaced by ROS V3.0 |
-
-## Hardware Architecture Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              12V LiPo Battery                                │
-└───────────────────────────────────┬─────────────────────────────────────────┘
-                                    │
-         ┌──────────────────────────┼──────────────────────────┐
-         │                          │                          │
-         ▼                          ▼                          ▼
-┌─────────────────┐    ┌───────────────────────┐    ┌─────────────────────┐
-│ Yahboom USB Hub │    │ Hiwonder ROS Ctrl V1.2│    │ Phone (USB Power)   │
-│ (Power only)    │    │ (6-12V input)         │    │                     │
-└────────┬────────┘    ├───────────────────────┤    └──────────┬──────────┘
-         │             │ • STM32F407VET6 MCU   │               │
-         │             │ • QMI8658 IMU (6-axis)│               │
-         │             │ • 2x Motor (tank)     │               │
-         │             │ • Pi 5V/5A power out  │               │
-         │             └───────────┬───────────┘               │
-         │                         │                           │
-         │    USB Serial           │ USB-C Power               │ USB (ADB)
-         │    (/dev/hiwonder_board)       │                           │
-         │                         ▼                           │
-         │             ┌───────────────────────────────────────┼──────────────┐
-         │             │                Raspberry Pi 5                        │
-         │             ├──────────────────────────────────────────────────────┤
-         │             │                                                      │
-         └────────────►│  USB Ports:                                          │
-                       │    • /dev/hiwonder_board        → Hiwonder ROS Controller    │
-┌──────────────┐       │    • /dev/usb_lidar      → XV-11 LIDAR              │
-│   XV-11      │──────►│    • /dev/super_sensor   → Super Sensor              │
-│   LIDAR      │  USB  │    • Phone ADB           → Samsung Galaxy A16        │
-└──────────────┘       │                                                      │
-                       │  Services:                                           │
-┌──────────────┐       │    • rovac-edge-hiwonder    (motors, IMU, odom)     │
-│ Super Sensor │──────►│    • rovac-edge-lidar       (360° scan)             │
-│ (Arduino)    │  USB  │    • rovac-edge-supersensor (ultrasonic)            │
-└──────────────┘       │    • rovac-edge-phone-sensors (IMU, GPS, mag)       │
-                       │    • rovac-phone-cameras    (camera stream)          │
-                       │                                                      │
-                       └────────────────────────────┬─────────────────────────┘
-                                                    │
-                                                    │ Ethernet/WiFi
-                                                    │ (192.168.1.x)
-                                                    ▼
-                                          ┌───────────────────┐
-                                          │   MacBook Pro     │
-                                          │   (Brain)         │
-                                          │   192.168.1.104   │
-                                          ├───────────────────┤
-                                          │ • Nav2 stack      │
-                                          │ • SLAM toolbox    │
-                                          │ • Path planning   │
-                                          │ • Foxglove viz    │
-                                          └───────────────────┘
-```
+| **Model** | Raspberry Pi 5 (8 GB RAM, 117 GB SD) |
+| **OS** | Ubuntu 24.04.3 LTS (aarch64) |
+| **Hostname** | `rovac-pi` |
+| **User** | `pi` |
+| **IP** | `192.168.1.200` (wlan0) |
+| **ROS2** | Jazzy (apt), CycloneDDS, Nav2, SLAM Toolbox |
+| **Python** | 3.12 |
+| **micro-ROS Agent** | UDP on port 8888 |
 
 ## Sensor Summary
 
 | Sensor | Source | Rate | Purpose |
 |--------|--------|------|---------|
-| **LIDAR** | XV-11 | ~5-10 Hz | SLAM, obstacle detection |
-| **Board IMU** | QMI8658 | ~72 Hz | Orientation, motion (6-axis, no magnetometer) |
-| **Dead-reckoning Odom** | Commanded speeds + gyro Z | 20 Hz | Position tracking |
-| **Ultrasonic (4x)** | HC-SR04 | ~10 Hz | Close obstacle detection |
+| **Encoder Odom** | Maker-ESP32 (micro-ROS) | 50 Hz | Position tracking, PID control |
+| **LIDAR** | XV-11 (not connected) | ~5 Hz | SLAM, obstacle detection |
+| **Ultrasonic (4x)** | HC-SR04 via Super Sensor | ~10 Hz | Close obstacle detection |
 | **Phone GPS** | GNSS | 1 Hz | Outdoor positioning |
-| **Phone IMU** | LSM6DSOTR | ~45 Hz | Backup IMU |
-| **Phone Magnetometer** | MXG4300S | ~6 Hz | Compass (outdoor) |
+| **Phone IMU** | LSM6DSOTR | ~45 Hz | Orientation, motion |
+| **Phone Magnetometer** | MXG4300S | ~6 Hz | Compass heading (outdoor) |
 | **Phone Camera** | Back/Front/Wide | ~12 Hz | Visual sensing |
-| **USB Webcam** | NexiGo N930E | ~16 Hz | Forward vision, navigation |
+| **Stereo Cameras** | 2x USB | variable | Depth estimation |
+| **USB Webcam** | NexiGo N930E | ~16 Hz | Forward vision |
 
 ## Sensor Redundancy
-
-Multiple sensors provide overlapping coverage for reliability:
 
 | Measurement | Primary Source | Secondary Source |
 |-------------|----------------|------------------|
 | **Position (indoor)** | Wheel odometry (`/odom`) | LIDAR SLAM (`/map`) |
 | **Position (outdoor)** | Phone GPS (`/phone/gps/fix`) | Wheel odometry |
-| **Orientation** | Board IMU (`/imu/data`) | Phone IMU (`/phone/imu`) |
-| **Heading** | Phone magnetometer (`/phone/magnetic_field`) | IMU gyro Z integration (drift-prone) |
+| **Heading** | Phone magnetometer (`/phone/magnetic_field`) | Gyro Z integration (drift-prone) |
 | **Obstacles** | LIDAR (`/scan`) | Ultrasonic (`/super_sensor/*`) |
 
 ## Device Paths (udev)
 
-All devices use udev rules for persistent naming:
+All devices use udev rules for persistent naming on the Pi:
 
-| Device | Symlink | Vendor:Product |
-|--------|---------|----------------|
-| Hiwonder Board (UART1) | `/dev/hiwonder_board` | 1a86:55d4 (CH9102, serial `5B32013768`) |
-| Hiwonder Board (UART2) | `/dev/hiwonder_uart2` | 1a86:55d4 (CH9102, serial `5B32013767`) — unused by firmware |
-| XV-11 LIDAR | `/dev/usb_lidar` | 10c4:ea60 (CP210x) |
-| Super Sensor | `/dev/super_sensor` | 1a86:7523 (CH340) |
-| USB Webcam | `/dev/webcam` | 1bcf:2284 (NexiGo) |
-| Phone | ADB via USB | N/A |
+| Device | Symlink | Vendor:Product | Notes |
+|--------|---------|----------------|-------|
+| Maker-ESP32 Motor | `/dev/esp32_motor` | `1a86:7523` (CH340) | USB serial fallback only; primary is WiFi |
+| ESP32 LIDAR Bridge | `/dev/esp32_lidar` | `10c4:ea60` (CP2102) | Not yet connected |
+| Super Sensor | `/dev/super_sensor` | `1a86:7523` (CH340) | KERNELS-based udev rule |
+| USB Webcam | `/dev/webcam` | `1bcf:2284` (NexiGo) | |
+| Phone | ADB via USB | N/A | |
 
 ## Power Budget
 
 | Component | Voltage | Current (Typical) | Current (Max) |
 |-----------|---------|-------------------|---------------|
 | Raspberry Pi 5 | 5V | 2.5A | 5A |
-| Hiwonder Board (logic) | 5V | 0.2A | 0.5A |
-| Motors (4x) | 12V | 0.5A each | 1.5A each |
-| XV-11 LIDAR | 5V | 0.15A | 0.3A |
-| Super Sensor | 5V | 0.1A | 0.2A |
+| Maker-ESP32 (logic) | 5V (USB) or 12V barrel | 0.1A | 0.3A |
+| TB67H450FNG drivers (2 motors) | 12V | 0.5A each | 1.5A each |
+| XV-11 LIDAR | 5V | 0.15A | 0.68A |
+| Super Sensor (Nano) | 5V | 0.1A | 0.2A |
 | Phone | 5V (USB) | 0.5A | 1.5A |
-| **Total** | - | ~5A | ~12A |
+| Stereo Cameras (2x) | 5V (USB) | 0.2A | 0.5A |
+| USB Webcam | 5V (USB) | 0.1A | 0.3A |
+| **Total** | - | ~4.7A | ~11.5A |
+
+**TB67H450FNG UVLO note:** Battery must be above 8V under load. Voltage below 6.8V causes UVLO (Under-Voltage Lock-Out) on the motor drivers.
+
+## Legacy Hardware
+
+All legacy hardware has been moved to `archive/legacy_hardware/`:
+
+| Component | Original Location | Replaced By |
+|-----------|-------------------|-------------|
+| Hiwonder ROS Controller V1.2 | `hiwonder-ros-controller/` | Maker-ESP32 (micro-ROS) |
+| L298N + ESP32 DevKitV1 | `esp32_l298n_firmware/` | Maker-ESP32 (micro-ROS) |
+| Arduino Nano Encoder Bridge | `nano_encoder_bridge/` | ESP32 PCNT hardware encoders |
+| ESP32 Encoder Bridge | `esp32_encoder_bridge/` | ESP32 PCNT hardware encoders |
+| Yahboom BST-4WD V4.5 | `yahboom-bst-4wd-expansion-board/` | Maker-ESP32 |
+| Yahboom ROS Expansion Board V3.0 | `yahboom-ros-expansion-board-v3/` | Maker-ESP32 |
+| Maker-ESP32 Arduino Firmware | `maker_esp32_firmware/` | micro-ROS firmware (ESP-IDF) |
+| Arduino LIDAR Bridge | `arduino_lidar_bridge/` | ESP32 LIDAR bridge |
+| Nano LIDAR USB Bridge | `lidar_nano_usb/` | ESP32 LIDAR bridge |
+
+## Active Directories in hardware/
+
+| Directory | Purpose |
+|-----------|---------|
+| `esp32_motor_wireless/` | Active motor firmware (micro-ROS + ESP-IDF) |
+| `esp32_at8236_driver/` | USB serial ROS2 motor driver (fallback) |
+| `esp32_xv11_bridge/` | LIDAR bridge firmware |
+| `maker_esp32/` | Board documentation and wiring guide |
+| `super_sensor/` | Edge ROS2 nodes (ultrasonic, obstacle) |
+| `health_monitor/` | Edge health monitor node |
+| `stereo_cameras/` | Stereo camera calibration and depth |
+| `phone_sensors/` | Phone IMU/GPS/magnetometer integration |
+| `phone_cameras/` | Phone camera streaming |
+| `webcam/` | USB webcam publisher |
+| `lidar_usb/` | LIDAR hardware documentation |
 
 ## Documentation Index
 
 | Document | Description |
 |----------|-------------|
-| [hiwonder-ros-controller/README.md](./hiwonder-ros-controller/README.md) | Motor/IMU board (active — Hiwonder V1.2) |
-| [yahboom-ros-expansion-board-v3/README.md](./yahboom-ros-expansion-board-v3/README.md) | Old motor/IMU board (replaced) |
-| [lidar_usb/docs/README.md](./lidar_usb/docs/README.md) | LIDAR module setup and calibration |
-| [super_sensor/README.md](./super_sensor/README.md) | Super Sensor module documentation |
-| [phone_sensors/README.md](./phone_sensors/README.md) | Phone IMU/GPS/Magnetometer integration |
-| [phone_cameras/README.md](./phone_cameras/README.md) | Phone camera streaming setup |
-| [webcam/README.md](./webcam/README.md) | USB webcam setup and streaming |
+| [maker_esp32/](./maker_esp32/) | Motor board documentation and wiring |
+| [esp32_motor_wireless/](./esp32_motor_wireless/) | Active micro-ROS motor firmware |
+| [esp32_at8236_driver/](./esp32_at8236_driver/) | USB serial motor driver (fallback) |
+| [esp32_xv11_bridge/](./esp32_xv11_bridge/) | LIDAR bridge firmware |
+| [lidar_usb/](./lidar_usb/) | LIDAR hardware documentation |
+| [super_sensor/README.md](./super_sensor/README.md) | Super Sensor module |
+| [phone_sensors/README.md](./phone_sensors/README.md) | Phone IMU/GPS/magnetometer |
+| [phone_cameras/README.md](./phone_cameras/README.md) | Phone camera streaming |
+| [stereo_cameras/README.md](./stereo_cameras/README.md) | Stereo camera calibration |
+| [webcam/README.md](./webcam/README.md) | USB webcam setup |
+| [health_monitor/](./health_monitor/) | Edge health monitor |

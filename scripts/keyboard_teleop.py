@@ -1,151 +1,350 @@
 #!/usr/bin/env python3
-# encoding: utf-8
 """
-Official Hiwonder teleop_key_control.py (LanderPi repo)
-Stripped of Ackermann servo code (not applicable to tank chassis).
+ROVAC Keyboard Teleop — Drive the robot with keyboard arrow keys / WASD.
 
-Source: hiwonder/LanderPi/src/peripherals/peripherals/teleop_key_control.py
+By default, SSHes into the Pi and runs there for lowest latency.
+Publishes to /cmd_vel_teleop (goes through the mux at highest priority).
 
-Behavior (non-Ackermann, official):
-  w/s : forward/backward (PERSISTS after release)
-  a/d : turn left/right (stops on release)
-  space : full stop
-  CTRL-C : quit
+Controls:
+    ↑ / W   Forward         ↓ / S   Backward
+    ← / A   Turn left       → / D   Turn right
+    Q       Arc left         E       Arc right (forward + turn)
+    + / =   Increase speed   - / _   Decrease speed
+    SPACE   Stop             CTRL-C  Quit
 
-Publishes to: controller/cmd_vel (bypasses app speed cap)
+Usage:
+    # Default — auto-SSHes to Pi (lowest latency):
+    python3 scripts/keyboard_teleop.py
+
+    # Run locally on this machine (Mac or Pi):
+    python3 scripts/keyboard_teleop.py --local
 """
-import rclpy
-from rclpy.node import Node
-from geometry_msgs.msg import Twist
+import os
+import sys
+import socket
 
-import sys, select, os
-if os.name == 'nt':
-    import msvcrt, time
-else:
-    import tty, termios
 
-if os.name != 'nt':
-    settings = termios.tcgetattr(sys.stdin)
+# Pi connection settings
+PI_HOST = "pi@192.168.1.200"
+PI_SETUP = (
+    "source /opt/ros/jazzy/setup.bash && "
+    "source ~/robots/rovac/config/ros2_env.sh"
+)
+PI_SCRIPT = "~/robots/rovac/scripts/keyboard_teleop.py"
 
-LIN_VEL = 0.2
-ANG_VEL = 0.5
 
-msg = """
-Control Your Robot!
----------------------------
-Moving around:
-        w
-   a    s    d
+def ssh_to_pi():
+    """Replace this process with an SSH session to the Pi running the teleop."""
+    print(f"Connecting to Pi ({PI_HOST}) for lowest-latency control...")
+    cmd = f"{PI_SETUP} && python3 {PI_SCRIPT} --local"
+    os.execvp("ssh", ["ssh", "-t", PI_HOST, cmd])
+    # execvp replaces the process — never returns
 
-All keys stop on release
-space = full stop
-CTRL-C to quit
-"""
 
-# Official Hiwonder getKey — unchanged
-def getKey(settings):
-    if os.name == 'nt':
-        timeout = 0.1
-        startTime = time.time()
-        while True:
-            if msvcrt.kbhit():
-                if sys.version_info[0] >= 3:
-                    return msvcrt.getch().decode()
-                else:
-                    return msvcrt.getch()
-            elif time.time() - startTime > timeout:
-                return ''
+def run_teleop():
+    """Run the teleop node locally (on Pi or Mac)."""
+    import time
+    import math
+    import curses
 
-    tty.setraw(sys.stdin.fileno())
-    rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
-    if rlist:
-        key = sys.stdin.read(1)
-    else:
-        key = ''
+    import rclpy
+    from rclpy.node import Node
+    from rclpy.qos import QoSProfile, ReliabilityPolicy
+    from geometry_msgs.msg import Twist
+    from nav_msgs.msg import Odometry
 
-    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
-    return key
+    # Speed presets — linear (m/s) and angular (rad/s) are coupled.
+    # +/- changes both forward speed and turning speed together.
+    # At max (0.50 m/s / 6.5 rad/s), wheels are near their calibrated limit.
+    SPEED_STEPS = [0.05, 0.10, 0.15, 0.20, 0.30, 0.40, 0.50]
+    TURN_STEPS  = [1.0,  1.5,  2.0,  3.0,  4.0,  5.0,  6.5]
+    DEFAULT_SPEED_IDX = 2  # 0.15 m/s, 2.0 rad/s
 
-class TeleopControl(Node):
-    def __init__(self, name):
-        super().__init__(name)
-        self.cmd_vel = self.create_publisher(Twist, "controller/cmd_vel", 1)
+    # Arc turn scale — angular component when driving + turning (Q/E)
+    ARC_ANG_SCALE = 2.0
 
-    def run_control_loop(self):
-        control_linear_vel = 0.0
-        control_angular_vel = 0.0
-        last_x = 0
-        last_z = 0
-        empty_ticks = 0  # consecutive '' ticks for debounce
+    # Adaptive hold window (seconds):
+    #   Terminals have ~300ms initial key-repeat delay, then ~30ms repeats.
+    #   HOLD_INITIAL bridges that first 300ms gap so the motor doesn't stall.
+    #   HOLD_REPEATING kicks in once repeats are flowing — gives fast stop.
+    HOLD_INITIAL = 0.35
+    HOLD_REPEATING = 0.08
+    REPEAT_THRESHOLD = 2
 
-        try:
-            print(msg)
+    class KeyboardTeleop(Node):
+        def __init__(self):
+            super().__init__("keyboard_teleop")
+            self.cmd_pub = self.create_publisher(Twist, "cmd_vel_teleop", 10)
+            # Must match ESP32's best_effort QoS (reliable subscriber can't
+            # receive from best_effort publisher)
+            qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
+            self.odom_sub = self.create_subscription(
+                Odometry, "odom", self.odom_cb, qos)
+
+            self.speed_idx = DEFAULT_SPEED_IDX
+            self.linear_x = 0.0
+            self.angular_z = 0.0
+
+            self.odom_x = 0.0
+            self.odom_y = 0.0
+            self.odom_yaw = 0.0
+            self.odom_vx = 0.0
+            self.odom_wz = 0.0
+            self.odom_count = 0
+            self.odom_time = 0.0
+
+        @property
+        def max_linear(self):
+            return SPEED_STEPS[self.speed_idx]
+
+        @property
+        def max_angular(self):
+            return TURN_STEPS[self.speed_idx]
+
+        def odom_cb(self, msg):
+            self.odom_x = msg.pose.pose.position.x
+            self.odom_y = msg.pose.pose.position.y
+            q = msg.pose.pose.orientation
+            siny = 2.0 * (q.w * q.z + q.x * q.y)
+            cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+            self.odom_yaw = math.atan2(siny, cosy)
+            self.odom_vx = msg.twist.twist.linear.x
+            self.odom_wz = msg.twist.twist.angular.z
+            self.odom_count += 1
+            self.odom_time = time.time()
+
+        def publish_cmd(self):
+            twist = Twist()
+            twist.linear.x = self.linear_x
+            twist.angular.z = self.angular_z
+            self.cmd_pub.publish(twist)
+
+        def stop(self):
+            self.linear_x = 0.0
+            self.angular_z = 0.0
+            self.publish_cmd()
+
+        def _process_key(self, key):
+            """Returns True if this was a movement key."""
+            if key == curses.KEY_UP or key == ord('w') or key == ord('W'):
+                self.linear_x = -self.max_linear
+                self.angular_z = 0.0
+            elif key == curses.KEY_DOWN or key == ord('s') or key == ord('S'):
+                self.linear_x = self.max_linear
+                self.angular_z = 0.0
+            elif key == curses.KEY_LEFT or key == ord('a') or key == ord('A'):
+                self.linear_x = 0.0
+                self.angular_z = self.max_angular
+            elif key == curses.KEY_RIGHT or key == ord('d') or key == ord('D'):
+                self.linear_x = 0.0
+                self.angular_z = -self.max_angular
+            elif key == ord('q') or key == ord('Q'):
+                self.linear_x = -self.max_linear
+                self.angular_z = self.max_linear * ARC_ANG_SCALE
+            elif key == ord('e') or key == ord('E'):
+                self.linear_x = -self.max_linear
+                self.angular_z = -self.max_linear * ARC_ANG_SCALE
+            else:
+                return False
+            return True
+
+        def run(self, stdscr):
+            curses.curs_set(0)
+            stdscr.nodelay(True)
+            stdscr.timeout(20)  # 20ms polling
+
+            last_key_time = 0.0
+            key_active = False
+            repeat_count = 0
+            last_spin = 0.0
+
             while rclpy.ok():
-                key = getKey(settings)
+                now = time.time()
 
-                # Official Hiwonder non-Ackermann logic:
-                # w/s set linear (persists), a/d set angular (zeros on release)
-                if key == 'w':
-                    control_linear_vel = -LIN_VEL  # negative = forward on ROVAC
-                    control_angular_vel = 0.0
-                    empty_ticks = 0
-                elif key == 'a':
-                    control_angular_vel = -ANG_VEL
-                    control_linear_vel = 0.0
-                    empty_ticks = 0
-                elif key == 'd':
-                    control_angular_vel = ANG_VEL
-                    control_linear_vel = 0.0
-                    empty_ticks = 0
-                elif key == 's':
-                    control_linear_vel = LIN_VEL   # positive = backward on ROVAC
-                    control_angular_vel = 0.0
-                    empty_ticks = 0
-                elif key == ' ':
-                    control_linear_vel = 0.0
-                    control_angular_vel = 0.0
-                    empty_ticks = 0
-                elif key == '':
-                    empty_ticks += 1
-                    control_linear_vel = 0.0
-                    # Only zero angular after 2+ consecutive empty ticks (~200ms).
-                    # Single-tick gaps from key repeat don't trigger a stop,
-                    # preventing turn/stop alternation that confuses motor PID.
-                    if empty_ticks >= 2:
-                        control_angular_vel = 0.0
-                else:
-                    if (key == '\x03'):
+                # Process odom callbacks at ~10Hz
+                if now - last_spin >= 0.1:
+                    rclpy.spin_once(self, timeout_sec=0)
+                    last_spin = now
+
+                # Drain key buffer — use the LAST key pressed this frame
+                last_key = -1
+                while True:
+                    try:
+                        k = stdscr.getch()
+                    except curses.error:
+                        k = -1
+                    if k == -1:
+                        break
+                    last_key = k
+                key = last_key
+
+                # Handle keys
+                if key != -1:
+                    if self._process_key(key):
+                        key_active = True
+                        last_key_time = now
+                        repeat_count += 1
+                    elif key == ord(' '):
+                        self.linear_x = 0.0
+                        self.angular_z = 0.0
+                        key_active = False
+                        repeat_count = 0
+                    elif key == ord('+') or key == ord('='):
+                        if self.speed_idx < len(SPEED_STEPS) - 1:
+                            self.speed_idx += 1
+                    elif key == ord('-') or key == ord('_'):
+                        if self.speed_idx > 0:
+                            self.speed_idx -= 1
+                    elif key == 27:  # ESC sequence (arrow keys over SSH)
+                        k2 = stdscr.getch()
+                        if k2 == ord('['):
+                            k3 = stdscr.getch()
+                            esc_key = {ord('A'): curses.KEY_UP,
+                                       ord('B'): curses.KEY_DOWN,
+                                       ord('C'): curses.KEY_RIGHT,
+                                       ord('D'): curses.KEY_LEFT}.get(k3)
+                            if esc_key and self._process_key(esc_key):
+                                key_active = True
+                                last_key_time = now
+                                repeat_count += 1
+                    elif key == 3:  # CTRL-C
                         break
 
-                twist = Twist()
-                twist.linear.x = control_linear_vel
-                twist.linear.y = 0.0
-                twist.linear.z = 0.0
-                twist.angular.x = 0.0
-                twist.angular.y = 0.0
-                twist.angular.z = control_angular_vel
+                # Adaptive hold — long for first press, short once repeats flow
+                hold_sec = (HOLD_REPEATING if repeat_count >= REPEAT_THRESHOLD
+                            else HOLD_INITIAL)
+                if key_active and (now - last_key_time) > hold_sec:
+                    self.linear_x = 0.0
+                    self.angular_z = 0.0
+                    key_active = False
+                    repeat_count = 0
 
-                # Official Hiwonder: only publish on change or while turning
-                if last_x != control_linear_vel or last_z != control_angular_vel or control_angular_vel != 0:
-                    self.cmd_vel.publish(twist)
+                # Always publish (keeps ESP32 watchdog fed)
+                self.publish_cmd()
 
-                last_x = control_linear_vel
-                last_z = control_angular_vel
-        except BaseException as e:
-            print(e)
-        finally:
-            twist = Twist()
-            twist.linear.x = 0.0
-            twist.angular.z = 0.0
-            self.cmd_vel.publish(twist)
+                # Draw UI
+                self._draw(stdscr, key_active)
 
-            if os.name != 'nt':
-                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
+            self.stop()
+
+        def _draw(self, stdscr, key_active):
+            try:
+                stdscr.erase()
+
+                host = socket.gethostname()
+                stdscr.addstr(0, 0, f"ROVAC Keyboard Teleop [{host}]",
+                              curses.A_BOLD)
+                stdscr.addstr(0, 40,
+                              f"Fwd: {self.max_linear:.2f} m/s  "
+                              f"Turn: {self.max_angular:.1f} rad/s",
+                              curses.A_BOLD)
+
+                stdscr.addstr(2, 0, "Controls:  Arrow keys / WASD = drive")
+                stdscr.addstr(3, 0, "           Q/E = arc left/right")
+                stdscr.addstr(4, 0, "           +/- = speed up/down")
+                stdscr.addstr(5, 0, "           SPACE = stop  CTRL-C = quit")
+
+                lin_bar = ""
+                for i, s in enumerate(SPEED_STEPS):
+                    if i == self.speed_idx:
+                        lin_bar += f"[{s:.2f}]"
+                    else:
+                        lin_bar += f" {s:.2f} "
+                stdscr.addstr(7, 0, f"Fwd:   {lin_bar}")
+
+                turn_bar = ""
+                for i, t in enumerate(TURN_STEPS):
+                    if i == self.speed_idx:
+                        turn_bar += f"[{t:.1f}]"
+                    else:
+                        turn_bar += f" {t:.1f} "
+                stdscr.addstr(8, 0, f"Turn:  {turn_bar}")
+
+                state = "DRIVING" if key_active else "STOPPED"
+                attr = curses.A_BOLD if key_active else curses.A_DIM
+                stdscr.addstr(10, 0, f"State: {state}", attr)
+                stdscr.addstr(11, 0,
+                              f"Cmd:   linear={self.linear_x:+.3f} m/s  "
+                              f"angular={self.angular_z:+.3f} rad/s")
+
+                if self.linear_x < 0 and self.angular_z == 0:
+                    arrow = "    ^"
+                elif self.linear_x > 0 and self.angular_z == 0:
+                    arrow = "    v"
+                elif self.angular_z > 0 and self.linear_x == 0:
+                    arrow = "  <  "
+                elif self.angular_z < 0 and self.linear_x == 0:
+                    arrow = "    >"
+                elif self.linear_x < 0 and self.angular_z > 0:
+                    arrow = "  ^ /"
+                elif self.linear_x < 0 and self.angular_z < 0:
+                    arrow = "  \\ ^"
+                else:
+                    arrow = "  [ ]"
+                stdscr.addstr(13, 0, f"Dir:   {arrow}")
+
+                odom_age = time.time() - self.odom_time if self.odom_time > 0 else 999
+                odom_status = "LIVE" if odom_age < 1.0 else "STALE"
+                stdscr.addstr(15, 0, f"--- Odometry ({odom_status}, "
+                              f"{self.odom_count} msgs) ---")
+                stdscr.addstr(16, 0,
+                              f"Pos:   x={self.odom_x:+.3f}  y={self.odom_y:+.3f}"
+                              f"  yaw={math.degrees(self.odom_yaw):+.1f} deg")
+                stdscr.addstr(17, 0,
+                              f"Vel:   vx={self.odom_vx:+.3f} m/s  "
+                              f"wz={self.odom_wz:+.3f} rad/s")
+
+                stdscr.refresh()
+            except curses.error:
+                pass
+
+    # --- Teleop main ---
+    rclpy.init()
+    node = KeyboardTeleop()
+
+    print("Publishing to /cmd_vel (direct)")
+    print("Connecting to ROS2 topics...")
+    deadline = time.time() + 8.0
+    while node.odom_count == 0 and time.time() < deadline:
+        rclpy.spin_once(node, timeout_sec=0.5)
+    if node.odom_count > 0:
+        print(f"Odom connected ({node.odom_count} msgs). Launching teleop...")
+    else:
+        print("WARNING: No odom received yet — teleop will start anyway.")
+        print("         (odom may connect after a few seconds)")
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    time.sleep(0.2)
+
+    saved_stderr_fd = os.dup(2)
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull_fd, 2)
+    os.close(devnull_fd)
+
+    try:
+        curses.wrapper(node.run)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        os.dup2(saved_stderr_fd, 2)
+        os.close(saved_stderr_fd)
+        node.stop()
+        node.destroy_node()
+        rclpy.shutdown()
+
 
 def main():
-    rclpy.init()
-    node = TeleopControl('teleop_control')
-    node.run_control_loop()
+    # --local means run the teleop on this machine
+    # Default (no flag) means SSH to Pi for lowest latency
+    if "--local" in sys.argv:
+        run_teleop()
+    elif socket.gethostname() == "rovac-pi":
+        # Already on Pi — run locally
+        run_teleop()
+    else:
+        ssh_to_pi()
+
 
 if __name__ == "__main__":
     main()

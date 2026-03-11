@@ -24,6 +24,7 @@
 
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -92,6 +93,11 @@ static bool s_connected = false;
 static const motor_wireless_config_t *s_cfg = NULL;
 static int s_executor_errors = 0;
 
+// Session health tracking (all accessed from uros_task only — no atomics needed)
+static int s_pub_errors = 0;        // consecutive odom publish failures
+static int s_ping_failures = 0;     // consecutive periodic ping failures
+static int64_t s_last_ping_us = 0;  // last Agent ping timestamp
+
 // Frame ID strings (must persist — micro-ROS references them by pointer)
 static char s_odom_frame[] = "odom";
 static char s_base_frame[] = "base_link";
@@ -149,7 +155,13 @@ static void odom_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
     s_odom_msg.twist.covariance[0] = odom.cov_vx;
     s_odom_msg.twist.covariance[35] = odom.cov_vyaw;
 
-    RC_IGNORE(rcl_publish(&s_odom_pub, &s_odom_msg, NULL));
+    // Track publish health — stale sessions cause publish failures
+    rcl_ret_t pub_rc = rcl_publish(&s_odom_pub, &s_odom_msg, NULL);
+    if (pub_rc != RCL_RET_OK) {
+        s_pub_errors++;
+    } else {
+        s_pub_errors = 0;
+    }
 
     // Publish odom→base_link TF (same data)
     s_tf_transform.header.stamp = s_odom_msg.header.stamp;
@@ -286,60 +298,87 @@ static void cmd_vel_cb(const void *msg_in)
 
 // --- Entity creation/destruction ---
 
+static bool ping_agent(void)
+{
+    // Ping using a SEPARATE init_options (disposable) so it doesn't
+    // consume transport state needed by rclc_support_init_with_options.
+    rcl_allocator_t alloc = rcl_get_default_allocator();
+    rcl_init_options_t ping_opts = rcl_get_zero_initialized_init_options();
+    if (rcl_init_options_init(&ping_opts, alloc) != RCL_RET_OK) return false;
+
+    rmw_init_options_t *rmw_opts = rcl_init_options_get_rmw_init_options(&ping_opts);
+    char port_str[8];
+    snprintf(port_str, sizeof(port_str), "%u", s_cfg->agent_port);
+    if (rmw_uros_options_set_udp_address(s_cfg->agent_ip, port_str, rmw_opts) != RCL_RET_OK) {
+        rcl_init_options_fini(&ping_opts);
+        return false;
+    }
+
+    rmw_ret_t rc = rmw_uros_ping_agent_options(1000, 3, rmw_opts);
+    rcl_init_options_fini(&ping_opts);  // Always clean up
+    return rc == RMW_RET_OK;
+}
+
 static bool create_entities(void)
 {
     s_allocator = rcl_get_default_allocator();
 
-    // Configure UDP transport to Agent IP:port from NVS config
-    rcl_init_options_t init_options = rcl_get_zero_initialized_init_options();
-    RCCHECK(rcl_init_options_init(&init_options, s_allocator));
-    rmw_init_options_t *rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
-
-    // Set ROS domain ID to match our ROS2 environment (42)
-    RCCHECK(rcl_init_options_set_domain_id(&init_options, 42));
-
-    // Format port as string for the API
-    char port_str[8];
-    snprintf(port_str, sizeof(port_str), "%u", s_cfg->agent_port);
-    RCCHECK(rmw_uros_options_set_udp_address(s_cfg->agent_ip, port_str, rmw_options));
-
-    ESP_LOGI(TAG, "Connecting to agent at %s:%s (domain 42)", s_cfg->agent_ip, port_str);
-
-    // Ping Agent first — creates temporary transport, verifies reachability
-    ESP_LOGI(TAG, "Pinging agent...");
-    rmw_ret_t ping_rc = rmw_uros_ping_agent_options(1000, 3, rmw_options);
-    if (ping_rc != RMW_RET_OK) {
-        ESP_LOGW(TAG, "Agent ping failed (rc=%d) — agent not reachable", (int)ping_rc);
-        rcl_init_options_fini(&init_options);
+    // Ping Agent with disposable options first
+    ESP_LOGI(TAG, "Pinging agent at %s:%u...", s_cfg->agent_ip, s_cfg->agent_port);
+    if (!ping_agent()) {
+        ESP_LOGW(TAG, "Agent ping failed — not reachable");
         return false;
     }
     ESP_LOGI(TAG, "Agent ping OK — creating session...");
 
-    RCCHECK(rclc_support_init_with_options(&s_support, 0, NULL, &init_options, &s_allocator));
+    // Configure UDP transport with FRESH init_options (unmodified by ping)
+    rcl_init_options_t init_options = rcl_get_zero_initialized_init_options();
+    rcl_ret_t rc = rcl_init_options_init(&init_options, s_allocator);
+    if (rc != RCL_RET_OK) {
+        ESP_LOGE(TAG, "init_options_init failed (rc=%ld)", (long)rc);
+        return false;
+    }
+
+    rmw_init_options_t *rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
+    char port_str[8];
+    snprintf(port_str, sizeof(port_str), "%u", s_cfg->agent_port);
+
+    rc = rcl_init_options_set_domain_id(&init_options, 42);
+    if (rc != RCL_RET_OK) goto cleanup_opts;
+    rc = rmw_uros_options_set_udp_address(s_cfg->agent_ip, port_str, rmw_options);
+    if (rc != RCL_RET_OK) goto cleanup_opts;
+
+    rc = rclc_support_init_with_options(&s_support, 0, NULL, &init_options, &s_allocator);
+    if (rc != RCL_RET_OK) {
+        ESP_LOGE(TAG, "Session creation failed (rc=%ld)", (long)rc);
+        goto cleanup_opts;
+    }
+    // init_options ownership transfers to support on success — do NOT fini
 
     // Create node
     RCCHECK(rclc_node_init_default(&s_node, "rovac_motor", "", &s_support));
 
     // Publishers (3 — no scan)
-    // NOTE: Using reliable QoS (not best_effort) because the Odometry message
-    // with 2x36-double covariance arrays (~730 bytes) exceeds the XRCE-DDS
-    // default 512-byte MTU for best_effort (which can't fragment).
-    // Reliable streams CAN fragment across multiple MTU-sized packets.
-    RCCHECK(rclc_publisher_init_default(
+    // Using best_effort QoS for all topics:
+    //   - Eliminates ACK round-trips over WiFi (~54ms saved per message)
+    //   - Lost messages are replaced by the next publish (20Hz odom, 50Hz cmd_vel)
+    //   - MTU increased to 1024 in app-colcon.meta so odom (~730 bytes) fits
+    //     in a single packet without fragmentation
+    RCCHECK(rclc_publisher_init_best_effort(
         &s_odom_pub, &s_node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "odom"));
 
-    RCCHECK(rclc_publisher_init_default(
+    RCCHECK(rclc_publisher_init_best_effort(
         &s_tf_pub, &s_node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(tf2_msgs, msg, TFMessage), "tf"));
 
-    RCCHECK(rclc_publisher_init_default(
+    RCCHECK(rclc_publisher_init_best_effort(
         &s_diag_pub, &s_node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(diagnostic_msgs, msg, DiagnosticArray),
         "diagnostics"));
 
-    // Subscriber
-    RCCHECK(rclc_subscription_init_default(
+    // Subscriber — best_effort for lowest latency command delivery
+    RCCHECK(rclc_subscription_init_best_effort(
         &s_cmd_vel_sub, &s_node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
 
@@ -363,6 +402,10 @@ static bool create_entities(void)
 
     ESP_LOGI(TAG, "micro-ROS entities created (3 pub, 1 sub, 3 timer)");
     return true;
+
+cleanup_opts:
+    rcl_init_options_fini(&init_options);
+    return false;
 }
 
 static void destroy_entities(void)
@@ -419,25 +462,57 @@ static void uros_task(void *arg)
                 if (rc != RCL_RET_OK) {
                     s_executor_errors++;
                     ESP_LOGW(TAG, "Executor error: %ld (count=%d)", (long)rc, s_executor_errors);
-                    // Consecutive errors indicate agent loss
-                    if (s_executor_errors >= 10) {
-                        ESP_LOGW(TAG, "Agent lost (too many errors)!");
+                    if (s_executor_errors >= 5) {
+                        ESP_LOGW(TAG, "Agent lost (executor errors)!");
                         s_state = STATE_AGENT_DISCONNECTED;
+                        break;
                     }
                 } else {
                     s_executor_errors = 0;
+                }
+
+                // Detect stale session via publish failures (20 fails at 20Hz ≈ 1s)
+                if (s_pub_errors >= 20) {
+                    ESP_LOGW(TAG, "Agent lost (publish failures=%d)!", s_pub_errors);
+                    s_state = STATE_AGENT_DISCONNECTED;
+                    break;
+                }
+
+                // Periodic Agent ping every 3s — catches network loss / Agent crash.
+                // With best_effort QoS, publish errors never trigger (UDP send
+                // always succeeds locally), so the ping is the PRIMARY disconnect
+                // detection mechanism. 3s interval × 2 failures = 6s detection.
+                int64_t now_us = esp_timer_get_time();
+                if (now_us - s_last_ping_us > 3000000) {  // 3 seconds
+                    s_last_ping_us = now_us;
+                    rmw_ret_t ping_rc = rmw_uros_ping_agent(500, 1);
+                    if (ping_rc != RMW_RET_OK) {
+                        s_ping_failures++;
+                        ESP_LOGW(TAG, "Agent ping failed (streak=%d)", s_ping_failures);
+                        if (s_ping_failures >= 2) {
+                            ESP_LOGW(TAG, "Agent lost (ping failures)!");
+                            s_state = STATE_AGENT_DISCONNECTED;
+                            break;
+                        }
+                    } else {
+                        s_ping_failures = 0;
+                    }
                 }
             }
             break;
 
         case STATE_AGENT_DISCONNECTED:
-            led_status_set(LED_STATE_NO_AGENT);
+            led_status_set(LED_STATE_ERROR);
             s_connected = false;
-            destroy_entities();
-            s_state = STATE_WAITING_AGENT;
-            ESP_LOGI(TAG, "Returning to agent search...");
-            vTaskDelay(pdMS_TO_TICKS(2000)); // Wait before reconnecting
-            break;
+            // Stop motors immediately for safety
+            motor_control_stop();
+            // micro-ROS XRCE-DDS transport doesn't fully reset after
+            // rclc_support_fini(), so rclc_support_init_with_options()
+            // fails on reconnect. Rebooting is the reliable fix (~4s).
+            ESP_LOGW(TAG, "Agent lost — rebooting for clean reconnect...");
+            vTaskDelay(pdMS_TO_TICKS(500));  // Brief pause so log flushes
+            esp_restart();
+            break;  // unreachable
         }
     }
 }

@@ -23,6 +23,17 @@ ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
 
+# === ESP-IDF Build Artifacts ===
+hardware/*/sdkconfig
+hardware/*/sdkconfig.old
+hardware/*/build/
+hardware/*/managed_components/
+hardware/*/dependencies.lock
+
+# === Abandoned ESP32 Gateway Experiment ===
+# Fast-DDS ↔ CycloneDDS unicast discovery failure (2026-03-03)
+hardware/esp32_gateway/
+
 # === Logs ===
 *.log
 
@@ -75,6 +86,8 @@ maps/*.pgm
 # === Vendor Firmware Docs (large, not project code) ===
 hiwonder/
 yahboom/
+hardware/yahboom-at8236-motor-driver/
+hardware/maker_esp32/maker-esp32/
 
 # === Misc Runtime ===
 *.bak
@@ -83,3 +96,10 @@ node_modules/
 
 # === Syncthing Shared Folder ===
 shared/
+
+# === Session / Temp Files ===
+*-this-session-is-being-continued-from-*.txt
+TODO.md
+
+# === Legacy Config (abandoned experiments) ===
+config/fastdds_agent.xml

@@ -48,7 +48,14 @@
 // ============================================================================
 
 #define DEVICE_NAME      "ESP32_XV11_BRIDGE"
-#define FIRMWARE_VERSION "2.1.0"
+#define FIRMWARE_VERSION "2.2.0"
+
+// Gateway UART (Serial1) — high-speed link to Gateway ESP32
+// LIDAR ESP32 TX=GPIO4, RX=GPIO15 → Gateway UART2 RX=GPIO14, TX=GPIO13
+// Uses ESP32-WROOM-32 safe pins (not the S3 variant)
+#define GATEWAY_UART_TX   4
+#define GATEWAY_UART_RX   15
+#define GATEWAY_UART_BAUD 921600
 
 // UART pins for LIDAR (VERIFIED WORKING 2026-03-01)
 #define LIDAR_RX_PIN     17    // GPIO17 - receives data FROM LIDAR (Brown/TX wire)  
@@ -137,11 +144,21 @@ void setup() {
     delay(100);
   }
 
+  // Initialize Gateway UART (Serial1) — high-speed link for Gateway ESP32
+  Serial1.begin(GATEWAY_UART_BAUD, SERIAL_8N1, GATEWAY_UART_RX, GATEWAY_UART_TX);
+
   // Startup message
   Serial.println();
   Serial.println("!ESP32_XV11_BRIDGE_READY");
   Serial.println("!Firmware: " FIRMWARE_VERSION);
   Serial.println("!LIDAR RX=GPIO16, TX=GPIO17, Motor PWM=GPIO25");
+  Serial.print("!Gateway UART: TX=GPIO");
+  Serial.print(GATEWAY_UART_TX);
+  Serial.print(" RX=GPIO");
+  Serial.print(GATEWAY_UART_RX);
+  Serial.print(" @ ");
+  Serial.print(GATEWAY_UART_BAUD);
+  Serial.println(" baud");
   Serial.println("!Target RPM: " + String(targetRPM));
   Serial.println("!Send !help for commands");
   Serial.println();
@@ -154,10 +171,11 @@ void setup() {
 void loop() {
   uint32_t currentTime = millis();
 
-  // Read and forward LIDAR data, parsing for RPM
+  // Read and forward LIDAR data to BOTH USB and Gateway UART, parsing for RPM
   while (LidarSerial.available()) {
     uint8_t byte = LidarSerial.read();
-    Serial.write(byte);  // Forward to USB
+    Serial.write(byte);   // Forward to USB (debug / Lenovo host)
+    Serial1.write(byte);  // Forward to Gateway ESP32 (primary consumer)
     bytesForwarded++;
     lastActivityTime = currentTime;
 

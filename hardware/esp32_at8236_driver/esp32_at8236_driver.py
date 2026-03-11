@@ -7,10 +7,10 @@ has its own PID controller that compares commanded velocity (m/s) against
 measured velocity (from encoder ticks) and adjusts PWM output to match.
 
 Hardware:
-  Motor driver: L298N dual H-bridge (or protocol-compatible AT8236/TB6612)
+  Motor driver: NULLLAB Maker-ESP32 with 4x TB67H450FNG (or protocol-compatible L298N/AT8236)
   Motors: 2x JGB37-520R60-12 (12V, 60:1 gear ratio, 11 PPR Hall encoder)
   Encoder: ESP32 PCNT hardware peripheral (zero CPU overhead)
-  Bridge: USB-serial at 115200 baud → /dev/esp32_motor
+  Bridge: USB-serial at 115200 baud → /dev/esp32_motor (CH340)
 
 Serial Protocol (115200 baud, newline-terminated):
   Commands (Pi → ESP32):
@@ -27,7 +27,7 @@ Serial Protocol (115200 baud, newline-terminated):
     ! ...                Info/status messages
 
 Notes:
-  - ESP32 firmware handles motor dead zone internally (maps 1-255 → 60-255)
+  - ESP32 firmware handles motor dead zone internally (maps 1-255 → minDuty-255)
   - ESP32 firmware has its own 1s watchdog (stops motors if no commands)
   - No GPIO / root access needed — USB serial only
 
@@ -164,46 +164,81 @@ class EncoderReader:
 
 
 class WheelPID:
-    """PID controller for a single wheel.
+    """Feedforward + PID controller for a single wheel.
 
-    Converts velocity error (m/s) into PWM adjustment. The output is
-    accumulated (integral) so the PWM ramps up to whatever value is
-    needed to maintain the target velocity — no open-loop scaling needed.
+    The feedforward term provides an immediate PWM estimate from the target
+    velocity, combining a static offset (motor stiction compensation) with
+    a linear velocity-to-PWM scale.  This gets the motor ~90% of the way
+    to the target on the first cycle.
+
+    The PID then corrects the residual error — load variations, friction,
+    left/right motor mismatch, battery voltage changes.
     """
 
-    def __init__(self, kp=150.0, ki=400.0, kd=5.0, max_output=255.0):
+    def __init__(self, kp=50.0, ki=120.0, kd=1.0,
+                 ff_scale=310.0, ff_offset=100.0, max_output=255.0):
         self.kp = kp
         self.ki = ki
         self.kd = kd
+        self.ff_scale = ff_scale    # PWM per m/s (linear portion above offset)
+        self.ff_offset = ff_offset  # Static duty to overcome motor stiction
         self.max_output = max_output
 
         self._integral = 0.0
         self._prev_error = 0.0
         self._output = 0.0
+        self._saturated = False
+
+        # Low-pass filter for derivative (reduces noise amplification)
+        self._filtered_deriv = 0.0
+        self._deriv_alpha = 0.5  # EMA smoothing factor (0=ignore new, 1=no filter)
 
     def update(self, target_vel, measured_vel, dt):
-        """Compute PID output given target and measured velocity (m/s).
+        """Compute feedforward + PID output.
         Returns PWM value in [-max_output, max_output]."""
         if dt <= 0:
             return self._output
 
         error = target_vel - measured_vel
 
-        # Proportional
-        p_term = self.kp * error
+        # Feedforward: stiction offset + linear velocity scaling
+        # Maps: 0 m/s → 0 PWM, ε m/s → ±offset, max_speed → max_output
+        if abs(target_vel) < 0.005:
+            ff_term = 0.0
+        else:
+            sign = 1.0 if target_vel > 0 else -1.0
+            ff_term = sign * (self.ff_offset + abs(target_vel) * self.ff_scale)
 
-        # Integral with anti-windup clamp
-        self._integral += error * dt
-        max_integral = self.max_output / max(self.ki, 1.0)
+        # Proportional with gain scheduling: 2x kp near target for faster
+        # fine-tuning, normal kp far from target to prevent overshoot
+        near_target = abs(error) < max(abs(target_vel) * 0.3, 0.02)
+        effective_kp = self.kp * 2.0 if near_target else self.kp
+        p_term = effective_kp * error
+
+        # Integral with dual anti-windup:
+        # 1. Conditional: only accumulate when velocity is within 30% of
+        #    target (adaptive threshold scales with speed)
+        # 2. Back-calculation: don't accumulate when output is saturated
+        threshold = max(abs(target_vel) * 0.3, 0.02)
+        if abs(error) < threshold and not self._saturated:
+            self._integral += error * dt
+        elif abs(error) >= threshold:
+            # Large transient — decay integral to prevent stale buildup
+            self._integral *= 0.95
+        max_integral = 50.0 / max(self.ki, 1.0)  # Cap integral at ±50 duty
         self._integral = max(-max_integral, min(max_integral, self._integral))
         i_term = self.ki * self._integral
 
-        # Derivative
-        d_term = self.kd * (error - self._prev_error) / dt
+        # Derivative with low-pass filter to suppress encoder noise
+        raw_deriv = (error - self._prev_error) / dt
+        self._filtered_deriv = (self._deriv_alpha * raw_deriv +
+                                (1.0 - self._deriv_alpha) * self._filtered_deriv)
+        d_term = self.kd * self._filtered_deriv
         self._prev_error = error
 
-        self._output = max(-self.max_output,
-                           min(self.max_output, p_term + i_term + d_term))
+        total = ff_term + p_term + i_term + d_term
+        self._output = max(-self.max_output, min(self.max_output, total))
+        self._saturated = abs(total - self._output) > 0.5
         return self._output
 
     def reset(self):
@@ -211,6 +246,8 @@ class WheelPID:
         self._integral = 0.0
         self._prev_error = 0.0
         self._output = 0.0
+        self._filtered_deriv = 0.0
+        self._saturated = False
 
 
 class ESP32AT8236Driver(Node):
@@ -221,7 +258,7 @@ class ESP32AT8236Driver(Node):
         # ---- Parameters ----
         self.declare_parameter("wheel_separation", 0.155)
         self.declare_parameter("wheel_radius", 0.032)
-        self.declare_parameter("max_linear_speed", 0.5)        # m/s
+        self.declare_parameter("max_linear_speed", 0.57)       # m/s (measured at duty 255)
         self.declare_parameter("max_angular_speed", 6.5)        # rad/s — full motor power in-place turn
         self.declare_parameter("max_motor_speed", 255)          # 0-255 (full range)
         self.declare_parameter("cmd_vel_timeout", 0.5)
@@ -233,9 +270,14 @@ class ESP32AT8236Driver(Node):
         self.declare_parameter("serial_port", DEFAULT_SERIAL_PORT)
         self.declare_parameter("serial_baud", DEFAULT_SERIAL_BAUD)
         self.declare_parameter("stream_rate", DEFAULT_STREAM_HZ)
-        self.declare_parameter("pid_kp", 150.0)
-        self.declare_parameter("pid_ki", 400.0)
-        self.declare_parameter("pid_kd", 5.0)
+        self.declare_parameter("pid_kp", 40.0)
+        self.declare_parameter("pid_ki", 300.0)
+        self.declare_parameter("pid_kd", 10.0)
+        self.declare_parameter("pid_ff_scale", 200.0)   # PWM per m/s (from motor characterization)
+        self.declare_parameter("pid_ff_offset", 134.0)   # Combined stiction threshold (from characterization)
+        self.declare_parameter("pid_ff_offset_left", 136.0)   # Left wheel stiction (from characterization)
+        self.declare_parameter("pid_ff_offset_right", 132.0)  # Right wheel stiction (from characterization)
+        self.declare_parameter("firmware_min_duty", 0)  # Sent to ESP32 on connect (0=pass-through)
 
         self._wheel_sep = self.get_parameter("wheel_separation").value
         self._wheel_rad = self.get_parameter("wheel_radius").value
@@ -251,6 +293,7 @@ class ESP32AT8236Driver(Node):
         self._serial_port = self.get_parameter("serial_port").value
         self._serial_baud = self.get_parameter("serial_baud").value
         self._stream_rate = self.get_parameter("stream_rate").value
+        self._firmware_min_duty = self.get_parameter("firmware_min_duty").value
 
         # ---- State ----
         self._odom_x = 0.0
@@ -258,18 +301,31 @@ class ESP32AT8236Driver(Node):
         self._odom_theta = 0.0
         self._last_cmd_time = 0.0
         self._last_odom_time = None
+        self._last_enc_time = None   # Last time we got real encoder data (for PID dt)
+        self._last_v_linear = 0.0           # Persist velocity for odom publishing
+        self._last_v_angular = 0.0
+        self._last_measured_v_left = 0.0   # Persist per-wheel velocity for PID
+        self._last_measured_v_right = 0.0
         self._cmd_count = 0
         self._odom_count = 0
         self._firmware_id = ""
         self._motors_stopped = True  # Track to avoid redundant serial stop spam
 
-        # ---- PID controllers (one per wheel) ----
+        # ---- PID controllers (one per wheel, per-wheel feedforward) ----
         _kp = self.get_parameter("pid_kp").value
         _ki = self.get_parameter("pid_ki").value
         _kd = self.get_parameter("pid_kd").value
+        _ff = self.get_parameter("pid_ff_scale").value
+        _ff_offset_left = self.get_parameter("pid_ff_offset_left").value
+        _ff_offset_right = self.get_parameter("pid_ff_offset_right").value
+        if _ff <= 0:
+            _ff_offset_avg = (_ff_offset_left + _ff_offset_right) / 2.0
+            _ff = (float(self._max_motor_speed) - _ff_offset_avg) / max(self._max_linear, 0.01)
         self._pid_left = WheelPID(kp=_kp, ki=_ki, kd=_kd,
+                                  ff_scale=_ff, ff_offset=_ff_offset_left,
                                   max_output=float(self._max_motor_speed))
         self._pid_right = WheelPID(kp=_kp, ki=_ki, kd=_kd,
+                                   ff_scale=_ff, ff_offset=_ff_offset_right,
                                    max_output=float(self._max_motor_speed))
         # Target wheel velocities (m/s) — set by cmd_vel callback
         self._target_v_left = 0.0
@@ -306,7 +362,7 @@ class ESP32AT8236Driver(Node):
         self.create_subscription(Twist, "cmd_vel", self._cmd_vel_cb, cmd_qos)
 
         # ---- Timers ----
-        self.create_timer(0.05, self._odom_timer_cb)      # 20 Hz odom
+        self.create_timer(0.05, self._odom_timer_cb)      # 20 Hz odom + PID
         self.create_timer(1.0, self._diag_timer_cb)        # 1 Hz diagnostics
         self.create_timer(0.1, self._watchdog_cb)           # 10 Hz watchdog
 
@@ -315,7 +371,8 @@ class ESP32AT8236Driver(Node):
             f"wheel_sep={self._wheel_sep}m, wheel_rad={self._wheel_rad}m, "
             f"max_motor_speed={self._max_motor_speed}/255, "
             f"ticks/rev={TICKS_PER_REV}, serial={self._serial_port}, "
-            f"PID: kp={_kp} ki={_ki} kd={_kd}"
+            f"PID: kp={_kp} ki={_ki} kd={_kd} ff_scale={_ff:.1f} "
+            f"ff_offset_L={_ff_offset_left} ff_offset_R={_ff_offset_right}"
         )
 
     # -----------------------------------------------------------------
@@ -379,6 +436,9 @@ class ESP32AT8236Driver(Node):
                 # Verify firmware identity
                 self._send_serial("!id\n")
                 time.sleep(0.3)
+
+                # Configure firmware dead zone (0=pass-through for PID control)
+                self._send_serial(f"!minduty {self._firmware_min_duty}\n")
 
                 # Start encoder streaming
                 self._send_serial(f"!stream {self._stream_rate}\n")
@@ -523,6 +583,7 @@ class ESP32AT8236Driver(Node):
 
         if self._last_odom_time is None:
             self._last_odom_time = now_sec
+            self._last_enc_time = now_sec
             # Drain any startup encoder counts
             self._enc_reader.get_and_reset()
             return
@@ -550,45 +611,62 @@ class ESP32AT8236Driver(Node):
                 f"Encoder delta outlier rejected: L={left_ticks} R={right_ticks}")
             return
 
-        # Convert ticks to distance (meters)
-        wheel_circumference = 2.0 * math.pi * self._wheel_rad
-        left_dist = (left_ticks / TICKS_PER_REV) * wheel_circumference
-        right_dist = (right_ticks / TICKS_PER_REV) * wheel_circumference
+        has_encoder_data = (left_ticks != 0 or right_ticks != 0)
 
-        # Differential drive odometry
-        d_center = (left_dist + right_dist) / 2.0
-        d_theta = (right_dist - left_dist) / self._wheel_sep
+        if has_encoder_data:
+            # Real encoder data — compute velocity using time since last data
+            enc_dt = now_sec - self._last_enc_time
+            self._last_enc_time = now_sec
+            if enc_dt <= 0.0 or enc_dt > 1.0:
+                enc_dt = dt
 
-        # Velocity estimates
-        v_linear = d_center / dt
-        v_angular = d_theta / dt
+            # Convert ticks to distance (meters)
+            wheel_circumference = 2.0 * math.pi * self._wheel_rad
+            left_dist = (left_ticks / TICKS_PER_REV) * wheel_circumference
+            right_dist = (right_ticks / TICKS_PER_REV) * wheel_circumference
 
-        # ---- PID motor control ----
-        if self._pid_active:
-            measured_v_left = left_dist / dt
-            measured_v_right = right_dist / dt
-            pwm_left = self._pid_left.update(
-                self._target_v_left, measured_v_left, dt)
-            pwm_right = self._pid_right.update(
-                self._target_v_right, measured_v_right, dt)
-            self._send_motor_command(pwm_left, pwm_right)
+            # Differential drive odometry
+            d_center = (left_dist + right_dist) / 2.0
+            d_theta = (right_dist - left_dist) / self._wheel_sep
 
-        # Integrate pose
-        if abs(d_theta) < 1e-6:
-            dx = d_center * math.cos(self._odom_theta)
-            dy = d_center * math.sin(self._odom_theta)
+            # Velocity from actual encoder interval (avoids aliasing)
+            self._last_v_linear = d_center / enc_dt
+            self._last_v_angular = d_theta / enc_dt
+            self._last_measured_v_left = left_dist / enc_dt
+            self._last_measured_v_right = right_dist / enc_dt
+
+            # Integrate pose
+            if abs(d_theta) < 1e-6:
+                dx = d_center * math.cos(self._odom_theta)
+                dy = d_center * math.sin(self._odom_theta)
+            else:
+                radius = d_center / d_theta
+                dx = radius * (math.sin(self._odom_theta + d_theta)
+                               - math.sin(self._odom_theta))
+                dy = -radius * (math.cos(self._odom_theta + d_theta)
+                                - math.cos(self._odom_theta))
+
+            self._odom_x += dx
+            self._odom_y += dy
+            self._odom_theta += d_theta
+            self._odom_theta = math.atan2(
+                math.sin(self._odom_theta), math.cos(self._odom_theta))
         else:
-            radius = d_center / d_theta
-            dx = radius * (math.sin(self._odom_theta + d_theta)
-                           - math.sin(self._odom_theta))
-            dy = -radius * (math.cos(self._odom_theta + d_theta)
-                            - math.cos(self._odom_theta))
+            # No new encoder data — decay velocity if stale
+            time_since_enc = now_sec - self._last_enc_time
+            if time_since_enc > 0.15:
+                self._last_v_linear = 0.0
+                self._last_v_angular = 0.0
+                self._last_measured_v_left = 0.0
+                self._last_measured_v_right = 0.0
 
-        self._odom_x += dx
-        self._odom_y += dy
-        self._odom_theta += d_theta
-        self._odom_theta = math.atan2(
-            math.sin(self._odom_theta), math.cos(self._odom_theta))
+        # ---- PID motor control (runs every cycle when active) ----
+        if self._pid_active:
+            pwm_left = self._pid_left.update(
+                self._target_v_left, self._last_measured_v_left, dt)
+            pwm_right = self._pid_right.update(
+                self._target_v_right, self._last_measured_v_right, dt)
+            self._send_motor_command(pwm_left, pwm_right)
 
         # Publish odometry
         q = _yaw_to_quaternion(self._odom_theta)
@@ -601,10 +679,11 @@ class ESP32AT8236Driver(Node):
         odom.pose.pose.position.x = self._odom_x
         odom.pose.pose.position.y = self._odom_y
         odom.pose.pose.orientation = q
-        odom.twist.twist.linear.x = v_linear
-        odom.twist.twist.angular.z = v_angular
+        odom.twist.twist.linear.x = self._last_v_linear
+        odom.twist.twist.angular.z = self._last_v_angular
         # Covariance scales with speed — dead reckoning drifts more at higher velocity
-        speed_factor = 1.0 + abs(v_linear) * 2.0 + abs(v_angular) * 0.5
+        speed_factor = (1.0 + abs(self._last_v_linear) * 2.0
+                        + abs(self._last_v_angular) * 0.5)
         odom.pose.covariance[0] = 0.01 * speed_factor   # x
         odom.pose.covariance[7] = 0.01 * speed_factor   # y
         odom.pose.covariance[35] = 0.03 * speed_factor  # yaw
