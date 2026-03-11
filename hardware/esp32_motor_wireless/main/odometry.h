@@ -1,0 +1,69 @@
+/*
+ * odometry.h — Differential drive odometry engine
+ *
+ * Pure math — no ROS or FreeRTOS dependencies.
+ * Computes pose (x, y, theta) from encoder ticks using arc integration.
+ *
+ * Ported from esp32_at8236_driver.py _odom_timer_cb() (lines 455-548).
+ */
+#pragma once
+
+#include <stdint.h>
+#include <stdbool.h>
+
+// Hardware constants — JGB37-520R60-12 with AT8236 bridge
+#define WHEEL_SEPARATION   0.155f   // meters (track width)
+#define WHEEL_RADIUS       0.032f   // meters
+#define TICKS_PER_REV      2640     // 11 PPR × 4 (quadrature) × 60:1 gear
+#define MAX_TICK_DELTA     2000     // Outlier rejection threshold
+
+typedef struct {
+    float x;          // meters
+    float y;          // meters
+    float theta;      // radians (-pi to pi)
+    float v_linear;   // m/s (last computed)
+    float v_angular;  // rad/s (last computed)
+
+    // Quaternion for theta (computed in update)
+    float qw;
+    float qz;
+
+    // Covariance (speed-dependent)
+    float cov_x;      // pose covariance x
+    float cov_y;      // pose covariance y
+    float cov_yaw;    // pose covariance yaw
+    float cov_vx;     // twist covariance linear
+    float cov_vyaw;   // twist covariance angular
+
+    uint32_t update_count;
+    uint32_t outlier_count;
+} odometry_state_t;
+
+/**
+ * Reset odometry to origin.
+ */
+void odometry_init(void);
+
+/**
+ * Update pose from encoder tick deltas.
+ * @param left_ticks  Left wheel tick delta (positive = forward)
+ * @param right_ticks Right wheel tick delta (positive = forward)
+ * @param dt          Time since last update in seconds
+ * @return true if update was accepted, false if rejected (outlier)
+ */
+bool odometry_update(int32_t left_ticks, int32_t right_ticks, float dt);
+
+/**
+ * Get current odometry state (thread-safe copy).
+ */
+void odometry_get_state(odometry_state_t *out);
+
+/**
+ * Reset pose to origin without reinitializing.
+ */
+void odometry_reset(void);
+
+/**
+ * Print current odometry state to stdout.
+ */
+void odometry_print_state(void);

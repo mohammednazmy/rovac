@@ -1,0 +1,31 @@
+menu "ROVAC Motor Wireless Configuration"
+
+    config MOTOR_WIRELESS_DEFAULT_WIFI_SSID
+        string "Default WiFi SSID"
+        default "Hurry"
+
+    config MOTOR_WIRELESS_DEFAULT_WIFI_PASS
+        string "Default WiFi Password"
+        default "Gaza@2023"
+
+    config MOTOR_WIRELESS_DEFAULT_WIFI_IP
+        string "Default Static IP"
+        default "192.168.1.221"
+
+    config MOTOR_WIRELESS_DEFAULT_AGENT_IP
+        string "Default micro-ROS Agent IP"
+        default "192.168.1.200"
+
+    config MOTOR_WIRELESS_DEFAULT_AGENT_PORT
+        int "Default micro-ROS Agent UDP port"
+        default 8888
+
+    config MOTOR_WIRELESS_DEFAULT_GATEWAY_IP
+        string "Default network gateway IP"
+        default "192.168.1.254"
+
+    config MOTOR_WIRELESS_DEFAULT_NETMASK
+        string "Default subnet mask"
+        default "255.255.255.0"
+
+endmenu

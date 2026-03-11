@@ -111,11 +111,14 @@ class CmdVelMux(Node):
                 self.get_logger().info("Active source: NAVIGATION")
             return
 
-        # No active source — publish zero (safe stop)
+        # No active source — don't publish anything.
+        # The motor controller has its own watchdog (500ms cmd_vel timeout)
+        # that safely stops the motors when commands stop arriving.
+        # Publishing zeros here would override micro-ROS cmd_vel commands
+        # from external sources (e.g. wireless ESP32 motor controller).
         if self._active_source != "idle":
             self._active_source = "idle"
-            self.get_logger().info("Active source: IDLE (all timed out)")
-        self.cmd_pub.publish(Twist())
+            self.get_logger().info("Active source: IDLE (all timed out, not publishing)")
 
 
 def main(args=None):

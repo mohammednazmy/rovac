@@ -1,0 +1,9 @@
+# ESP-IDF build artifacts
+build/
+managed_components/
+
+# micro-ROS component (cloned separately)
+components/micro_ros_espidf_component/
+
+# IDE
+.vscode/
