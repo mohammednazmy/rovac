@@ -304,6 +304,17 @@ static bool create_entities(void)
     RCCHECK(rmw_uros_options_set_udp_address(s_cfg->agent_ip, port_str, rmw_options));
 
     ESP_LOGI(TAG, "Connecting to agent at %s:%s (domain 42)", s_cfg->agent_ip, port_str);
+
+    // Ping Agent first — creates temporary transport, verifies reachability
+    ESP_LOGI(TAG, "Pinging agent...");
+    rmw_ret_t ping_rc = rmw_uros_ping_agent_options(1000, 3, rmw_options);
+    if (ping_rc != RMW_RET_OK) {
+        ESP_LOGW(TAG, "Agent ping failed (rc=%d) — agent not reachable", (int)ping_rc);
+        rcl_init_options_fini(&init_options);
+        return false;
+    }
+    ESP_LOGI(TAG, "Agent ping OK — creating session...");
+
     RCCHECK(rclc_support_init_with_options(&s_support, 0, NULL, &init_options, &s_allocator));
 
     // Create node

@@ -34,7 +34,7 @@ Restart=always
 RestartSec=3
 
 # UDP port 8888 — must match ESP32 NVS config (agent_port)
-ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; source /home/pi/uros_ws/install/setup.bash; exec micro_ros_agent udp4 --port 8888 -v4'
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && source /home/pi/uros_ws/install/setup.bash && exec /home/pi/uros_ws/install/micro_ros_agent/lib/micro_ros_agent/micro_ros_agent udp4 --port 8888 -v4'
 
 [Install]
 WantedBy=rovac-edge.target
