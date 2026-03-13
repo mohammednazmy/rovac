@@ -1,5 +1,8 @@
 /*
  * wifi.c — WiFi STA with static IP and auto-reconnect
+ *
+ * Uses a FreeRTOS software timer for reconnect backoff so the
+ * default event loop is NEVER blocked by vTaskDelay.
  */
 #include "wifi.h"
 
@@ -10,6 +13,7 @@
 #include "esp_netif.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "freertos/timers.h"
 
 static const char *TAG = "wifi";
 
@@ -18,6 +22,13 @@ static const char *TAG = "wifi";
 static EventGroupHandle_t s_wifi_events;
 static int s_retry_count = 0;
 static bool s_started = false;
+static TimerHandle_t s_reconnect_timer = NULL;
+
+static void reconnect_timer_cb(TimerHandle_t timer)
+{
+    (void)timer;
+    esp_wifi_connect();
+}
 
 static void event_handler(void *arg, esp_event_base_t base,
                           int32_t event_id, void *event_data)
@@ -33,6 +44,7 @@ static void event_handler(void *arg, esp_event_base_t base,
                 (wifi_event_sta_disconnected_t *)event_data;
             xEventGroupClearBits(s_wifi_events, WIFI_CONNECTED_BIT);
             // Exponential backoff: 1s, 2s, 4s, 8s, max 10s
+            // Non-blocking — uses a one-shot FreeRTOS timer
             // Cap counter at 4 to prevent undefined behavior from
             // signed integer overflow in (1 << s_retry_count)
             if (s_retry_count < 4) s_retry_count++;
@@ -40,8 +52,9 @@ static void event_handler(void *arg, esp_event_base_t base,
             if (delay_s > 10) delay_s = 10;
             ESP_LOGW(TAG, "Disconnected (reason=%d), retry #%d in %ds",
                      dis->reason, s_retry_count, delay_s);
-            vTaskDelay(pdMS_TO_TICKS(delay_s * 1000));
-            esp_wifi_connect();
+            xTimerChangePeriod(s_reconnect_timer,
+                               pdMS_TO_TICKS(delay_s * 1000), 0);
+            xTimerStart(s_reconnect_timer, 0);
             break;
         }
         default:
@@ -55,9 +68,11 @@ static void event_handler(void *arg, esp_event_base_t base,
     }
 }
 
-esp_err_t wifi_init(const motor_wireless_config_t *cfg)
+esp_err_t wifi_init(const lidar_wireless_config_t *cfg)
 {
     s_wifi_events = xEventGroupCreate();
+    s_reconnect_timer = xTimerCreate("wifi_reconn", pdMS_TO_TICKS(1000),
+                                     pdFALSE, NULL, reconnect_timer_cb);
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());

@@ -1,0 +1,7 @@
+[Unit]
+Description=ROVAC micro-ROS Agent Memory Watchdog
+After=rovac-edge-uros-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/pi/robots/rovac/scripts/edge/agent_memory_watchdog.sh

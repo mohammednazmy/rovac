@@ -15,8 +15,9 @@ The ESP32 provides:
 |-----------|---------|
 | ESP32-WROOM-32 DevKit | Main controller |
 | XV11 Neato LIDAR | Laser scanner |
-| TIP120 Darlington Transistor | Motor switching |
-| 1KΩ Resistor | Base current limiting |
+| IRLZ44N Logic-Level MOSFET | Motor switching |
+| 1KΩ Resistor | Gate series resistor (dampens switching noise) |
+| 10KΩ Resistor | Gate pull-down (prevents motor spin during boot) |
 | **1N4004 Diode** | **Flyback protection (REQUIRED!)** |
 | USB Cable | Power and data |
 
@@ -39,26 +40,26 @@ The ESP32 provides:
 │    │                 │                          │              │            │
 │    └─────────────────┘                          │              │            │
 │                                                 │              │            │
-│    ┌─────────────────┐      ┌─────────┐        │              │            │
-│    │ MOTOR CONNECTOR │      │ TIP120  │        │              │            │
-│    │    (2 wires)    │      │  (front │        │              │            │
-│    │                 │      │   view) │        │              │            │
-│    │  Red  (Motor+) ●┼──┬───┤         │        │              │            │
-│    │                 │  │   │  B C E  │        │              │            │
-│    │                 │  │   └──┬─┬─┬──┘        │              │            │
-│    │                 │  │      │ │ │           │              │            │
-│    │  Black(Motor-) ●┼──┼──────┼─┘ │           │              │            │
-│    │                 │  │      │   └───────────┼─● GND        │            │
+│    ┌─────────────────┐      ┌──────────┐       │              │            │
+│    │ MOTOR CONNECTOR │      │ IRLZ44N  │       │              │            │
+│    │    (2 wires)    │      │  (front  │       │              │            │
+│    │                 │      │   view)  │       │              │            │
+│    │  Red  (Motor+) ●┼──┬───┤          │       │              │            │
+│    │                 │  │   │  G D S   │       │              │            │
+│    │                 │  │   └──┬─┬─┬───┘       │              │            │
+│    │                 │  │      │ │ │            │              │            │
+│    │  Black(Motor-) ●┼──┼──────┼─┘ │            │              │            │
+│    │                 │  │      │   └────────────┼─● GND        │            │
 │    └─────────────────┘  │      │               │              │            │
 │                         │    [1KΩ]             │              │            │
 │                         │      │               │              │            │
-│      ┌────────┐         │      └───────────────┼─● GPIO25     │            │
-│      │ 1N4004 │         │                      │    (PWM)     │            │
-│      │ DIODE  │         │                      │              │            │
-│      │  ┬──┬  │         │                      └──────────────┘            │
-│      │  │K │A │◄────────┘                                                  │
+│      ┌────────┐         │      ├───────────────┼─● GPIO25     │            │
+│      │ 1N4004 │         │      │               │    (PWM)     │            │
+│      │ DIODE  │         │    [10KΩ] (pull-down)│              │            │
+│      │  ┬──┬  │         │      │               └──────────────┘            │
+│      │  │K │A │◄────────┘      └──── to GND                               │
 │      │  │  │  │         (Cathode to Motor+, Anode to Motor-)               │
-│      │  │  └──┼─────────── to Motor Black (via TIP120 Collector)           │
+│      │  │  └──┼─────────── to Motor Black (via IRLZ44N Drain)             │
 │      └──┼─────┘                                                            │
 │         │                                                                  │
 │         └─── Flyback diode REQUIRED to prevent PWM noise!                  │
@@ -77,33 +78,35 @@ The ESP32 provides:
 | RX | Orange | **GPIO17** | Serial TO LIDAR (optional) |
 | TX | Brown | **GPIO16** | Serial FROM LIDAR (data) |
 
-### Motor Connector (via TIP120)
+### Motor Connector (via IRLZ44N)
 
 | Connection | From | To |
 |------------|------|-----|
 | Motor Power | Motor Red (+) | ESP32 5V |
-| Motor Control | Motor Black (-) | TIP120 Collector |
-| Transistor Base | 1KΩ Resistor | ESP32 GPIO25 |
-| Transistor Ground | TIP120 Emitter | ESP32 GND |
+| Motor Control | Motor Black (-) | IRLZ44N Drain |
+| MOSFET Gate | 1KΩ Resistor | ESP32 GPIO25 |
+| MOSFET Source | IRLZ44N Source | ESP32 GND |
+| Gate Pull-down | 10KΩ Resistor | IRLZ44N Gate to Source |
 | **Flyback Diode** | 1N4004 Cathode (stripe) | Motor Red (+) |
 | **Flyback Diode** | 1N4004 Anode | Motor Black (-) |
 
-## TIP120 Pinout
+## IRLZ44N Pinout
 
 ```
-      TIP120 (TO-220 package)
+      IRLZ44N (TO-220 package)
       Front view (flat side facing you)
-      Metal heatsink tab on back
+      Metal heatsink tab on back (connected to Drain)
 
             ┌───────────┐
             │           │
-            │  TIP120   │
+            │  IRLZ44N  │
             │           │
             └─────┬─────┘
                  │││
-                 ││└── EMITTER (E) - Right  → GND
-                 │└─── COLLECTOR (C) - Middle → Motor Black (-)
-                 └──── BASE (B) - Left → 1KΩ → GPIO25
+                 ││└── SOURCE (S) - Right  → GND
+                 │└─── DRAIN (D) - Middle → Motor Black (-)
+                 └──── GATE (G) - Left → 1KΩ → GPIO25
+                                    └── 10KΩ → GND (pull-down)
 ```
 
 ## Flyback Diode - CRITICAL!
@@ -122,10 +125,19 @@ Diode Orientation:
                      │
                    ──┬── Anode
                      │
-    Motor Black (-) ─┴──── TIP120 Collector
+    Motor Black (-) ─┴──── IRLZ44N Drain
 ```
 
 The diode conducts when the motor is switched off, safely dissipating the back-EMF.
+
+## Why IRLZ44N over TIP120?
+
+The IRLZ44N is a logic-level MOSFET that is a direct upgrade from the TIP120 Darlington transistor:
+
+- **3.3V compatible**: The IRLZ44N is fully driven by ESP32's 3.3V GPIO (Vgs(th) ~1-2V). No level shifting needed.
+- **Near-zero voltage drop**: ~0.025V vs the TIP120's ~2V Vce(sat). The motor gets nearly the full 5V supply, improving RPM stability.
+- **More efficient, less heat**: Virtually no power wasted in the switching element.
+- **10KΩ pull-down required**: Unlike the TIP120 (which has an internal base-emitter resistor), a MOSFET gate floats when the ESP32 GPIO is high-impedance during boot. The 10KΩ pull-down resistor holds the gate low, preventing the motor from spinning uncontrolled during startup.
 
 ## ESP32 Pin Reference
 
@@ -167,12 +179,13 @@ The diode conducts when the motor is switched off, safely dissipating the back-E
 3. Connect **Orange (RX)** → ESP32 **GPIO17**
 4. Connect **Brown (TX)** → ESP32 **GPIO16**
 
-### Step 2: TIP120 Motor Driver
+### Step 2: IRLZ44N Motor Driver
 
-1. Place TIP120 with flat side facing you
-2. Connect **TIP120 Emitter (right)** → ESP32 **GND**
-3. Connect **TIP120 Collector (middle)** → Motor **Black (-)**
-4. Connect **TIP120 Base (left)** → **1KΩ resistor** → ESP32 **GPIO25**
+1. Place IRLZ44N with flat side facing you
+2. Connect **IRLZ44N Source (right)** → ESP32 **GND**
+3. Connect **IRLZ44N Drain (middle)** → Motor **Black (-)**
+4. Connect **IRLZ44N Gate (left)** → **1KΩ resistor** → ESP32 **GPIO25**
+5. Connect **10KΩ resistor** between **Gate (left)** and **Source (right)** — pull-down
 
 ### Step 3: Motor Power
 
@@ -181,13 +194,14 @@ The diode conducts when the motor is switched off, safely dissipating the back-E
 ### Step 4: Flyback Diode (IMPORTANT!)
 
 1. Connect **1N4004 Cathode** (stripe end) → Motor **Red (+)** / 5V rail
-2. Connect **1N4004 Anode** → Motor **Black (-)** / TIP120 Collector
+2. Connect **1N4004 Anode** → Motor **Black (-)** / IRLZ44N Drain
 
 ### Step 5: Verify Before Power
 
 - [ ] All 4 main connector wires connected
-- [ ] TIP120 orientation correct (E-C-B from right to left)
-- [ ] 1KΩ resistor between Base and GPIO25
+- [ ] IRLZ44N orientation correct (S-D-G from right to left)
+- [ ] 1KΩ resistor between Gate and GPIO25
+- [ ] 10KΩ pull-down resistor between Gate and Source
 - [ ] Flyback diode installed with correct polarity
 - [ ] No shorts between 5V and GND
 
@@ -222,7 +236,8 @@ cat /dev/ttyUSB2
 
 | Symptom | Cause | Solution |
 |---------|-------|----------|
-| Motor doesn't spin | TIP120 wiring wrong | Check E-C-B pins |
+| Motor doesn't spin | IRLZ44N wiring wrong | Check G-D-S pins |
+| Motor spins during boot | Missing 10KΩ pull-down | Add 10KΩ Gate-to-Source |
 | Data corrupted/intermittent | Missing flyback diode | Add 1N4004 diode |
 | No data at all | TX/RX swapped | Brown→GPIO16, Orange→GPIO17 |
 | RPM too high/low | Auto mode off | Send `!auto` command |

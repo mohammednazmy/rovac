@@ -11,20 +11,20 @@
  *   1 subscriber:  /cmd_vel
  *   3 timers:      odom (50ms), diagnostics (1s), watchdog (100ms)
  *
- * micro-ROS communicates with the Agent on the Mac via WiFi UDP.
- * Agent address comes from NVS config (default 192.168.1.104:8888).
+ * micro-ROS communicates with the Agent on the Pi via WiFi UDP.
+ * Agent address comes from NVS config (default 192.168.1.200:8888).
  */
 #include "uros.h"
 
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
-#include <time.h>
 #include <inttypes.h>
 
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -96,7 +96,26 @@ static int s_executor_errors = 0;
 // Session health tracking (all accessed from uros_task only — no atomics needed)
 static int s_pub_errors = 0;        // consecutive odom publish failures
 static int s_ping_failures = 0;     // consecutive periodic ping failures
+static int s_create_failures = 0;   // consecutive create_entities failures in WAITING_AGENT
 static int64_t s_last_ping_us = 0;  // last Agent ping timestamp
+static int64_t s_last_timesync_us = 0;  // last time sync timestamp
+static bool s_time_synced = false;      // true after successful rmw_uros_sync_session()
+
+// Max create_entities retries before rebooting. Each failed cycle leaks
+// XRCE-DDS transport resources (lwIP sockets). After ~10 failures the
+// transport can no longer create new sessions. Rebooting reclaims them.
+#define MAX_CREATE_RETRIES 10
+
+// --- Reboot streak tracking (persists across esp_restart, not power-on) ---
+// RTC_NOINIT memory survives software reboots but is random after power-on.
+// A magic number distinguishes "warm reboot" from "cold boot".
+#define REBOOT_STREAK_MAGIC 0xDEAD0042
+static RTC_NOINIT_ATTR uint32_t s_reboot_magic;
+static RTC_NOINIT_ATTR uint32_t s_reboot_streak;
+
+// Backoff: delay = min(streak * 10, 60) seconds before each reboot
+#define REBOOT_BACKOFF_STEP_S  10
+#define REBOOT_BACKOFF_MAX_S   60
 
 // Frame ID strings (must persist — micro-ROS references them by pointer)
 static char s_odom_frame[] = "odom";
@@ -121,13 +140,16 @@ static void odom_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
     odometry_state_t odom;
     odometry_get_state(&odom);
 
-    // Get timestamp
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-
-    // Fill Odometry message
-    s_odom_msg.header.stamp.sec = ts.tv_sec;
-    s_odom_msg.header.stamp.nanosec = ts.tv_nsec;
+    // Timestamp: use Agent-synced epoch time if available, else time-since-boot
+    if (s_time_synced) {
+        int64_t epoch_ns = rmw_uros_epoch_nanos();
+        s_odom_msg.header.stamp.sec = (int32_t)(epoch_ns / 1000000000LL);
+        s_odom_msg.header.stamp.nanosec = (uint32_t)(epoch_ns % 1000000000LL);
+    } else {
+        int64_t now_us = esp_timer_get_time();
+        s_odom_msg.header.stamp.sec = (int32_t)(now_us / 1000000);
+        s_odom_msg.header.stamp.nanosec = (uint32_t)((now_us % 1000000) * 1000);
+    }
     s_odom_msg.header.frame_id.data = s_odom_frame;
     s_odom_msg.header.frame_id.size = strlen(s_odom_frame);
     s_odom_msg.header.frame_id.capacity = sizeof(s_odom_frame);
@@ -191,10 +213,15 @@ static void diag_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
     (void)timer;
     (void)last_call_time;
 
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    s_diag_msg.header.stamp.sec = ts.tv_sec;
-    s_diag_msg.header.stamp.nanosec = ts.tv_nsec;
+    if (s_time_synced) {
+        int64_t epoch_ns = rmw_uros_epoch_nanos();
+        s_diag_msg.header.stamp.sec = (int32_t)(epoch_ns / 1000000000LL);
+        s_diag_msg.header.stamp.nanosec = (uint32_t)(epoch_ns % 1000000000LL);
+    } else {
+        int64_t now_us = esp_timer_get_time();
+        s_diag_msg.header.stamp.sec = (int32_t)(now_us / 1000000);
+        s_diag_msg.header.stamp.nanosec = (uint32_t)((now_us % 1000000) * 1000);
+    }
 
     // Build status
     s_diag_status.level = diagnostic_msgs__msg__DiagnosticStatus__OK;
@@ -438,15 +465,46 @@ static void uros_task(void *arg)
         case STATE_WAITING_AGENT:
             led_status_set(LED_STATE_NO_AGENT);
             if (wifi_is_connected()) {
-                ESP_LOGI(TAG, "Attempting to connect to agent at %s:%u...",
-                         s_cfg->agent_ip, s_cfg->agent_port);
+                ESP_LOGI(TAG, "Attempting to connect to agent at %s:%u (attempt %d/%d)...",
+                         s_cfg->agent_ip, s_cfg->agent_port,
+                         s_create_failures + 1, MAX_CREATE_RETRIES);
                 if (create_entities()) {
+                    s_create_failures = 0;
+                    if (s_reboot_streak > 0) {
+                        ESP_LOGI(TAG, "Recovered after %lu reboot(s) — resetting streak",
+                                 (unsigned long)s_reboot_streak);
+                    }
+                    s_reboot_streak = 0;
                     s_state = STATE_AGENT_CONNECTED;
                     s_connected = true;
                     led_status_set(LED_STATE_CONNECTED);
                     ESP_LOGI(TAG, "micro-ROS agent connected!");
+
+                    // Initial time sync with Agent
+                    if (rmw_uros_sync_session(1000) == RMW_RET_OK) {
+                        s_time_synced = true;
+                        s_last_timesync_us = esp_timer_get_time();
+                        int64_t epoch_ms = rmw_uros_epoch_millis();
+                        ESP_LOGI(TAG, "Time synced with Agent (epoch=%lld ms)", (long long)epoch_ms);
+                    } else {
+                        ESP_LOGW(TAG, "Initial time sync failed — using time-since-boot");
+                    }
                 } else {
-                    ESP_LOGW(TAG, "Agent not reachable, retrying in 2s...");
+                    s_create_failures++;
+                    if (s_create_failures >= MAX_CREATE_RETRIES) {
+                        s_reboot_streak++;
+                        uint32_t backoff_s = s_reboot_streak * REBOOT_BACKOFF_STEP_S;
+                        if (backoff_s > REBOOT_BACKOFF_MAX_S) backoff_s = REBOOT_BACKOFF_MAX_S;
+                        ESP_LOGE(TAG, "Session creation failed %d times — rebooting "
+                                 "(streak=%lu, backoff=%lus)...",
+                                 s_create_failures,
+                                 (unsigned long)s_reboot_streak,
+                                 (unsigned long)backoff_s);
+                        vTaskDelay(pdMS_TO_TICKS(500));
+                        esp_restart();
+                    }
+                    ESP_LOGW(TAG, "Session creation failed (%d/%d), retrying in 2s...",
+                             s_create_failures, MAX_CREATE_RETRIES);
                     vTaskDelay(pdMS_TO_TICKS(2000));
                 }
             } else {
@@ -478,11 +536,20 @@ static void uros_task(void *arg)
                     break;
                 }
 
+                int64_t now_us = esp_timer_get_time();
+
+                // Periodic time re-sync every 60s to correct clock drift
+                if (now_us - s_last_timesync_us > 60000000) {
+                    s_last_timesync_us = now_us;
+                    if (rmw_uros_sync_session(500) == RMW_RET_OK) {
+                        s_time_synced = true;
+                    }
+                }
+
                 // Periodic Agent ping every 3s — catches network loss / Agent crash.
                 // With best_effort QoS, publish errors never trigger (UDP send
                 // always succeeds locally), so the ping is the PRIMARY disconnect
                 // detection mechanism. 3s interval × 2 failures = 6s detection.
-                int64_t now_us = esp_timer_get_time();
                 if (now_us - s_last_ping_us > 3000000) {  // 3 seconds
                     s_last_ping_us = now_us;
                     rmw_ret_t ping_rc = rmw_uros_ping_agent(500, 1);
@@ -509,7 +576,9 @@ static void uros_task(void *arg)
             // micro-ROS XRCE-DDS transport doesn't fully reset after
             // rclc_support_fini(), so rclc_support_init_with_options()
             // fails on reconnect. Rebooting is the reliable fix (~4s).
-            ESP_LOGW(TAG, "Agent lost — rebooting for clean reconnect...");
+            s_reboot_streak++;
+            ESP_LOGW(TAG, "Agent lost — rebooting for clean reconnect (streak=%lu)...",
+                     (unsigned long)s_reboot_streak);
             vTaskDelay(pdMS_TO_TICKS(500));  // Brief pause so log flushes
             esp_restart();
             break;  // unreachable
@@ -520,6 +589,27 @@ static void uros_task(void *arg)
 esp_err_t uros_init(const motor_wireless_config_t *cfg)
 {
     s_cfg = cfg;
+
+    // --- Reboot streak detection ---
+    // RTC_NOINIT memory is random after power-on but preserved across esp_restart().
+    // Use magic number to detect which case we're in.
+    if (s_reboot_magic == REBOOT_STREAK_MAGIC) {
+        // Warm reboot — streak was set before esp_restart()
+        ESP_LOGW(TAG, "Reboot streak: %lu (session-failure reboots without successful connection)",
+                 (unsigned long)s_reboot_streak);
+        if (s_reboot_streak > 0) {
+            uint32_t backoff_s = s_reboot_streak * REBOOT_BACKOFF_STEP_S;
+            if (backoff_s > REBOOT_BACKOFF_MAX_S) backoff_s = REBOOT_BACKOFF_MAX_S;
+            ESP_LOGW(TAG, "Backoff delay: %lus before retrying Agent connection",
+                     (unsigned long)backoff_s);
+            vTaskDelay(pdMS_TO_TICKS(backoff_s * 1000));
+        }
+    } else {
+        // Cold boot (power-on or deep sleep) — reset streak
+        s_reboot_streak = 0;
+        s_reboot_magic = REBOOT_STREAK_MAGIC;
+        ESP_LOGI(TAG, "Reboot streak: 0 (cold boot)");
+    }
 
 #ifdef CONFIG_MICRO_ROS_ESP_NETIF_WLAN
     ESP_LOGI(TAG, "micro-ROS transport: WiFi UDP -> %s:%u",

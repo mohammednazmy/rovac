@@ -1,0 +1,12 @@
+[Unit]
+Description=ROVAC micro-ROS Agent Memory Watchdog Timer
+PartOf=rovac-edge.target
+
+[Timer]
+# Wait 2 minutes after boot for the stack to stabilize
+OnBootSec=120
+# Check every 60 seconds
+OnUnitActiveSec=60
+
+[Install]
+WantedBy=rovac-edge.target

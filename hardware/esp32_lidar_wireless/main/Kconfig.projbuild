@@ -1,0 +1,36 @@
+menu "ROVAC LIDAR Wireless Configuration"
+
+    config LIDAR_WIRELESS_DEFAULT_WIFI_SSID
+        string "Default WiFi SSID"
+        default "Hurry"
+
+    config LIDAR_WIRELESS_DEFAULT_WIFI_PASS
+        string "Default WiFi Password"
+        default "Gaza@2023"
+
+    config LIDAR_WIRELESS_DEFAULT_WIFI_IP
+        string "Default Static IP"
+        default "192.168.1.222"
+
+    config LIDAR_WIRELESS_DEFAULT_AGENT_IP
+        string "Default micro-ROS Agent IP"
+        default "192.168.1.200"
+
+    config LIDAR_WIRELESS_DEFAULT_AGENT_PORT
+        int "Default micro-ROS Agent UDP port"
+        default 8888
+
+    config LIDAR_WIRELESS_DEFAULT_GATEWAY_IP
+        string "Default network gateway IP"
+        default "192.168.1.254"
+
+    config LIDAR_WIRELESS_DEFAULT_NETMASK
+        string "Default subnet mask"
+        default "255.255.255.0"
+
+    config LIDAR_WIRELESS_DEFAULT_TARGET_RPM
+        int "Default target LIDAR RPM"
+        default 300
+        range 200 400
+
+endmenu

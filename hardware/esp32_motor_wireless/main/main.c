@@ -34,6 +34,7 @@
 #include "odometry.h"
 #include "motor_control.h"
 #include "uros.h"
+#include "oled_status.h"
 
 static const char *TAG = "main";
 
@@ -104,7 +105,11 @@ void app_main(void)
     ESP_LOGI(TAG, "Starting debug console...");
     ESP_ERROR_CHECK(debug_console_init(&g_config));
 
-    // Step 8: micro-ROS node (publishes /odom, /tf, /diagnostics; subscribes /cmd_vel)
+    // Step 8: OLED status display (non-fatal if not connected)
+    ESP_LOGI(TAG, "Initializing OLED display...");
+    ESP_ERROR_CHECK(oled_status_init());
+
+    // Step 9: micro-ROS node (publishes /odom, /tf, /diagnostics; subscribes /cmd_vel)
     ESP_LOGI(TAG, "Starting micro-ROS...");
     ESP_ERROR_CHECK(uros_init(&g_config));
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=ROVAC micro-ROS Agent (UDP bridge for ESP32 motor wireless)
+Description=ROVAC micro-ROS Agent (UDP bridge for wireless ESP32 nodes)
 Wants=network-online.target
 After=network-online.target
 # Mux depends on Agent being up — Agent must start before mux
@@ -28,6 +28,9 @@ TimeoutStartSec=15
 TimeoutStopSec=10
 
 # Resource limits for Pi 5
+# MemoryHigh=80M triggers kernel memory pressure (reclaim) before the hard kill.
+# The watchdog timer also restarts at 80M for a cleaner recovery path.
+MemoryHigh=80M
 MemoryMax=128M
 CPUQuota=20%
 
