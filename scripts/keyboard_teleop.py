@@ -19,6 +19,7 @@ Usage:
     # Run locally on this machine (Mac or Pi):
     python3 scripts/keyboard_teleop.py --local
 """
+import argparse
 import os
 import sys
 import socket
@@ -33,15 +34,24 @@ PI_SETUP = (
 PI_SCRIPT = "~/robots/rovac/scripts/keyboard_teleop.py"
 
 
-def ssh_to_pi():
+def ssh_to_pi(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10.0):
     """Replace this process with an SSH session to the Pi running the teleop."""
     print(f"Connecting to Pi ({PI_HOST}) for lowest-latency control...")
-    cmd = f"{PI_SETUP} && python3 {PI_SCRIPT} --local"
+    extra = ""
+    if ramp_min != 0.25:
+        extra += f" --ramp-min {ramp_min}"
+    if ramp_repeats != 6:
+        extra += f" --ramp-repeats {ramp_repeats}"
+    if linear_accel != 1.5:
+        extra += f" --linear-accel {linear_accel}"
+    if angular_accel != 10.0:
+        extra += f" --angular-accel {angular_accel}"
+    cmd = f"{PI_SETUP} && python3 {PI_SCRIPT} --local{extra}"
     os.execvp("ssh", ["ssh", "-t", PI_HOST, cmd])
     # execvp replaces the process — never returns
 
 
-def run_teleop():
+def run_teleop(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10.0):
     """Run the teleop node locally (on Pi or Mac)."""
     import time
     import math
@@ -71,6 +81,17 @@ def run_teleop():
     HOLD_REPEATING = 0.08
     REPEAT_THRESHOLD = 2
 
+    # Angular ramping — tap for fine turns, hold for full speed
+    ANGULAR_RAMP_REPEATS = ramp_repeats
+    ANGULAR_RAMP_MIN = ramp_min
+
+    # Velocity smoothing — acceleration-limited ramping for smooth motion.
+    # Output velocity moves toward target at these max rates (per second).
+    # Deceleration uses DECEL_SCALE × accel for responsive stops.
+    LINEAR_ACCEL = linear_accel    # m/s² — linear ramp rate
+    ANGULAR_ACCEL = angular_accel  # rad/s² — angular ramp rate
+    DECEL_SCALE = 2.5              # decel multiplier (faster stops)
+
     class KeyboardTeleop(Node):
         def __init__(self):
             super().__init__("keyboard_teleop")
@@ -82,8 +103,11 @@ def run_teleop():
                 Odometry, "odom", self.odom_cb, qos)
 
             self.speed_idx = DEFAULT_SPEED_IDX
-            self.linear_x = 0.0
-            self.angular_z = 0.0
+            self.linear_x = 0.0   # target (set by keys)
+            self.angular_z = 0.0  # target (set by keys)
+            self.smooth_lx = 0.0  # smoothed output (published)
+            self.smooth_az = 0.0  # smoothed output (published)
+            self._last_pub_time = 0.0
 
             self.odom_x = 0.0
             self.odom_y = 0.0
@@ -113,15 +137,41 @@ def run_teleop():
             self.odom_count += 1
             self.odom_time = time.time()
 
+        @staticmethod
+        def _step_toward(current, target, accel, dt):
+            """Move current toward target at acceleration-limited rate."""
+            diff = target - current
+            # Decel faster when braking or reversing direction
+            if abs(target) < abs(current) or target * current < 0:
+                rate = accel * DECEL_SCALE
+            else:
+                rate = accel
+            max_step = rate * dt
+            if abs(diff) <= max_step:
+                return target
+            return current + math.copysign(max_step, diff)
+
         def publish_cmd(self):
+            now = time.time()
+            dt = now - self._last_pub_time if self._last_pub_time > 0 else 0.02
+            self._last_pub_time = now
+            dt = min(dt, 0.1)  # cap to prevent jumps after pauses
+
+            self.smooth_lx = self._step_toward(
+                self.smooth_lx, self.linear_x, LINEAR_ACCEL, dt)
+            self.smooth_az = self._step_toward(
+                self.smooth_az, self.angular_z, ANGULAR_ACCEL, dt)
+
             twist = Twist()
-            twist.linear.x = self.linear_x
-            twist.angular.z = self.angular_z
+            twist.linear.x = self.smooth_lx
+            twist.angular.z = self.smooth_az
             self.cmd_pub.publish(twist)
 
         def stop(self):
             self.linear_x = 0.0
             self.angular_z = 0.0
+            self.smooth_lx = 0.0
+            self.smooth_az = 0.0
             self.publish_cmd()
 
         def _process_key(self, key):
@@ -179,14 +229,18 @@ def run_teleop():
                 key = last_key
 
                 # Handle keys
+                moved = False
                 if key != -1:
                     if self._process_key(key):
                         key_active = True
                         last_key_time = now
                         repeat_count += 1
+                        moved = True
                     elif key == ord(' '):
                         self.linear_x = 0.0
                         self.angular_z = 0.0
+                        self.smooth_lx = 0.0  # instant stop
+                        self.smooth_az = 0.0
                         key_active = False
                         repeat_count = 0
                     elif key == ord('+') or key == ord('='):
@@ -207,8 +261,15 @@ def run_teleop():
                                 key_active = True
                                 last_key_time = now
                                 repeat_count += 1
+                                moved = True
                     elif key == 3:  # CTRL-C
                         break
+
+                # Ramp angular velocity — gentle on first tap, full on sustained hold
+                if moved and self.angular_z != 0.0:
+                    ramp = max(ANGULAR_RAMP_MIN,
+                               min(1.0, repeat_count / ANGULAR_RAMP_REPEATS))
+                    self.angular_z *= ramp
 
                 # Adaptive hold — long for first press, short once repeats flow
                 hold_sec = (HOLD_REPEATING if repeat_count >= REPEAT_THRESHOLD
@@ -240,7 +301,7 @@ def run_teleop():
                               curses.A_BOLD)
 
                 stdscr.addstr(2, 0, "Controls:  Arrow keys / WASD = drive")
-                stdscr.addstr(3, 0, "           Q/E = arc left/right")
+                stdscr.addstr(3, 0, "           Q/E = arc    (tap=fine turn, hold=full)")
                 stdscr.addstr(4, 0, "           +/- = speed up/down")
                 stdscr.addstr(5, 0, "           SPACE = stop  CTRL-C = quit")
 
@@ -264,8 +325,12 @@ def run_teleop():
                 attr = curses.A_BOLD if key_active else curses.A_DIM
                 stdscr.addstr(10, 0, f"State: {state}", attr)
                 stdscr.addstr(11, 0,
-                              f"Cmd:   linear={self.linear_x:+.3f} m/s  "
-                              f"angular={self.angular_z:+.3f} rad/s")
+                              f"Out:   linear={self.smooth_lx:+.3f} m/s  "
+                              f"angular={self.smooth_az:+.3f} rad/s")
+                stdscr.addstr(12, 0,
+                              f"Tgt:   linear={self.linear_x:+.3f} m/s  "
+                              f"angular={self.angular_z:+.3f} rad/s",
+                              curses.A_DIM)
 
                 if self.linear_x < 0 and self.angular_z == 0:
                     arrow = "    ^"
@@ -335,15 +400,25 @@ def run_teleop():
 
 
 def main():
-    # --local means run the teleop on this machine
-    # Default (no flag) means SSH to Pi for lowest latency
-    if "--local" in sys.argv:
-        run_teleop()
-    elif socket.gethostname() == "rovac-pi":
-        # Already on Pi — run locally
-        run_teleop()
+    parser = argparse.ArgumentParser(description="ROVAC Keyboard Teleop")
+    parser.add_argument("--local", action="store_true",
+                        help="Run locally instead of SSHing to Pi")
+    parser.add_argument("--ramp-min", type=float, default=0.25,
+                        help="Min angular fraction on first tap (0.0-1.0, default: 0.25)")
+    parser.add_argument("--ramp-repeats", type=int, default=6,
+                        help="Key events to reach full angular speed (default: 6)")
+    parser.add_argument("--linear-accel", type=float, default=1.5,
+                        help="Linear acceleration limit in m/s² (default: 1.5)")
+    parser.add_argument("--angular-accel", type=float, default=10.0,
+                        help="Angular acceleration limit in rad/s² (default: 10.0)")
+    args = parser.parse_args()
+
+    kwargs = dict(ramp_min=args.ramp_min, ramp_repeats=args.ramp_repeats,
+                  linear_accel=args.linear_accel, angular_accel=args.angular_accel)
+    if args.local or socket.gethostname() == "rovac-pi":
+        run_teleop(**kwargs)
     else:
-        ssh_to_pi()
+        ssh_to_pi(**kwargs)
 
 
 if __name__ == "__main__":
