@@ -16,6 +16,10 @@ log_info() { echo -e "${GREEN}[MAC-BRAIN]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[MAC-BRAIN]${NC} $1"; }
 log_error() { echo -e "${RED}[MAC-BRAIN]${NC} $1"; }
 
+PI_HOST="${ROVAC_EDGE_IP:-192.168.1.200}"
+PI_USER="pi"
+STOPPED_MAP_TF=false
+
 # Activate conda ROS environment
 eval "$(/opt/homebrew/bin/conda shell.bash hook)"
 conda activate ros_jazzy
@@ -55,26 +59,82 @@ usage() {
     echo "  $0 foxglove                 # Just visualization"
 }
 
+# Stop the static map→odom TF on Pi (conflicts with SLAM's dynamic map→odom)
+stop_pi_map_tf() {
+    if ssh -o ConnectTimeout=3 "$PI_USER@$PI_HOST" \
+        'sudo systemctl is-active --quiet rovac-edge-map-tf 2>/dev/null'; then
+        log_info "Stopping Pi static map->odom TF (SLAM will provide it dynamically)..."
+        ssh "$PI_USER@$PI_HOST" 'sudo systemctl stop rovac-edge-map-tf'
+        STOPPED_MAP_TF=true
+    fi
+}
+
+# Re-enable static map→odom TF on Pi when SLAM exits
+start_pi_map_tf() {
+    if [ "$STOPPED_MAP_TF" = true ]; then
+        log_info "Re-enabling Pi static map->odom TF..."
+        ssh -o ConnectTimeout=3 "$PI_USER@$PI_HOST" \
+            'sudo systemctl start rovac-edge-map-tf' 2>/dev/null || true
+    fi
+}
+
 cleanup() {
     log_warn "Shutting down Mac brain nodes..."
     pkill -f "foxglove_bridge" 2>/dev/null || true
     pkill -f "slam_toolbox" 2>/dev/null || true
     pkill -f "nav2" 2>/dev/null || true
+    start_pi_map_tf
     exit 0
 }
 trap cleanup SIGINT SIGTERM
 
-# Check Pi connectivity
-log_info "Checking Pi connectivity..."
-if ros2 topic list --no-daemon 2>/dev/null | grep -q "/cmd_vel"; then
-    log_info "Pi is connected - ROS2 topics visible"
+# ── Pre-flight checks ──────────────────────────────────────────────
+log_info "Running pre-flight checks..."
+
+# 1) Pi connectivity via SSH
+if ssh -o ConnectTimeout=3 "$PI_USER@$PI_HOST" 'true' 2>/dev/null; then
+    log_info "Pi SSH: OK"
 else
-    log_warn "Pi may not be running - /cmd_vel topic not found"
-    log_warn "Start Pi edge stack first: ssh pi 'sudo systemctl start rovac-edge.target'"
+    log_warn "Pi SSH unreachable at $PI_HOST — edge services can't be managed"
 fi
 
+# 2) ROS2 topics visible (CycloneDDS unicast can take 5-8s for discovery)
+log_info "Waiting for DDS discovery (up to 15s)..."
+TOPICS_FOUND=false
+for i in $(seq 1 3); do
+    TOPIC_LIST=$(ros2 topic list --no-daemon 2>/dev/null || true)
+    if echo "$TOPIC_LIST" | grep -q "/scan"; then
+        TOPICS_FOUND=true
+        break
+    fi
+    sleep 5
+done
+
+if [ "$TOPICS_FOUND" = true ]; then
+    log_info "/scan topic: OK"
+    # Quick sanity: also check for odom and tf
+    if echo "$TOPIC_LIST" | grep -q "/odom"; then
+        log_info "/odom topic: OK"
+    else
+        log_warn "/odom not found — ESP32 motor may not be connected"
+    fi
+    if echo "$TOPIC_LIST" | grep -q "/tf"; then
+        log_info "/tf topic: OK"
+    else
+        log_warn "/tf not found — odom->base_link transform missing"
+    fi
+else
+    log_error "/scan topic NOT found after 15s!"
+    log_error "Check: Pi edge services running? ESP32 LIDAR powered? micro-ROS Agent up?"
+    log_error "  ssh pi@$PI_HOST 'sudo systemctl status rovac-edge-uros-agent'"
+    exit 1
+fi
+
+# ── Launch modes ───────────────────────────────────────────────────
 case "$MODE" in
     slam)
+        stop_pi_map_tf
+
         log_info "Starting SLAM Toolbox (Online Async mode)..."
         ros2 launch slam_toolbox online_async_launch.py \
             slam_params_file:=$HOME/robots/rovac/config/slam_params.yaml \
@@ -93,6 +153,8 @@ case "$MODE" in
             exit 1
         fi
 
+        stop_pi_map_tf
+
         log_info "Starting Nav2 with map: $MAP_FILE"
         ros2 launch nav2_bringup bringup_launch.py \
             map:="$MAP_FILE" \
@@ -106,12 +168,21 @@ case "$MODE" in
         ;;
 
     foxglove)
+        # Foxglove-only: ensure the static map→odom TF is running for visualization
+        if ssh -o ConnectTimeout=3 "$PI_USER@$PI_HOST" \
+            '! sudo systemctl is-active --quiet rovac-edge-map-tf 2>/dev/null'; then
+            log_info "Starting Pi static map->odom TF for Foxglove visualization..."
+            ssh "$PI_USER@$PI_HOST" 'sudo systemctl start rovac-edge-map-tf' 2>/dev/null || true
+        fi
+
         log_info "Starting Foxglove Bridge only on port 8765..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
         FOX_PID=$!
         ;;
 
     all)
+        stop_pi_map_tf
+
         log_info "Starting full stack: SLAM + Nav2 + Foxglove..."
 
         # Start SLAM first
@@ -141,11 +212,19 @@ esac
 
 echo ""
 log_info "Mac Brain Stack Running!"
-echo -e "${CYAN}╔════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║${NC}  Mode: $MODE"
 echo -e "${CYAN}║${NC}  Foxglove: ws://localhost:8765"
 echo -e "${CYAN}║${NC}  Open Foxglove Studio and connect to above URL"
-echo -e "${CYAN}╚════════════════════════════════════════════════════════╝${NC}"
+if [ "$MODE" = "slam" ] || [ "$MODE" = "all" ]; then
+echo -e "${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}  SLAM Tips:"
+echo -e "${CYAN}║${NC}    - /map topic appears after first scan match (~5s)"
+echo -e "${CYAN}║${NC}    - Set Foxglove 3D panel display frame to 'map'"
+echo -e "${CYAN}║${NC}    - Add Map display for /map topic"
+echo -e "${CYAN}║${NC}    - Drive slowly with: python3 scripts/keyboard_teleop.py"
+fi
+echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 log_info "Press Ctrl+C to stop all nodes"
 
