@@ -378,6 +378,11 @@ static bool create_entities(void)
     rc = rmw_uros_options_set_udp_address(s_cfg->agent_ip, port_str, rmw_options);
     if (rc != RCL_RET_OK) goto cleanup_opts;
 
+    // Fixed client key: Agent reuses DDS entities on reconnect instead of
+    // creating new orphaned sessions. Motor = 0x00000001, LIDAR = 0x00000002.
+    rc = rmw_uros_options_set_client_key(0x00000001, rmw_options);
+    if (rc != RCL_RET_OK) goto cleanup_opts;
+
     rc = rclc_support_init_with_options(&s_support, 0, NULL, &init_options, &s_allocator);
     if (rc != RCL_RET_OK) {
         ESP_LOGE(TAG, "Session creation failed (rc=%ld)", (long)rc);
@@ -389,11 +394,13 @@ static bool create_entities(void)
     RCCHECK(rclc_node_init_default(&s_node, "rovac_motor", "", &s_support));
 
     // Publishers (3 — no scan)
-    // Using best_effort QoS for all topics:
-    //   - Eliminates ACK round-trips over WiFi (~54ms saved per message)
-    //   - Lost messages are replaced by the next publish (20Hz odom, 50Hz cmd_vel)
-    //   - MTU increased to 1024 in app-colcon.meta so odom (~730 bytes) fits
-    //     in a single packet without fragmentation
+    // All best_effort QoS over WiFi:
+    //   - Reliable XRCE-DDS streams block when Agent ACKs are delayed (DDS
+    //     discovery load causes >200ms stalls), triggering false ping timeouts
+    //     and cyclic reboots. Best_effort is fire-and-forget — never blocks.
+    //   - QoS relays on Pi bridge best_effort→reliable for consumers that need
+    //     it (robot_localization, tf2_ros::Buffer).
+    //   - MTU=1024 in app-colcon.meta, odom (~730 bytes) fits in single packet.
     RCCHECK(rclc_publisher_init_best_effort(
         &s_odom_pub, &s_node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "odom"));
@@ -550,9 +557,10 @@ static void uros_task(void *arg)
                 }
 
                 // Periodic Agent ping every 3s — catches network loss / Agent crash.
-                // With best_effort QoS, publish errors never trigger (UDP send
-                // always succeeds locally), so the ping is the PRIMARY disconnect
-                // detection mechanism. 3s interval × 2 failures = 6s detection.
+                // Even with reliable QoS on /odom and /tf, the ping is the PRIMARY
+                // disconnect detection mechanism since XRCE-DDS reliable stream
+                // errors are not exposed through rcl_publish().
+                // 3s interval × 2 failures = 6s detection.
                 if (now_us - s_last_ping_us > 3000000) {  // 3 seconds
                     s_last_ping_us = now_us;
                     rmw_ret_t ping_rc = rmw_uros_ping_agent(500, 1);

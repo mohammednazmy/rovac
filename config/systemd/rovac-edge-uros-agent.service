@@ -28,10 +28,11 @@ TimeoutStartSec=15
 TimeoutStopSec=10
 
 # Resource limits for Pi 5
-# MemoryHigh=80M triggers kernel memory pressure (reclaim) before the hard kill.
-# The watchdog timer also restarts at 80M for a cleaner recovery path.
-MemoryHigh=80M
-MemoryMax=128M
+# Steady-state RSS is ~65-70MB (CycloneDDS discovery cache for all network
+# participants). MemoryHigh is set well above baseline to avoid false pressure.
+# The watchdog script provides a softer restart at 150MB before the hard kill.
+MemoryHigh=200M
+MemoryMax=250M
 CPUQuota=20%
 
 # Restart policy

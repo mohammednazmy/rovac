@@ -1,4 +1,4 @@
-"""Drive panel — keyboard teleop with live odometry and proximity display."""
+"""Drive panel — keyboard teleop with continuous publish loop."""
 
 from __future__ import annotations
 
@@ -19,12 +19,15 @@ SPEED_PRESETS = [
     (0.50, 6.5),
 ]
 
-# Hold timeout — if no key press within this window, stop.
+# Publish rate for sustained driving (matches keyboard_teleop.py)
+PUBLISH_HZ = 20
+PUBLISH_INTERVAL = 1.0 / PUBLISH_HZ
+
+# How long after last key press to stop (bridges macOS 300ms key repeat delay)
 HOLD_TIMEOUT = 0.4  # seconds
 
 
 def _range_color(distance: float) -> str:
-    """Color-code a distance value."""
     if distance == float("inf") or distance <= 0:
         return "[dim]---  [/]"
     if distance < 0.2:
@@ -36,22 +39,22 @@ def _range_color(distance: float) -> str:
 
 
 class DrivePanel(Widget):
-    """Teleop driving panel with keyboard controls."""
+    """Teleop driving panel with continuous cmd_vel publishing."""
 
     def __init__(self) -> None:
         super().__init__()
         self.gear = 2  # Default gear index
+        self._target_linear = 0.0
+        self._target_angular = 0.0
+        self._publish_timer: Timer | None = None
         self._hold_timer: Timer | None = None
-        self._current_linear = 0.0
-        self._current_angular = 0.0
+        self._driving = False
 
     def compose(self):
-        # -- Controls section --
         with Container(classes="panel-box-green") as c:
             c.border_title = "Controls"
             yield Static("[dim]Loading...[/]", id="drive-controls")
 
-        # -- Bottom row: Odometry + Proximity --
         with Horizontal(id="drive-lower"):
             with Container(classes="panel-box-cyan") as c:
                 c.border_title = "Odometry"
@@ -74,82 +77,118 @@ class DrivePanel(Widget):
         self._refresh_controls_display()
 
     def process_key(self, key: str) -> bool:
-        """Handle drive key presses. Called by App dispatcher. Returns True if handled."""
-        linear = 0.0
-        angular = 0.0
+        """Handle drive key presses. Called by App dispatcher."""
         lin_speed, ang_speed = SPEED_PRESETS[self.gear]
 
         if key in ("w", "up"):
-            linear = lin_speed
+            self._set_drive(lin_speed, 0.0)
         elif key in ("s", "down"):
-            linear = -lin_speed
+            self._set_drive(-lin_speed, 0.0)
         elif key in ("a", "left"):
-            angular = ang_speed
+            self._set_drive(0.0, ang_speed)
         elif key in ("d", "right"):
-            angular = -ang_speed
+            self._set_drive(0.0, -ang_speed)
         elif key == "q":
-            # Arc left — forward + turn left
-            linear = lin_speed
-            angular = ang_speed * 0.5
+            self._set_drive(lin_speed, ang_speed * 0.5)
         elif key == "e":
-            # Arc right — forward + turn right
-            linear = lin_speed
-            angular = -ang_speed * 0.5
+            self._set_drive(lin_speed, -ang_speed * 0.5)
         elif key == "space":
-            linear = 0.0
-            angular = 0.0
+            self._stop_driving()
         elif key in ("equal", "plus"):
             self.gear = min(self.gear + 1, len(SPEED_PRESETS) - 1)
+            # Update target if currently driving
+            if self._driving:
+                self._update_speed_while_driving()
             self._refresh_controls_display()
-            return True
         elif key in ("minus", "underscore"):
             self.gear = max(self.gear - 1, 0)
+            if self._driving:
+                self._update_speed_while_driving()
             self._refresh_controls_display()
-            return True
         elif key == "h":
-            # Toggle headlights (phone flashlight)
             if self.app.ros:
                 current = self.app.ros.get_state().get('phone_flashlight_on', False)
                 self.app.ros.publish_flashlight(not current)
-            return True
         else:
             return False
+        return True
 
-        # Publish velocity
-        self._current_linear = linear
-        self._current_angular = angular
+    def _set_drive(self, linear: float, angular: float) -> None:
+        """Set drive target and start continuous publishing."""
+        self._target_linear = linear
+        self._target_angular = angular
+        self._driving = True
+
+        # Publish immediately
         if self.app.ros:
             self.app.ros.publish_cmd_vel(linear, angular)
 
-        # Reset hold timer — will send zero if no key pressed within timeout
+        # Start continuous publish timer (if not already running)
+        if self._publish_timer is None:
+            self._publish_timer = self.set_interval(
+                PUBLISH_INTERVAL, self._publish_tick
+            )
+
+        # Reset the hold timeout (stop after no key press)
         self._reset_hold_timer()
         self._refresh_controls_display()
-        return True
+
+    def _publish_tick(self) -> None:
+        """Continuous publish at 20Hz while driving."""
+        if self._driving and self.app.ros:
+            self.app.ros.publish_cmd_vel(self._target_linear, self._target_angular)
 
     def _reset_hold_timer(self) -> None:
-        """Cancel previous hold timer and start a new one."""
+        """Reset the hold timeout — stops driving if no key arrives within window."""
         if self._hold_timer is not None:
             self._hold_timer.stop()
-        self._hold_timer = self.set_timer(HOLD_TIMEOUT, self._release_timeout)
+        self._hold_timer = self.set_timer(HOLD_TIMEOUT, self._stop_driving)
 
-    def _release_timeout(self) -> None:
-        """No key press received within hold window — stop the robot."""
-        self._current_linear = 0.0
-        self._current_angular = 0.0
+    def _stop_driving(self) -> None:
+        """Stop the robot and cancel continuous publishing."""
+        self._target_linear = 0.0
+        self._target_angular = 0.0
+        self._driving = False
+
+        # Send zero cmd_vel
         if self.app.ros:
             self.app.ros.publish_cmd_vel(0.0, 0.0)
+
+        # Stop the continuous publish timer
+        if self._publish_timer is not None:
+            self._publish_timer.stop()
+            self._publish_timer = None
+
+        if self._hold_timer is not None:
+            self._hold_timer.stop()
+            self._hold_timer = None
+
         self._refresh_controls_display()
 
+    def _update_speed_while_driving(self) -> None:
+        """Update target speed when gear changes during active driving."""
+        lin_speed, ang_speed = SPEED_PRESETS[self.gear]
+        # Scale the current direction to the new speed
+        if abs(self._target_linear) > 0.001:
+            sign = 1.0 if self._target_linear > 0 else -1.0
+            self._target_linear = sign * lin_speed
+        if abs(self._target_angular) > 0.001:
+            sign = 1.0 if self._target_angular > 0 else -1.0
+            # For pure turns, use full angular speed
+            # For arcs, use half angular speed
+            if abs(self._target_linear) > 0.001:
+                self._target_angular = sign * ang_speed * 0.5
+            else:
+                self._target_angular = sign * ang_speed
+
     def _refresh_controls_display(self) -> None:
-        """Update the controls help text."""
         lin_speed, ang_speed = SPEED_PRESETS[self.gear]
         gear_num = self.gear + 1
         total_gears = len(SPEED_PRESETS)
 
-        # Current output indicator
-        lin_out = self._current_linear
-        ang_out = self._current_angular
-        if abs(lin_out) > 0.001 or abs(ang_out) > 0.001:
+        lin_out = self._target_linear
+        ang_out = self._target_angular
+        if self._driving:
             out_color = "green"
         else:
             out_color = "dim"
@@ -176,19 +215,16 @@ class DrivePanel(Widget):
             pass
 
     def update_state(self, state: dict, logs: list, proc_status: dict) -> None:
-        """Called by the app at 1 Hz."""
         self._update_odom(state)
         self._update_proximity(state)
 
     def _update_odom(self, state: dict) -> None:
         x = state.get("odom_x", 0)
         y = state.get("odom_y", 0)
-        yaw_rad = state.get("odom_yaw", 0)
-        yaw_deg = math.degrees(yaw_rad)
+        yaw_deg = math.degrees(state.get("odom_yaw", 0))
         vx = state.get("odom_vx", 0)
         wz = state.get("odom_wz", 0)
         dist = state.get("odom_total_dist", 0)
-        hz = state.get("odom_hz", 0)
         hz = state.get("odom_hz", 0)
 
         lines = [
@@ -208,22 +244,12 @@ class DrivePanel(Widget):
         right = state.get("ultra_right", float("inf"))
         obstacle = state.get("obstacle_detected", False)
 
-        ft_s = _range_color(ft)
-        fb_s = _range_color(fb)
-        left_s = _range_color(left)
-        right_s = _range_color(right)
-
-        if obstacle:
-            status = "[red bold]OBSTACLE[/]"
-        else:
-            status = "[green]CLEAR[/]"
-
         text = (
-            f"        Top: {ft_s}\n"
-            f" {left_s}   [bold]◼[/]   {right_s}\n"
-            f"        Bot: {fb_s}\n"
+            f"        Top: {_range_color(ft)}\n"
+            f" {_range_color(left)}   [bold]\u25fc[/]   {_range_color(right)}\n"
+            f"        Bot: {_range_color(fb)}\n"
             "\n"
-            f" Status: {status}"
+            f" Status: {'[red bold]OBSTACLE[/]' if obstacle else '[green]CLEAR[/]'}"
         )
         try:
             self.query_one("#drive-proximity", Static).update(text)

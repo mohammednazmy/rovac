@@ -2,11 +2,14 @@
 """
 tf_relay.py — Relay /tf from best_effort to reliable QoS.
 
-DEPRECATED (2026-03-15): ESP32 motor firmware now publishes /odom and /tf
-with reliable QoS natively. This relay is no longer needed.
-Service rovac-edge-tf-relay is DISABLED on the Pi.
+ESP32 motor publishes /tf (odom→base_link) with best_effort QoS for
+low-latency WiFi transport. But tf2_ros::TransformListener subscribes
+with reliable QoS, so it can never receive best_effort messages.
 
-Kept for reference only.
+This relay bridges the gap:
+  ESP32 (best_effort /tf) → relay (best_effort sub → reliable pub) → tf2
+
+Runs on the Pi alongside the micro-ROS Agent.
 """
 import rclpy
 from rclpy.node import Node

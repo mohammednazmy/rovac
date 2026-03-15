@@ -299,6 +299,11 @@ static bool create_entities(void)
     rc = rmw_uros_options_set_udp_address(s_agent_ip, port_str, rmw_options);
     if (rc != RCL_RET_OK) goto cleanup_opts;
 
+    // Fixed client key: Agent reuses DDS entities on reconnect instead of
+    // creating new orphaned sessions. Motor = 0x00000001, LIDAR = 0x00000002.
+    rc = rmw_uros_options_set_client_key(0x00000002, rmw_options);
+    if (rc != RCL_RET_OK) goto cleanup_opts;
+
     rc = rclc_support_init_with_options(&s_support, 0, NULL, &init_options, &s_allocator);
     if (rc != RCL_RET_OK) {
         ESP_LOGE(TAG, "Session creation failed (rc=%ld)", (long)rc);

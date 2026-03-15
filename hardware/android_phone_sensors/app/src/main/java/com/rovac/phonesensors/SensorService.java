@@ -29,7 +29,7 @@ import androidx.core.content.ContextCompat;
 import java.util.concurrent.Executor;
 
 /**
- * Foreground service that owns the XRCE-DDS session, IMU sensors,
+ * Foreground service that owns the rosbridge WebSocket session, IMU sensors,
  * GPS, and camera. Keeps publishing when the screen is off.
  */
 public class SensorService extends LifecycleService implements SensorEventListener {
@@ -153,7 +153,7 @@ public class SensorService extends LifecycleService implements SensorEventListen
         if (ACTION_BOOT_START.equals(action) && !running) {
             SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
             String ip   = p.getString("agent_ip", "192.168.1.200");
-            String port = p.getString("agent_port", "8888");
+            String port = p.getString("agent_port", "9090");
             int domain  = p.getInt("domain_id", 42);
             boolean cam = p.getBoolean("camera_enabled", false);
             Log.i(TAG, "Boot auto-start → " + ip + ":" + port + " camera=" + cam);
@@ -188,7 +188,7 @@ public class SensorService extends LifecycleService implements SensorEventListen
 
         promoteToForeground();
 
-        pubThread = new HandlerThread("xrce-pub");
+        pubThread = new HandlerThread("rosbridge-pub");
         pubThread.start();
         pubHandler = new Handler(pubThread.getLooper());
 
@@ -258,7 +258,7 @@ public class SensorService extends LifecycleService implements SensorEventListen
                     /* Full-res JPEG → MJPEG HTTP server (no MTU limit) */
                     if (mjpegServer != null) mjpegServer.pushFrame(jpeg);
 
-                    /* Downscaled JPEG → XRCE-DDS (low-res fallback, fits in MTU) */
+                    /* Downscaled JPEG → rosbridge (low-res for ROS2 topic) */
                     byte[] small = recompressJpeg(jpeg, 240, 180, 30);
                     if (small != null) {
                         latestJpeg = small;

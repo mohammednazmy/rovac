@@ -29,7 +29,7 @@ public class SettingsActivity extends AppCompatActivity {
 
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         ipField.setText(p.getString("agent_ip", "192.168.1.200"));
-        portField.setText(p.getString("agent_port", "8888"));
+        portField.setText(p.getString("agent_port", "9090"));
         domainField.setText(String.valueOf(p.getInt("domain_id", 42)));
         cameraSwitch.setChecked(p.getBoolean("camera_enabled", false));
         autoConnectSwitch.setChecked(p.getBoolean("auto_connect", false));

@@ -246,7 +246,9 @@ class RosBridge:
             self._node.create_subscription(CompressedImage, '/phone/camera/image_raw/compressed', self._on_phone_camera, best_effort_qos)
 
             # --- Publishers ---
-            self._pub_cmd_vel = self._node.create_publisher(Twist, '/cmd_vel_teleop', best_effort_qos)
+            # cmd_vel_teleop must be RELIABLE (depth 10) to match the mux subscriber.
+            # best_effort publisher + reliable subscriber = QoS mismatch = no delivery.
+            self._pub_cmd_vel = self._node.create_publisher(Twist, '/cmd_vel_teleop', 10)
             self._pub_led = self._node.create_publisher(Int32MultiArray, '/super_sensor/led_cmd', 10)
             self._pub_servo = self._node.create_publisher(Int32MultiArray, '/super_sensor/servo_cmd', 10)
             self._pub_flashlight = self._node.create_publisher(Bool, '/phone/flashlight', 10)

@@ -1,5 +1,5 @@
 # EKF Configuration for ROVAC
-# Fuses wheel odometry (ESP32 /odom) with phone IMU (/phone/imu/relay)
+# Fuses wheel odometry (ESP32 /odom) with phone IMU (/phone/imu)
 # Output: /odometry/filtered — improved localization
 #
 # See docs/robot_dimensions.md for sensor frame geometry.
@@ -20,7 +20,7 @@ ekf_node:
 
     # ── Input 0: Wheel odometry (/odom from ESP32) ────────
     # Provides: x/y position, yaw, linear velocity, angular velocity
-    odom0: /odom             # ESP32 now publishes with reliable QoS (no relay needed)
+    odom0: /odom             # ESP32 best_effort → odom_relay (reliable) on Pi
     odom0_config: [true,  true,  false,   # x, y, z position
                    false, false, true,    # roll, pitch, yaw
                    true,  false, false,   # vx, vy, vz

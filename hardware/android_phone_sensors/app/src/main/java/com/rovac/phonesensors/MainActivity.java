@@ -193,7 +193,7 @@ public class MainActivity extends AppCompatActivity {
     private void startPublishing() {
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         String ip    = p.getString("agent_ip",   "192.168.1.200");
-        String port  = p.getString("agent_port", "8888");
+        String port  = p.getString("agent_port", "9090");
         int domain   = p.getInt("domain_id", 42);
         boolean cam  = p.getBoolean("camera_enabled", false);
         Log.i("RovacPhone", "startPublishing: camera_enabled=" + cam

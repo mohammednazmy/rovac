@@ -5,24 +5,13 @@ plugins {
 android {
     namespace = "com.rovac.phonesensors"
     compileSdk = 35
-    ndkVersion = "26.1.10909125"
 
     defaultConfig {
         applicationId = "com.rovac.phonesensors"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
-
-        externalNativeBuild {
-            cmake {
-                arguments += listOf("-DANDROID_STL=c++_static")
-            }
-        }
-
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
+        versionName = "0.2.0"
     }
 
     buildTypes {
@@ -31,13 +20,6 @@ android {
         }
         debug {
             isDebuggable = true
-        }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
         }
     }
 
@@ -58,6 +40,9 @@ configurations.all {
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.core:core:1.15.0")
+
+    // OkHttp WebSocket client (rosbridge transport)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // CameraX
     val cameraxVersion = "1.4.1"

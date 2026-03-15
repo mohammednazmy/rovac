@@ -1,0 +1,38 @@
+[Unit]
+Description=ROVAC rosbridge WebSocket Server (phone sensor bridge)
+Wants=network-online.target
+After=network-online.target
+PartOf=rovac-edge.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+
+# DDS Configuration
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rovac-rosbridge
+
+# Resource limits
+MemoryHigh=200M
+MemoryMax=250M
+CPUQuota=30%
+
+# Stop/Restart policy
+TimeoutStopSec=10
+KillMode=mixed
+Restart=always
+RestartSec=5
+
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; [ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh; exec ros2 launch rosbridge_server rosbridge_websocket_launch.xml port:=9090 address:=0.0.0.0 delay_between_messages:=0.0'
+
+[Install]
+WantedBy=rovac-edge.target

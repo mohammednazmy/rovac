@@ -7,7 +7,7 @@ ROVAC is a mobile robot (Yahboom G1 Tank) with a wireless micro-ROS architecture
 - **Raspberry Pi 5 (Edge)**: micro-ROS Agent bridge + sensor services at `192.168.1.200` (hostname: `rovac-pi`, user: `pi`)
 - **MacBook Pro (Brain)**: Nav2, SLAM, path planning, teleop at `192.168.1.104`
 
-Communication: ESP32 ←WiFi UDP→ micro-ROS Agent on Pi ←CycloneDDS→ Mac. All on `ROS_DOMAIN_ID=42`.
+Communication: ESP32s ←WiFi UDP→ micro-ROS Agent on Pi ←CycloneDDS→ Mac. Phone ←WebSocket→ rosbridge on Pi :9090 ←CycloneDDS→ Mac. All on `ROS_DOMAIN_ID=42`.
 
 Both machines clone the same monorepo: `github.com/mohammednazmy/rovac`
 - **Mac path**: `~/robots/rovac/`
@@ -21,6 +21,7 @@ Both machines clone the same monorepo: `github.com/mohammednazmy/rovac`
 | Edge SSH | `ssh pi@192.168.1.200` |
 | ESP32 Motor WiFi IP | `192.168.1.221` |
 | micro-ROS Agent | Pi UDP port 8888 |
+| rosbridge WebSocket | Pi port 9090 (phone sensors) |
 | Foxglove | `ws://localhost:8765` |
 | ROS_DOMAIN_ID | 42 |
 | DDS | CycloneDDS (unicast) |
@@ -75,9 +76,17 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 ### Sensors
 | Topic | Type | Description |
 |-------|------|-------------|
-| `/scan` | LaserScan | XV11 LIDAR (360 ranges, ~5.0 Hz) — not yet connected |
+| `/scan` | LaserScan | XV11 LIDAR (360 ranges, ~5.0 Hz) via ESP32 micro-ROS |
 | `/sensors/ultrasonic/range` | Range | HC-SR04 distance |
-| `/phone/camera/image_raw` | Image | Phone camera (640x480 BGR8) |
+| `/phone/imu` | Imu | Phone IMU (50Hz) via rosbridge WebSocket :9090 |
+| `/phone/gps/fix` | NavSatFix | Phone GPS (1Hz) via rosbridge WebSocket :9090 |
+| `/phone/camera/image_raw/compressed` | CompressedImage | Phone camera (~2FPS JPEG) via rosbridge WebSocket :9090 |
+
+### QoS Relays (Pi edge)
+| Relay | Input QoS | Output QoS | Description |
+|-------|-----------|------------|-------------|
+| `tf_relay.py` | best_effort | reliable | `/tf` for tf2_ros. **Stop when EKF is running** (EKF publishes its own reliable odom→base_link TF) |
+| `odom_relay.py` | best_effort | reliable | `/odom` for robot_localization EKF |
 
 ## Hardware
 
@@ -85,11 +94,11 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 |-----------|---------|
 | Motor Controller | NULLLAB Maker-ESP32 (ESP32-WROOM-32E, CH340) with 4x TB67H450FNG drivers. Wireless micro-ROS firmware: `hardware/esp32_motor_wireless/`. WiFi static IP 192.168.1.221. 50Hz PID loop. |
 | Motors | 2x JGB37-520R60-12 (12V, 60:1 gear, Hall encoders, 2640 ticks/rev). Max: 0.57 m/s linear, 6.5 rad/s angular. |
-| LIDAR | XV11 (Neato) via ESP32 bridge. Firmware: `hardware/esp32_xv11_bridge/`. Not yet connected to Pi — next step is micro-ROS conversion. |
+| LIDAR | XV11 (Neato) via ESP32-S3 wireless micro-ROS bridge. Firmware: `hardware/esp32_lidar_wireless/`. WiFi static IP 192.168.1.222. |
 | Computer | Raspberry Pi 5 (8GB RAM, 117GB SD), Ubuntu 24.04, hostname `rovac-pi`. Runs micro-ROS Agent (UDP 8888). |
 | Ultrasonic | 4x HC-SR04 (Super Sensor module, Arduino Nano) |
 | Stereo Cameras | 2x USB cameras (102.67mm baseline, StereoSGBM depth) |
-| Camera | Samsung Galaxy A16 via ADB + scrcpy |
+| Phone Sensors | Samsung Galaxy A16 (IMU/GPS/Camera) via rosbridge WebSocket on Pi :9090. App: `hardware/android_phone_sensors/` |
 | Webcam | NexiGo N930E USB `/dev/webcam` |
 | Power | 12V DC barrel jack. **Motor power switch must be ON.** |
 
@@ -100,13 +109,15 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 ├── hardware/
 │   ├── esp32_motor_wireless/        # ACTIVE — micro-ROS motor firmware (ESP-IDF v5.2)
 │   ├── esp32_at8236_driver/         # ACTIVE — USB serial ROS2 driver (fallback mode)
-│   ├── esp32_xv11_bridge/           # ACTIVE — LIDAR ESP32 bridge firmware
+│   ├── esp32_lidar_wireless/         # ACTIVE — LIDAR wireless micro-ROS firmware (ESP-IDF v5.2)
+│   ├── esp32_xv11_bridge/           # Legacy LIDAR bridge (Arduino, USB serial)
 │   ├── maker_esp32/                 # Board docs + wiring guide
 │   ├── super_sensor/                # Edge ROS2 nodes (supersensor, obstacle)
 │   ├── health_monitor/              # Edge health monitor
 │   ├── stereo_cameras/              # Stereo camera calibration + depth
-│   ├── phone_sensors/               # Phone IMU/GPS integration
-│   ├── phone_cameras/               # Phone camera streaming
+│   ├── android_phone_sensors/        # Phone sensor Android app (rosbridge WebSocket)
+│   ├── phone_sensors/               # Phone IMU/GPS integration (legacy)
+│   ├── phone_cameras/               # Phone camera streaming (legacy)
 │   ├── webcam/                      # USB webcam publisher
 │   └── lidar_usb/                   # XV-11 LIDAR docs
 ├── scripts/
@@ -117,7 +128,10 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 │   ├── ps2_joy_mapper_node.py       # PS2 controller → /cmd_vel_joy
 │   ├── deploy_core_pi.sh            # Git sync to Pi
 │   └── edge/
-│       └── reset_esp32_motor.sh     # ESP32 reset after Agent restart
+│       ├── reset_esp32_motor.sh     # ESP32 reset after Agent restart
+│       ├── tf_relay.py              # best_effort→reliable /tf relay
+│       ├── odom_relay.py            # best_effort→reliable /odom relay
+│       └── agent_memory_watchdog.sh # Agent RSS memory watchdog
 ├── config/
 │   ├── ros2_env.sh                  # ROS2 environment setup
 │   ├── cyclonedds_mac.xml           # Mac DDS config (peers with Pi)
@@ -136,6 +150,9 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 │       ├── rovac-edge-supersensor.service # HC-SR04 ultrasonic
 │       ├── rovac-edge-ps2-joy.service     # PS2 controller input
 │       ├── rovac-edge-ps2-mapper.service  # PS2 → velocity commands
+│       ├── rovac-edge-rosbridge.service   # rosbridge WebSocket (port 9090)
+│       ├── rovac-edge-tf-relay.service    # best_effort→reliable /tf relay
+│       ├── rovac-edge-odom-relay.service  # best_effort→reliable /odom relay
 │       └── ...                            # stereo, webcam, phone services
 ├── ros2_ws/src/
 │   ├── tank_description/            # URDF, cmd_vel_mux.py
@@ -150,7 +167,7 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 ├── foxglove_layouts/                # Foxglove Studio layout configs
 ├── archive/                         # All legacy/deprecated code
 │   ├── legacy_hardware/             # L298N, Hiwonder, BST-4WD, Nano encoder, etc.
-│   └── legacy_scripts/              # Lenovo setup, old launchers
+│   └── legacy_scripts/              # Lenovo setup, old launchers, phone_sensor_relay.py
 └── docs/
     ├── architecture/
     └── guides/
@@ -218,3 +235,9 @@ ssh pi@192.168.1.200 'lsusb | grep 2563:0575'
 ssh pi@192.168.1.200 'systemctl is-active rovac-edge-ps2-joy rovac-edge-ps2-mapper'
 ```
 Known issue: ShanWan ZD-V+ wireless signal dropouts cause brief motor spurts. 200ms hold filter in `ps2_joy_mapper_node.py`.
+
+### TF relay vs EKF conflict
+When running EKF (`ekf` mode), stop `rovac-edge-tf-relay` — EKF publishes its own reliable odom→base_link TF, and the relay would create duplicate/conflicting transforms. The `mac_brain_launch.sh` handles this automatically.
+
+### Agent memory looks high
+micro-ROS Agent steady-state RSS is ~43-65MB (CycloneDDS discovery cache). This is normal. The watchdog threshold is 150MB. Agent memory plateaus after DDS discovery completes — it is NOT leaking.
