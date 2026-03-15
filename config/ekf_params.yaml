@@ -38,7 +38,7 @@ ekf_node:
                   false, false, true,     # yaw only from orientation (2D mode)
                   false, false, false,    # No velocity from IMU
                   false, false, true,     # yaw rate only from gyro (2D mode)
-                  false, false, false]    # acceleration DISABLED (gravity projection risk)
+                  false, false, false]    # accel DISABLED — residual gravity causes drift
     imu0_queue_size: 10
     imu0_differential: false
     imu0_relative: true         # Use orientation CHANGES, not absolute
