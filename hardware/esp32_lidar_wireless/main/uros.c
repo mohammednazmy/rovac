@@ -79,6 +79,7 @@ static sensor_msgs__msg__LaserScan s_scan_msg;
 static float s_scan_ranges_data[360];
 static float s_scan_intensities_data[360];
 static char s_scan_frame_id[] = "laser_frame";
+static char s_diag_frame_id[] = "base_link";
 
 // Diagnostics message (pre-allocated)
 static diagnostic_msgs__msg__DiagnosticArray s_diag_msg;
@@ -177,6 +178,9 @@ static void diag_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
         s_diag_msg.header.stamp.sec = ts.tv_sec;
         s_diag_msg.header.stamp.nanosec = ts.tv_nsec;
     }
+    s_diag_msg.header.frame_id.data = s_diag_frame_id;
+    s_diag_msg.header.frame_id.size = strlen(s_diag_frame_id);
+    s_diag_msg.header.frame_id.capacity = sizeof(s_diag_frame_id);
 
     // Build status
     s_diag_status.level = diagnostic_msgs__msg__DiagnosticStatus__OK;

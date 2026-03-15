@@ -222,6 +222,9 @@ static void diag_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
         s_diag_msg.header.stamp.sec = (int32_t)(now_us / 1000000);
         s_diag_msg.header.stamp.nanosec = (uint32_t)((now_us % 1000000) * 1000);
     }
+    s_diag_msg.header.frame_id.data = s_base_frame;
+    s_diag_msg.header.frame_id.size = strlen(s_base_frame);
+    s_diag_msg.header.frame_id.capacity = sizeof(s_base_frame);
 
     // Build status
     s_diag_status.level = diagnostic_msgs__msg__DiagnosticStatus__OK;

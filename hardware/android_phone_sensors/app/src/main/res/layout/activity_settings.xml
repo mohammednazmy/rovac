@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:background="#1a1a2e">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Settings"
+        android:textSize="22sp"
+        android:textColor="#e94560"
+        android:textStyle="bold"
+        android:paddingBottom="24dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Agent IP"
+        android:textSize="14sp"
+        android:textColor="#a0d2db"
+        android:paddingBottom="4dp" />
+
+    <EditText
+        android:id="@+id/agentIpField"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="text"
+        android:textColor="#ffffff"
+        android:background="#16213e"
+        android:padding="12dp"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Agent Port"
+        android:textSize="14sp"
+        android:textColor="#a0d2db"
+        android:paddingBottom="4dp" />
+
+    <EditText
+        android:id="@+id/agentPortField"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:textColor="#ffffff"
+        android:background="#16213e"
+        android:padding="12dp"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Domain ID"
+        android:textSize="14sp"
+        android:textColor="#a0d2db"
+        android:paddingBottom="4dp" />
+
+    <EditText
+        android:id="@+id/domainIdField"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:textColor="#ffffff"
+        android:background="#16213e"
+        android:padding="12dp"
+        android:layout_marginBottom="16dp" />
+
+    <Switch
+        android:id="@+id/cameraSwitch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Enable Camera"
+        android:textSize="16sp"
+        android:textColor="#a0d2db"
+        android:layout_marginBottom="16dp" />
+
+    <Switch
+        android:id="@+id/autoConnectSwitch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Auto-connect on launch"
+        android:textSize="16sp"
+        android:textColor="#a0d2db"
+        android:layout_marginBottom="24dp" />
+
+    <Button
+        android:id="@+id/saveButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Save"
+        android:textSize="18sp" />
+
+</LinearLayout>

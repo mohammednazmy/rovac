@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1a1a2e">
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="12dp">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="ROVAC Sensor Node"
+            android:textSize="20sp"
+            android:textColor="#e94560"
+            android:textStyle="bold" />
+        <Button
+            android:id="@+id/settingsButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="Settings"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- Status -->
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Ready"
+        android:textSize="13sp"
+        android:background="#0f3460"
+        android:textColor="#a0d2db"
+        android:padding="10dp"
+        android:layout_marginBottom="10dp" />
+
+    <Button
+        android:id="@+id/connectButton"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:text="Connect"
+        android:textSize="16sp"
+        android:layout_marginBottom="14dp" />
+
+    <!-- IMU Accelerometer -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Accelerometer (m/s\u00B2)"
+        android:textSize="13sp"
+        android:textColor="#e94560"
+        android:textStyle="bold"
+        android:paddingBottom="2dp" />
+    <TextView
+        android:id="@+id/imuAccelText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="--"
+        android:textSize="13sp"
+        android:textColor="#4ecca3"
+        android:fontFamily="monospace"
+        android:background="#16213e"
+        android:padding="8dp"
+        android:layout_marginBottom="8dp" />
+
+    <!-- IMU Gyroscope -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Gyroscope (rad/s)"
+        android:textSize="13sp"
+        android:textColor="#e94560"
+        android:textStyle="bold"
+        android:paddingBottom="2dp" />
+    <TextView
+        android:id="@+id/imuGyroText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="--"
+        android:textSize="13sp"
+        android:textColor="#4ecca3"
+        android:fontFamily="monospace"
+        android:background="#16213e"
+        android:padding="8dp"
+        android:layout_marginBottom="8dp" />
+
+    <!-- IMU Orientation -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Orientation (quaternion)"
+        android:textSize="13sp"
+        android:textColor="#e94560"
+        android:textStyle="bold"
+        android:paddingBottom="2dp" />
+    <TextView
+        android:id="@+id/imuOrientText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="--"
+        android:textSize="12sp"
+        android:textColor="#4ecca3"
+        android:fontFamily="monospace"
+        android:background="#16213e"
+        android:padding="8dp"
+        android:layout_marginBottom="8dp" />
+
+    <!-- GPS -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="GPS"
+        android:textSize="13sp"
+        android:textColor="#e94560"
+        android:textStyle="bold"
+        android:paddingBottom="2dp" />
+    <TextView
+        android:id="@+id/gpsText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Waiting for fix..."
+        android:textSize="13sp"
+        android:textColor="#4ecca3"
+        android:fontFamily="monospace"
+        android:background="#16213e"
+        android:padding="8dp"
+        android:layout_marginBottom="8dp" />
+
+    <!-- Camera -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Camera"
+        android:textSize="13sp"
+        android:textColor="#e94560"
+        android:textStyle="bold"
+        android:paddingBottom="2dp" />
+
+    <TextureView
+        android:id="@+id/cameraPreview"
+        android:layout_width="160dp"
+        android:layout_height="120dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:id="@+id/cameraText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Disabled (enable in Settings)"
+        android:textSize="13sp"
+        android:textColor="#4ecca3"
+        android:fontFamily="monospace"
+        android:background="#16213e"
+        android:padding="8dp"
+        android:layout_marginBottom="8dp" />
+
+    <!-- Stats -->
+    <TextView
+        android:id="@+id/statsText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textSize="11sp"
+        android:textColor="#666"
+        android:fontFamily="monospace"
+        android:padding="4dp" />
+
+</LinearLayout>
+</ScrollView>

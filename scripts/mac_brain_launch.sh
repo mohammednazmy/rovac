@@ -81,10 +81,23 @@ start_pi_map_tf() {
 cleanup() {
     log_warn "Shutting down Mac brain nodes..."
     pkill -f "foxglove_bridge" 2>/dev/null || true
+    pkill -f "phone_sensor_relay" 2>/dev/null || true
     pkill -f "slam_toolbox" 2>/dev/null || true
     pkill -f "nav2" 2>/dev/null || true
     start_pi_map_tf
     exit 0
+}
+
+# Start the phone sensor relay (bridges XRCE-DDS phone topics for Foxglove)
+start_phone_relay() {
+    if ! pgrep -f "phone_sensor_relay" > /dev/null 2>&1; then
+        log_info "Starting phone sensor relay..."
+        python3 "$HOME/robots/rovac/scripts/phone_sensor_relay.py" &
+        PHONE_RELAY_PID=$!
+        log_info "Phone relay PID: $PHONE_RELAY_PID"
+    else
+        log_info "Phone sensor relay already running"
+    fi
 }
 trap cleanup SIGINT SIGTERM
 
@@ -143,6 +156,7 @@ case "$MODE" in
 
         log_info "Starting Foxglove Bridge on port 8765..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
+        start_phone_relay
         FOX_PID=$!
         ;;
 
@@ -164,6 +178,7 @@ case "$MODE" in
 
         log_info "Starting Foxglove Bridge..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
+        start_phone_relay
         FOX_PID=$!
         ;;
 
@@ -177,6 +192,7 @@ case "$MODE" in
 
         log_info "Starting Foxglove Bridge only on port 8765..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
+        start_phone_relay
         FOX_PID=$!
         ;;
 
@@ -200,6 +216,7 @@ case "$MODE" in
 
         # Start Foxglove
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
+        start_phone_relay
         FOX_PID=$!
         ;;
 

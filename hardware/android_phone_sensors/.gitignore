@@ -1,0 +1,18 @@
+# Gradle
+.gradle/
+build/
+app/build/
+app/.cxx/
+
+# IDE
+.idea/
+*.iml
+
+# Local config (contains user-specific SDK path)
+local.properties
+
+# Compiled native
+app/src/main/jniLibs/
+
+# OS
+.DS_Store
