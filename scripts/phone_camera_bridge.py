@@ -110,7 +110,16 @@ class PhoneCameraBridge(Node):
                         self._publish_frame(jpeg)
 
             except Exception as e:
-                self.get_logger().warn(f'Stream error: {e}. Retrying in 3s...')
+                self.get_logger().warn(f'Stream error: {e}')
+                # Try re-discovering phone IP in case it changed (DHCP)
+                new_ip = discover_phone_ip()
+                if new_ip and new_ip != self.phone_ip:
+                    self.phone_ip = new_ip
+                    self.url = f'http://{new_ip}:{PHONE_PORT}/stream'
+                    self.torch_url_on = f'http://{new_ip}:{PHONE_PORT}/torch/on'
+                    self.torch_url_off = f'http://{new_ip}:{PHONE_PORT}/torch/off'
+                    self.get_logger().info(f'Phone IP changed to {new_ip}')
+                self.get_logger().info('Retrying in 3s...')
                 time.sleep(3)
 
     def _publish_frame(self, jpeg: bytes):
@@ -128,23 +137,60 @@ class PhoneCameraBridge(Node):
                 f'Frame #{self.frame_count}: {len(jpeg)} bytes')
 
 
-def main():
-    # Default phone IP — can be overridden via command line
-    phone_ip = sys.argv[1] if len(sys.argv) > 1 else '192.168.1.221'
+def discover_phone_ip(port=PHONE_PORT, subnet='192.168.1', timeout=0.3):
+    """Parallel scan of local subnet for the phone's MJPEG server."""
+    import socket
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    # Try to discover phone IP by scanning common addresses
-    if len(sys.argv) <= 1:
-        import socket
-        for last_octet in range(100, 255):
-            ip = f'192.168.1.{last_octet}'
-            try:
-                s = socket.create_connection((ip, PHONE_PORT), timeout=0.3)
-                s.close()
-                phone_ip = ip
-                print(f'Found phone MJPEG server at {ip}:{PHONE_PORT}')
-                break
-            except (socket.timeout, ConnectionRefusedError, OSError):
-                continue
+    # Skip known infrastructure IPs
+    skip = {1, 100, 104, 200, 221, 222, 254}  # router, IP cam, Mac, Pi, ESP32s, gateway
+
+    def check_ip(ip):
+        try:
+            s = socket.create_connection((ip, port), timeout=timeout)
+            # Verify it's our MJPEG server by requesting /frame.jpg
+            s.sendall(b'GET /frame.jpg HTTP/1.0\r\nHost: rovac\r\n\r\n')
+            resp = s.recv(256)
+            s.close()
+            if b'image/jpeg' in resp or b'ROVAC' in resp or b'200' in resp:
+                return ip
+        except (socket.timeout, ConnectionRefusedError, OSError):
+            pass
+        return None
+
+    ips = [f'{subnet}.{i}' for i in range(2, 255) if i not in skip]
+    print(f'Scanning {len(ips)} IPs for phone MJPEG server on port {port}...')
+
+    with ThreadPoolExecutor(max_workers=50) as executor:
+        futures = {executor.submit(check_ip, ip): ip for ip in ips}
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                # Cancel remaining futures
+                for f in futures:
+                    f.cancel()
+                print(f'Found phone at {result}:{port}')
+                return result
+
+    print('Phone not found on network')
+    return None
+
+
+def main():
+    phone_ip = None
+
+    # CLI override
+    if len(sys.argv) > 1:
+        phone_ip = sys.argv[1]
+        print(f'Using provided phone IP: {phone_ip}')
+    else:
+        # Auto-discover
+        phone_ip = discover_phone_ip()
+        if phone_ip is None:
+            print('Waiting for phone to come online...')
+            while phone_ip is None:
+                time.sleep(5)
+                phone_ip = discover_phone_ip()
 
     rclpy.init()
     node = PhoneCameraBridge(phone_ip)
