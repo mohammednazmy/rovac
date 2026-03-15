@@ -53,6 +53,7 @@ usage() {
     echo "  nav       - Run navigation with existing map"
     echo "  foxglove  - Run only Foxglove bridge for visualization"
     echo "  ekf       - Run EKF sensor fusion (wheel odom + phone IMU)"
+    echo "  ekf-gps   - Run EKF + GPS navigation (outdoor waypoint following)"
     echo "  all       - Run SLAM + Nav2 + Foxglove"
     echo ""
     echo "Examples:"
@@ -217,6 +218,25 @@ case "$MODE" in
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
         start_phone_relay
         FOX_PID=$!
+        ;;
+
+    ekf-gps)
+        stop_pi_tf_relay
+
+        log_info "Starting EKF + GPS navigation stack..."
+        log_info "Requires: phone connected + GPS fix (go outdoors)"
+        ros2 launch $HOME/robots/rovac/scripts/ekf_launch.py gps:=true &
+        EKF_PID=$!
+
+        log_info "Starting Foxglove Bridge..."
+        ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
+        start_phone_relay
+        FOX_PID=$!
+
+        log_info ""
+        log_info "GPS navigation ready. To send waypoints:"
+        log_info "  python3 scripts/gps_waypoint_nav.py <lat> <lon>"
+        log_info "  python3 scripts/gps_waypoint_nav.py config/example_waypoints.yaml"
         ;;
 
     foxglove)

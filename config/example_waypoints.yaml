@@ -1,0 +1,31 @@
+# Example GPS waypoints for ROVAC outdoor navigation
+# Edit coordinates for your location
+#
+# Usage:
+#   1. Start EKF + GPS: ./mac_brain_launch.sh ekf-gps
+#   2. Start Nav2:      ./mac_brain_launch.sh nav ~/maps/outdoor.yaml
+#   3. Run waypoints:   python3 scripts/gps_waypoint_nav.py config/example_waypoints.yaml
+#
+# Or navigate to a single point:
+#   python3 scripts/gps_waypoint_nav.py 41.7271 -87.7424
+
+waypoints:
+  - lat: 41.72710
+    lon: -87.74240
+    name: "Start point"
+
+  - lat: 41.72715
+    lon: -87.74240
+    name: "5m north"
+
+  - lat: 41.72715
+    lon: -87.74235
+    name: "5m east"
+
+  - lat: 41.72710
+    lon: -87.74235
+    name: "Return south"
+
+  - lat: 41.72710
+    lon: -87.74240
+    name: "Back to start"

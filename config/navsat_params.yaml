@@ -1,0 +1,15 @@
+# navsat_transform_node configuration for ROVAC GPS navigation
+# Converts phone GPS (lat/lon) to local odom-frame coordinates
+# Provides /fromLL service for waypoint conversion
+
+navsat_transform:
+  ros__parameters:
+    frequency: 30.0
+    delay: 0.0
+    magnetic_declination_radians: 0.06  # ~3.5 deg east for Chicago area
+    yaw_offset: 1.5707963              # pi/2: phone IMU 0=north, navsat expects 0=east (ENU)
+    zero_altitude: true                 # 2D robot — ignore altitude
+    broadcast_utm_transform: true       # Publish utm -> map TF
+    publish_filtered_gps: false
+    use_odometry_yaw: true              # Use EKF odom yaw (more reliable than phone magnetometer)
+    wait_for_datum: false               # Auto-set datum from first GPS fix
