@@ -1,14 +1,13 @@
 package com.rovac.phonesensors;
 
 import android.Manifest;
+import android.net.wifi.WifiManager;
 import android.content.*;
 import android.content.pm.PackageManager;
-import android.graphics.SurfaceTexture;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.view.Surface;
-import android.view.TextureView;
+import androidx.camera.view.PreviewView;
 import android.util.Log;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -29,9 +28,8 @@ public class MainActivity extends AppCompatActivity {
 
     private TextView statusText, imuAccelText, imuGyroText, imuOrientText;
     private TextView gpsText, cameraText, statsText;
-    private Button connectBtn, settingsBtn;
-    private TextureView cameraPreview;
-    private Surface previewSurface;
+    private Button connectBtn, settingsBtn, torchBtn;
+    private PreviewView cameraPreview;
 
     private SensorService service;
     private boolean bound = false;
@@ -54,19 +52,12 @@ public class MainActivity extends AppCompatActivity {
         settingsBtn   = findViewById(R.id.settingsButton);
 
         cameraPreview = findViewById(R.id.cameraPreview);
-        cameraPreview.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
-            @Override public void onSurfaceTextureAvailable(@NonNull SurfaceTexture st, int w, int h) {
-                st.setDefaultBufferSize(320, 240); /* match camera output size */
-                previewSurface = new Surface(st);
-                Log.i(TAG, "Preview surface available: " + w + "x" + h + " (buffer=320x240)");
-                /* Pass to service — camera may need to restart with this surface */
-                if (service != null) service.setPreviewSurface(previewSurface);
+        torchBtn = findViewById(R.id.torchButton);
+        torchBtn.setOnClickListener(v -> {
+            if (service != null) {
+                service.toggleTorch();
+                torchBtn.setText(service.isTorchOn() ? "Light ON" : "Light OFF");
             }
-            @Override public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture st, int w, int h) {}
-            @Override public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture st) {
-                previewSurface = null; return true;
-            }
-            @Override public void onSurfaceTextureUpdated(@NonNull SurfaceTexture st) {}
         });
 
         connectBtn.setOnClickListener(v -> {
@@ -111,7 +102,7 @@ public class MainActivity extends AppCompatActivity {
             service = ((SensorService.LocalBinder) binder).getService();
             bound = true;
             service.setStatusListener(statusListener);
-            if (previewSurface != null) service.setPreviewSurface(previewSurface);
+            service.setPreviewView(cameraPreview);
             if (service.isRunning()) {
                 connectBtn.setText("Disconnect");
             } else if (autoConnectPending) {
@@ -149,8 +140,10 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @Override
-        public void onCameraFrame(int bytes) {
-            runOnUiThread(() -> cameraText.setText(String.format("JPEG: %d bytes", bytes)));
+        public void onCameraFrame(int bytes, int httpClients) {
+            runOnUiThread(() -> cameraText.setText(String.format(
+                    "JPEG: %d bytes | HTTP: %d client%s\nStream: http://%s:8080/stream",
+                    bytes, httpClients, httpClients == 1 ? "" : "s", getWifiIp())));
         }
     };
 
@@ -188,6 +181,15 @@ public class MainActivity extends AppCompatActivity {
 
     /* ── Start publishing via service ──────────────────────── */
 
+    @SuppressWarnings("deprecation")
+    private String getWifiIp() {
+        try {
+            WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+            int ip = wm.getConnectionInfo().getIpAddress();
+            return String.format("%d.%d.%d.%d", ip & 0xff, (ip >> 8) & 0xff, (ip >> 16) & 0xff, (ip >> 24) & 0xff);
+        } catch (Exception e) { return "unknown"; }
+    }
+
     private void startPublishing() {
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         String ip    = p.getString("agent_ip",   "192.168.1.200");
@@ -205,7 +207,7 @@ public class MainActivity extends AppCompatActivity {
         cameraText.setText(cam ? "Enabled — waiting for frames..." : "Disabled (enable in Settings)");
 
         if (service != null) {
-            if (previewSurface != null) service.setPreviewSurface(previewSurface);
+            service.setPreviewView(cameraPreview);
             service.startSensor(ip, port, domain, cam);
             connectBtn.setText("Disconnect");
         } else {

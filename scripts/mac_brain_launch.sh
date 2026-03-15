@@ -82,6 +82,7 @@ cleanup() {
     log_warn "Shutting down Mac brain nodes..."
     pkill -f "foxglove_bridge" 2>/dev/null || true
     pkill -f "phone_sensor_relay" 2>/dev/null || true
+    pkill -f "phone_camera_bridge" 2>/dev/null || true
     pkill -f "slam_toolbox" 2>/dev/null || true
     pkill -f "nav2" 2>/dev/null || true
     start_pi_map_tf
@@ -97,6 +98,15 @@ start_phone_relay() {
         log_info "Phone relay PID: $PHONE_RELAY_PID"
     else
         log_info "Phone sensor relay already running"
+    fi
+
+    if ! pgrep -f "phone_camera_bridge" > /dev/null 2>&1; then
+        log_info "Starting phone camera HTTP bridge..."
+        python3 "$HOME/robots/rovac/scripts/phone_camera_bridge.py" &
+        PHONE_CAM_PID=$!
+        log_info "Phone camera bridge PID: $PHONE_CAM_PID"
+    else
+        log_info "Phone camera bridge already running"
     fi
 }
 trap cleanup SIGINT SIGTERM

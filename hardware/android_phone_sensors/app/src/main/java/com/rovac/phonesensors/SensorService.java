@@ -46,6 +46,7 @@ public class SensorService extends LifecycleService implements SensorEventListen
     private SensorManager sensorMgr;
     private LocationManager locationMgr;
     private Camera2JpegCapture camera;
+    private MjpegServer mjpegServer;
 
     /* Sensor references — compare by reference, NOT by type constant
      * (Samsung uses vendor-specific type IDs for rotation vector) */
@@ -93,36 +94,31 @@ public class SensorService extends LifecycleService implements SensorEventListen
         void onStatus(String msg);
         void onImuUpdate(long count, float[] acc, float[] gyro, float[] quat);
         void onGpsUpdate(double lat, double lon, double alt);
-        void onCameraFrame(int bytes);
+        void onCameraFrame(int bytes, int httpClients);
     }
     private StatusListener statusListener;
     public void setStatusListener(StatusListener l) { this.statusListener = l; }
 
     private android.view.Surface previewSurfaceRef;
 
-    /** Set preview surface from Activity's TextureView (required for Samsung camera).
-     *  If camera is already running without a surface, restart it. */
+    /** No-op — legacy */
     public void setPreviewSurface(android.view.Surface surface) {
         previewSurfaceRef = surface;
-        if (camera != null && running && surface != null) {
-            Log.i(TAG, "Preview surface arrived — restarting camera");
-            camera.close();
-            camera = new Camera2JpegCapture(this);
-            camera.setPreviewSurface(surface);
-            camera.setCallback((jpeg, w, h, ts) -> {
-                if (!running) return;
-                try {
-                    int sec = (int)(ts / 1000);
-                    int nsec = (int)((ts % 1000) * 1_000_000);
-                    boolean ok = bridge.publishCompressedImage(sec, nsec, "phone_camera", "jpeg", jpeg);
-                    if (ok && statusListener != null) statusListener.onCameraFrame(jpeg.length);
-                    else if (!ok) Log.w(TAG, "Image too large: " + jpeg.length + " bytes");
-                } catch (Exception e) {
-                    Log.e(TAG, "Camera publish error", e);
-                }
-            });
-            camera.open();
-        }
+    }
+
+    /** Set PreviewView for live camera feed on phone screen */
+    public void setPreviewView(androidx.camera.view.PreviewView view) {
+        if (camera != null) camera.setPreviewView(view);
+        this.previewViewRef = view;
+    }
+    private androidx.camera.view.PreviewView previewViewRef;
+
+    /** Toggle flashlight */
+    public void toggleTorch() {
+        if (camera != null) camera.toggleTorch();
+    }
+    public boolean isTorchOn() {
+        return camera != null && camera.isTorchEnabled();
     }
 
     /* Binder for Activity */
@@ -249,11 +245,30 @@ public class SensorService extends LifecycleService implements SensorEventListen
             if (cameraEnabled && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                     == PackageManager.PERMISSION_GRANTED) {
                 camera = new Camera2JpegCapture(SensorService.this);
-                /* Store JPEG for pub thread to publish — avoid cross-thread mutex */
+                if (previewViewRef != null) camera.setPreviewView(previewViewRef);
+                /* Start MJPEG HTTP server for high-quality streaming */
+                mjpegServer = new MjpegServer();
+                mjpegServer.setTorchCallback(on -> {
+                    if (camera != null) camera.setTorch(on);
+                });
+                mjpegServer.start();
+                Log.i(TAG, "MJPEG server on port " + MjpegServer.PORT);
+
                 camera.setCallback((jpeg, w, h, ts) -> {
-                    latestJpeg = jpeg;
-                    latestJpegTs = ts;
-                    if (statusListener != null) statusListener.onCameraFrame(jpeg.length);
+                    /* Full-res JPEG → MJPEG HTTP server (no MTU limit) */
+                    if (mjpegServer != null) mjpegServer.pushFrame(jpeg);
+
+                    /* Downscaled JPEG → XRCE-DDS (low-res fallback, fits in MTU) */
+                    byte[] small = recompressJpeg(jpeg, 240, 180, 30);
+                    if (small != null) {
+                        latestJpeg = small;
+                        latestJpegTs = ts;
+                    }
+
+                    if (statusListener != null) {
+                        int clients = mjpegServer != null ? mjpegServer.getClientCount() : 0;
+                        statusListener.onCameraFrame(jpeg.length, clients);
+                    }
                 });
                 camera.open();
             }
@@ -328,6 +343,7 @@ public class SensorService extends LifecycleService implements SensorEventListen
         sensorMgr.unregisterListener(this);
         locationMgr.removeUpdates(gpsListener);
         if (sensorThread != null) { sensorThread.quitSafely(); sensorThread = null; }
+        if (mjpegServer != null) { mjpegServer.stop(); mjpegServer = null; }
         if (camera != null) { camera.close(); camera = null; }
         if (pubHandler != null) {
             pubHandler.post(() -> {

@@ -64,6 +64,7 @@ dependencies {
     implementation("androidx.camera:camera-core:$cameraxVersion")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
 
     // Lifecycle service (for CameraX binding)
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
