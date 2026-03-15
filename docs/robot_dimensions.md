@@ -52,7 +52,7 @@
 - **Phone model**: Samsung Galaxy A16 (SM-A166M), 164.4 x 77.9 x 7.9 mm
 - **Orientation**: Landscape mode, screen facing FORWARD and UP
 - **Portrait-top edge**: Points to the LEFT of the robot (+Y direction)
-- **Screen tilt**: ~60 degrees from vertical (30 degrees from horizontal), tilting forward
+- **Screen tilt**: ~60 degrees from vertical (30 degrees from horizontal), tilting BACKWARD (screen faces REAR, camera faces FORWARD)
 
 ### Phone Position (center of phone body)
 
@@ -85,17 +85,17 @@ From the level and ruler photos (9-12):
 | Android Axis | Physical Direction (on robot) | Robot Frame |
 |---|---|---|
 | Android Y (portrait up) | Points LEFT | +Y (with slight Z component from tilt) |
-| Android Z (out of screen) | Points FORWARD + UP | +X (cos60°) + Z (sin60°) from tilt |
-| Android X (portrait right) | Points FORWARD-DOWN | Derived: perpendicular to Y and Z |
+| Android Z (out of screen) | Points REAR + UP | -X (sin60°) + Z (cos60°) — screen faces REAR |
+| Android X (portrait right) | Points FORWARD + UP | Derived: Y×Z = (0.5, 0, 0.866) |
 
 ### URDF Transform (base_link -> phone_imu_link)
 
 The rotation from base_link to the phone's Android IMU frame requires:
 1. **Yaw = +90 degrees (+1.5708 rad)**: Landscape rotation — portrait-top goes LEFT
-2. **Pitch = +60 degrees (+1.0472 rad)**: Forward tilt — screen tilts 60° from vertical toward forward
+2. **Pitch = -60 degrees (-1.0472 rad)**: BACKWARD tilt — screen faces REAR, camera faces FORWARD
 
 ```xml
-<origin xyz="-0.07 0.0 0.21" rpy="0 1.0472 1.5708"/>
+<origin xyz="-0.07 0.0 0.21" rpy="0 -1.0472 1.5708"/>
 ```
 
 **Note**: The pitch value (1.0472 rad = 60°) represents the tilt from the upright position. In the URDF fixed-axis XYZ convention (R = Rz * Ry * Rx):
@@ -106,8 +106,9 @@ The rotation from base_link to the phone's Android IMU frame requires:
 The phone's rear camera faces BACKWARD and slightly DOWN from the phone's perspective. The camera optical frame follows OpenCV convention (Z=forward into scene, X=right, Y=down).
 
 For the camera:
-- Camera faces the opposite direction of the screen
-- Camera optical axis: BACKWARD and slightly DOWN relative to robot
+- Rear camera faces FORWARD (driving direction) — opposite the screen
+- Camera optical axis: FORWARD and slightly DOWN relative to robot
+- This is the correct orientation — the camera sees where the robot drives
 
 ## Complete TF Tree
 
@@ -123,9 +124,9 @@ map
            │    ├── left_link
            │    └── right_link
            ├── imu_link          (0, 0, 0.02) — onboard IMU (MPU6050, not connected)
-           ├── phone_imu_link    (-0.07, 0, 0.21) rpy=(0, 1.0472, 1.5708) — phone IMU
-           ├── phone_gps_link    (-0.07, 0, 0.21) rpy=(0, 1.0472, 1.5708) — phone GPS
-           ├── phone_camera_link (-0.07, 0, 0.21) rpy=(0, 1.0472, 1.5708) — phone camera
+           ├── phone_imu_link    (-0.07, 0, 0.21) rpy=(0, -1.0472, 1.5708) — phone IMU (screen faces REAR)
+           ├── phone_gps_link    (child of phone_imu, +0.04 along portrait Y) — GPS antenna
+           ├── phone_camera_link (child of phone_imu, rear camera faces FORWARD)
            ├── camera_link       (old, may be removed)
            └── stereo_camera     (old, may be removed)
 ```
@@ -139,8 +140,9 @@ map
 3. **LIDAR height update**: The previous URDF had the LIDAR at 125mm above base_link. The ruler measurement shows 110mm is more accurate (scan plane at 160mm from ground, base_link at 50mm).
 
 4. **Verification method**: With the robot stationary on a flat surface:
-   - Phone accelerometer should read approximately (0, 0, 9.81) in the robot frame after TF transform
-   - If X or Y components are non-zero, the rotation transform needs adjustment
+   - Phone accelerometer Z (out of screen, pointing rear+up) should show gravity components
+   - After TF transform to base_link, the result should be approximately (0, 0, -9.81)
+   - If X or Y components are large, the rotation transform needs adjustment
    - Use: `ros2 topic echo /phone/imu --qos-reliability best_effort --no-daemon --once` and check linear_acceleration
 
 5. **Known asymmetries**:

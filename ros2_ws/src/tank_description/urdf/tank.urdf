@@ -183,7 +183,7 @@
     <!-- Phone center: 70mm behind center, 210mm above base_link.
          RPY: pitch=60° forward tilt, yaw=90° landscape rotation.
          See docs/robot_dimensions.md for derivation. -->
-    <origin xyz="-0.07 0.0 0.21" rpy="0 1.0472 1.5708"/>
+    <origin xyz="-0.07 0.0 0.21" rpy="0 -1.0472 1.5708"/>
   </joint>
 
   <!-- Phone GPS frame — same physical position as IMU -->
