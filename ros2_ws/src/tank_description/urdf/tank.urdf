@@ -176,8 +176,8 @@
   <joint name="phone_imu_joint" type="fixed">
     <parent link="base_link"/>
     <child link="phone_imu"/>
-    <!-- 80mm behind center, 234mm above base_link, pitch=-60deg yaw=+90deg -->
-    <origin xyz="-0.08 0.0 0.234" rpy="0 -1.0472 1.5708"/>
+    <!-- Calibrated from gravity: roll=90 pitch=-10.7 yaw=90 (phone nearly upright) -->
+    <origin xyz="-0.08 0.0 0.234" rpy="1.5708 -0.1868 1.5708"/>
   </joint>
 
   <!-- Phone GPS frame -->
