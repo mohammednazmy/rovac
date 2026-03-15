@@ -40,27 +40,59 @@ class SensorsPanel(Widget):
         # Odometry
         with Container(classes="panel-box-green") as c:
             c.border_title = "Odometry"
-            yield Static("", id="sens-odom")
+            yield Static(
+                "Position    x:   0.000 m    y:   0.000 m\n"
+                "Heading     yaw:    0.0\u00b0 (+0.000 rad)\n"
+                "Velocity    linear:  0.000 m/s    angular: +0.000 rad/s\n"
+                "Distance    total:   0.00 m\n"
+                "Rate          0.0 Hz",
+                id="sens-odom",
+            )
 
         # LIDAR
         with Container(classes="panel-box-blue") as c:
             c.border_title = "LIDAR"
-            yield Static("", id="sens-lidar")
+            yield Static(
+                "Rate:      0.0 Hz     Points: 0 / 360\n"
+                "Range:   0.00 - 0.00 m\n"
+                "Status:  [dim]\u25cb No data[/]",
+                id="sens-lidar",
+            )
 
         # Ultrasonic
         with Container(classes="panel-box-cyan") as c:
             c.border_title = "Ultrasonic"
-            yield Static("", id="sens-ultra")
+            yield Static(
+                "Front Top:    [dim]  --- [/]    Front Bottom: [dim]  --- [/]\n"
+                "Left:         [dim]  --- [/]    Right:        [dim]  --- [/]\n"
+                "Obstacle:     [green]CLEAR[/]",
+                id="sens-ultra",
+            )
 
         # ESP32 diagnostics — side by side
         with Horizontal(id="sensors-diag-row"):
             with Container(classes="panel-box-magenta") as c:
                 c.border_title = "ESP32 Motor"
-                yield Static("", id="sens-diag-motor")
+                yield Static("[dim]No motor diagnostics[/]", id="sens-diag-motor")
 
             with Container(classes="panel-box-magenta") as c:
                 c.border_title = "ESP32 LIDAR"
-                yield Static("", id="sens-diag-lidar")
+                yield Static("[dim]No LIDAR diagnostics[/]", id="sens-diag-lidar")
+
+        # Phone IMU
+        with Container(classes="panel-box-blue") as c:
+            c.border_title = "Phone IMU"
+            yield Static("[dim]No phone IMU data[/]", id="sens-phone-imu")
+
+        # Phone GPS + Camera side by side
+        with Horizontal(id="sensors-phone-row"):
+            with Container(classes="panel-box-green") as c:
+                c.border_title = "Phone GPS"
+                yield Static("[dim]No GPS data[/]", id="sens-phone-gps")
+
+            with Container(classes="panel-box-cyan") as c:
+                c.border_title = "Phone Camera"
+                yield Static("[dim]No camera data[/]", id="sens-phone-camera")
 
     def update_state(self, state: dict, logs: list, proc_status: dict) -> None:
         self._update_odom(state)
@@ -68,6 +100,9 @@ class SensorsPanel(Widget):
         self._update_ultra(state)
         self._update_diag_motor(state)
         self._update_diag_lidar(state)
+        self._update_phone_imu(state)
+        self._update_phone_gps(state)
+        self._update_phone_camera(state)
 
     def _update_odom(self, state: dict) -> None:
         x = state.get("odom_x", 0)
@@ -203,5 +238,81 @@ class SensorsPanel(Widget):
         ]
         try:
             self.query_one("#sens-diag-lidar", Static).update("\n".join(lines))
+        except Exception:
+            pass
+
+    def _update_phone_imu(self, state: dict) -> None:
+        hz = state.get("phone_imu_hz", 0)
+        if hz <= 0:
+            try:
+                self.query_one("#sens-phone-imu", Static).update("[dim]No phone IMU data[/]")
+            except Exception:
+                pass
+            return
+
+        ax = state.get("phone_accel_x", 0)
+        ay = state.get("phone_accel_y", 0)
+        az = state.get("phone_accel_z", 0)
+        gx = state.get("phone_gyro_x", 0)
+        gy = state.get("phone_gyro_y", 0)
+        gz = state.get("phone_gyro_z", 0)
+        roll = state.get("phone_orient_roll", 0)
+        pitch = state.get("phone_orient_pitch", 0)
+        yaw = state.get("phone_orient_yaw", 0)
+
+        text = (
+            f"Accel   x:{ax:+7.2f}  y:{ay:+7.2f}  z:{az:+7.2f} m/s²    Rate: {hz:.0f} Hz\n"
+            f"Gyro    x:{gx:+7.2f}  y:{gy:+7.2f}  z:{gz:+7.2f} rad/s\n"
+            f"Orient  R:{roll:+6.1f}°  P:{pitch:+6.1f}°  Y:{yaw:+6.1f}°"
+        )
+        try:
+            self.query_one("#sens-phone-imu", Static).update(text)
+        except Exception:
+            pass
+
+    def _update_phone_gps(self, state: dict) -> None:
+        hz = state.get("phone_gps_hz", 0)
+        if hz <= 0:
+            try:
+                self.query_one("#sens-phone-gps", Static).update("[dim]No GPS data[/]")
+            except Exception:
+                pass
+            return
+
+        lat = state.get("phone_lat", 0)
+        lon = state.get("phone_lon", 0)
+        alt = state.get("phone_alt", 0)
+        status = state.get("phone_gps_status", -1)
+        status_text = "[green]Fix[/]" if status >= 0 else "[red]No Fix[/]"
+
+        text = (
+            f"Lat:  {lat:11.6f}°\n"
+            f"Lon:  {lon:11.6f}°\n"
+            f"Alt:  {alt:6.1f} m\n"
+            f"Status: {status_text}  {hz:.1f} Hz"
+        )
+        try:
+            self.query_one("#sens-phone-gps", Static).update(text)
+        except Exception:
+            pass
+
+    def _update_phone_camera(self, state: dict) -> None:
+        hz = state.get("phone_camera_hz", 0)
+        size = state.get("phone_camera_bytes", 0)
+        if hz <= 0:
+            try:
+                self.query_one("#sens-phone-camera", Static).update("[dim]No camera data[/]")
+            except Exception:
+                pass
+            return
+
+        size_kb = size / 1024
+        text = (
+            f"Rate:  {hz:.1f} FPS\n"
+            f"Frame: {size_kb:.1f} KB\n"
+            f"Status: [green]● Streaming[/]"
+        )
+        try:
+            self.query_one("#sens-phone-camera", Static).update(text)
         except Exception:
             pass

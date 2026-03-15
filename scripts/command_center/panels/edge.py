@@ -68,7 +68,7 @@ class EdgePanel(Widget):
         # Trigger an initial SSH refresh in the background
         self._trigger_refresh()
 
-    def handle_key(self, key: str) -> bool:
+    def process_key(self, key: str) -> bool:
         """Handle Edge tab key bindings. Called by App dispatcher. Returns True if handled."""
         if key == "r":
             self._trigger_refresh()
@@ -92,14 +92,20 @@ class EdgePanel(Widget):
                 statuses = self.app.pm.pi_all_service_status()
                 self._service_statuses = statuses
                 # Schedule UI update on main thread
-                self.app.call_from_thread(self._apply_service_statuses)
-                self.app.call_from_thread(
-                    self._show_result, "[green]Refreshed[/]"
-                )
-            except Exception as e:
-                self.app.call_from_thread(
-                    self._show_result, f"[red]Refresh failed: {e}[/]"
-                )
+                try:
+                    self.app.call_from_thread(self._apply_service_statuses)
+                    self.app.call_from_thread(
+                        self._show_result, "[green]Refreshed[/]"
+                    )
+                except Exception:
+                    pass  # App may have shut down
+            except Exception:
+                try:
+                    self.app.call_from_thread(
+                        self._show_result, "[red]SSH refresh failed[/]"
+                    )
+                except Exception:
+                    pass
             finally:
                 self._refreshing = False
 

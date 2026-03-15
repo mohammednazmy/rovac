@@ -15,7 +15,12 @@ class SlamPanel(Widget):
             # Left: SLAM Control
             with Container(classes="panel-box-green") as c:
                 c.border_title = "SLAM Control"
-                yield Static("", id="slam-status")
+                yield Static(
+                    "SLAM:     [dim]○ Stopped[/]\n"
+                    "Foxglove: [dim]○ Stopped[/]\n"
+                    "Nav2:     [dim]○ Stopped[/]",
+                    id="slam-status",
+                )
                 yield Static(
                     "\n"
                     " [bold]S[/] Start SLAM    [bold]X[/] Stop SLAM\n"
@@ -28,12 +33,12 @@ class SlamPanel(Widget):
                     placeholder="my_map",
                     id="slam-map-input",
                 )
-                yield Static("", id="slam-save-result")
+                yield Static(" ", id="slam-save-result")
 
             # Middle: Map Stats
             with Container(classes="panel-box-blue") as c:
                 c.border_title = "Map Stats"
-                yield Static("", id="slam-map-stats")
+                yield Static("[dim]No map data (start SLAM first)[/]", id="slam-map-stats")
 
             # Right: SLAM Tips
             with Container(classes="panel-box-cyan") as c:
@@ -45,7 +50,7 @@ class SlamPanel(Widget):
                     "Save map before stopping SLAM[/]",
                 )
 
-    def handle_key(self, key: str) -> bool:
+    def process_key(self, key: str) -> bool:
         """Handle SLAM key bindings. Called by App dispatcher. Returns True if handled."""
         if key == "s":
             self._start_slam()

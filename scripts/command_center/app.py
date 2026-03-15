@@ -24,68 +24,49 @@ class RovacCommandCenter(App):
         padding: 0;
     }
 
+    /* ── Panel widgets fill their TabPane ───────────── */
+    DashboardPanel, DrivePanel, SensorsPanel, SlamPanel, EdgePanel {
+        height: 1fr;
+        overflow-y: auto;
+        padding: 0 1;
+    }
+
     /* ── Shared panel styling ─────────────────────────── */
-    .panel-box {
-        border: solid $accent;
+    .panel-box, .panel-box-green, .panel-box-blue,
+    .panel-box-cyan, .panel-box-yellow, .panel-box-magenta {
         padding: 0 1;
-        margin: 0 0 1 0;
         height: auto;
+        min-height: 3;
     }
-    .panel-box-green {
-        border: solid green;
-        padding: 0 1;
-        margin: 0 0 1 0;
-        height: auto;
-        border-title-color: green;
-    }
-    .panel-box-blue {
-        border: solid dodgerblue;
-        padding: 0 1;
-        margin: 0 0 1 0;
-        height: auto;
-        border-title-color: dodgerblue;
-    }
-    .panel-box-cyan {
-        border: solid darkcyan;
-        padding: 0 1;
-        margin: 0 0 1 0;
-        height: auto;
-        border-title-color: darkcyan;
-    }
-    .panel-box-yellow {
-        border: solid yellow;
-        padding: 0 1;
-        margin: 0 0 1 0;
-        height: auto;
-        border-title-color: yellow;
-    }
-    .panel-box-magenta {
-        border: solid magenta;
-        padding: 0 1;
-        margin: 0 0 1 0;
-        height: auto;
-        border-title-color: magenta;
-    }
+    .panel-box { border: solid $accent; }
+    .panel-box-green { border: solid green; border-title-color: green; }
+    .panel-box-blue { border: solid dodgerblue; border-title-color: dodgerblue; }
+    .panel-box-cyan { border: solid darkcyan; border-title-color: darkcyan; }
+    .panel-box-yellow { border: solid yellow; border-title-color: yellow; }
+    .panel-box-magenta { border: solid magenta; border-title-color: magenta; }
 
     /* ── Dashboard ────────────────────────────────────── */
     #dashboard-top-row {
         layout: horizontal;
         height: auto;
     }
-    #dashboard-top-row > .panel-box-green,
-    #dashboard-top-row > .panel-box-blue {
-        width: 1fr;
+    #dashboard-top-row > .panel-box-green {
+        width: 2fr;
     }
-    #dashboard-bottom-row {
+    #dashboard-top-row > .panel-box-blue {
+        width: 3fr;
+    }
+    #dashboard-mid-row {
         layout: horizontal;
         height: auto;
     }
-    #dashboard-bottom-row > .panel-box-cyan,
-    #dashboard-bottom-row > .panel-box-magenta {
+    #dashboard-mid-row > .panel-box-cyan {
         width: 1fr;
     }
     #dash-log-box {
-        height: 10;
+        height: 1fr;
+        min-height: 4;
+        max-height: 10;
         overflow-y: auto;
     }
 
@@ -105,6 +86,14 @@ class RovacCommandCenter(App):
         height: auto;
     }
     #sensors-diag-row > .panel-box-magenta {
+        width: 1fr;
+    }
+    #sensors-phone-row {
+        layout: horizontal;
+        height: auto;
+    }
+    #sensors-phone-row > .panel-box-green,
+    #sensors-phone-row > .panel-box-cyan {
         width: 1fr;
     }
 
@@ -157,6 +146,11 @@ class RovacCommandCenter(App):
         Binding("3", "switch_tab('sensors')", "Sensors", show=True),
         Binding("4", "switch_tab('slam')", "SLAM", show=True),
         Binding("5", "switch_tab('edge')", "Edge", show=True),
+        # Arrow keys — priority bindings to intercept before Tabs widget
+        Binding("left", "arrow('left')", show=False, priority=True),
+        Binding("right", "arrow('right')", show=False, priority=True),
+        Binding("up", "arrow('up')", show=False, priority=True),
+        Binding("down", "arrow('down')", show=False, priority=True),
         Binding("ctrl+q", "quit_app", "Quit", show=True),
     ]
 
@@ -206,6 +200,8 @@ class RovacCommandCenter(App):
     def on_mount(self) -> None:
         if self.ros:
             self.ros.start()
+        # Immediate first update so panels aren't empty
+        self.set_timer(0.1, self._update_panels)
         # Periodic UI refresh at 1 Hz
         self.set_interval(1.0, self._update_panels)
 
@@ -250,26 +246,42 @@ class RovacCommandCenter(App):
         if active == "tab-drive":
             from .panels.drive import DrivePanel
             try:
-                handled = self.query_one(DrivePanel).handle_key(event.key)
-            except Exception:
-                pass
+                handled = self.query_one(DrivePanel).process_key(event.key)
+            except Exception as e:
+                self._log(f"Key dispatch error: {e}")
         elif active == "tab-slam":
             from .panels.slam import SlamPanel
             try:
-                handled = self.query_one(SlamPanel).handle_key(event.key)
-            except Exception:
-                pass
+                handled = self.query_one(SlamPanel).process_key(event.key)
+            except Exception as e:
+                self._log(f"Key dispatch error: {e}")
         elif active == "tab-edge":
             from .panels.edge import EdgePanel
             try:
-                handled = self.query_one(EdgePanel).handle_key(event.key)
-            except Exception:
-                pass
+                handled = self.query_one(EdgePanel).process_key(event.key)
+            except Exception as e:
+                self._log(f"Key dispatch error: {e}")
 
         if handled:
             event.stop()
 
     # ── Actions ────────────────────────────────────────
+
+    def action_arrow(self, key: str) -> None:
+        """Handle arrow keys — drive on Drive tab, switch tabs otherwise."""
+        tabs = self.query_one(TabbedContent)
+        if tabs.active == "tab-drive":
+            from .panels.drive import DrivePanel
+            try:
+                self.query_one(DrivePanel).process_key(key)
+            except Exception as e:
+                self._log(f"Drive key error: {e}")
+        else:
+            # Default: let left/right switch tabs
+            if key == "left":
+                tabs.action_previous()
+            elif key == "right":
+                tabs.action_next()
 
     def action_switch_tab(self, tab_id: str) -> None:
         tabs = self.query_one(TabbedContent)

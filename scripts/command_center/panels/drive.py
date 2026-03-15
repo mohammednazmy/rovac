@@ -49,22 +49,31 @@ class DrivePanel(Widget):
         # -- Controls section --
         with Container(classes="panel-box-green") as c:
             c.border_title = "Controls"
-            yield Static("", id="drive-controls")
+            yield Static("[dim]Loading...[/]", id="drive-controls")
 
         # -- Bottom row: Odometry + Proximity --
         with Horizontal(id="drive-lower"):
             with Container(classes="panel-box-cyan") as c:
                 c.border_title = "Odometry"
-                yield Static("", id="drive-odom")
+                yield Static(
+                    "(+0.00, +0.00)  yaw +0.0\u00b0\n"
+                    "v=+0.00 m/s  \u03c9=+0.00 r/s\n"
+                    "dist 0.0m  odom 0.0Hz",
+                    id="drive-odom",
+                )
 
             with Container(classes="panel-box-yellow") as c:
                 c.border_title = "Proximity"
-                yield Static("", id="drive-proximity")
+                yield Static(
+                    "        Top: [dim]---  [/]\n [dim]---  [/]   [bold]\u25fc[/]   [dim]---  [/]\n"
+                    "        Bot: [dim]---  [/]\n\n Status: [green]CLEAR[/]",
+                    id="drive-proximity",
+                )
 
     def on_mount(self) -> None:
         self._refresh_controls_display()
 
-    def handle_key(self, key: str) -> bool:
+    def process_key(self, key: str) -> bool:
         """Handle drive key presses. Called by App dispatcher. Returns True if handled."""
         linear = 0.0
         angular = 0.0
@@ -96,6 +105,12 @@ class DrivePanel(Widget):
         elif key in ("minus", "underscore"):
             self.gear = max(self.gear - 1, 0)
             self._refresh_controls_display()
+            return True
+        elif key == "h":
+            # Toggle headlights (phone flashlight)
+            if self.app.ros:
+                current = self.app.ros.get_state().get('phone_flashlight_on', False)
+                self.app.ros.publish_flashlight(not current)
             return True
         else:
             return False
@@ -139,17 +154,21 @@ class DrivePanel(Widget):
         else:
             out_color = "dim"
 
+        # Flashlight state
+        if self.app.ros:
+            flash_on = self.app.ros.get_state().get('phone_flashlight_on', False)
+        else:
+            flash_on = False
+        flash_text = "[yellow]● ON[/]" if flash_on else "[dim]○ OFF[/]"
+
         text = (
-            "\n"
-            "              [bold]W / Up[/]     Forward\n"
-            "     [bold]A / Left[/]   [bold]SPACE[/]   [bold]D / Right[/]\n"
-            "              [bold]S / Down[/]   Backward\n"
-            "\n"
-            "     [bold]Q[/] Arc Left              [bold]E[/] Arc Right\n"
-            f"     [bold]+/-[/] Speed               Gear: [bold]{gear_num}[/] / {total_gears}\n"
-            "\n"
-            f"     Speed: [bold]{lin_speed:.2f}[/] m/s  /  [bold]{ang_speed:.1f}[/] rad/s\n"
-            f"     Output: [{out_color}]linear={lin_out:+.2f}  angular={ang_out:+.2f}[/]\n"
+            "        [bold]W/Up[/] Fwd     [bold]Q[/] Arc-L     "
+            f"Gear [bold]{gear_num}[/]/{total_gears}  "
+            f"[bold]{lin_speed:.2f}[/] m/s  [bold]{ang_speed:.1f}[/] rad/s\n"
+            "  [bold]A/Left[/] [bold]SPACE[/] [bold]D/Right[/]   [bold]E[/] Arc-R     "
+            f"[{out_color}]Out: lin={lin_out:+.2f} ang={ang_out:+.2f}[/]\n"
+            f"        [bold]S/Down[/] Rev    [bold]+/-[/] Speed    "
+            f"[bold]H[/] Headlight {flash_text}"
         )
         try:
             self.query_one("#drive-controls", Static).update(text)
@@ -170,15 +189,12 @@ class DrivePanel(Widget):
         wz = state.get("odom_wz", 0)
         dist = state.get("odom_total_dist", 0)
         hz = state.get("odom_hz", 0)
+        hz = state.get("odom_hz", 0)
 
         lines = [
-            f"x:    {x:7.3f} m",
-            f"y:    {y:7.3f} m",
-            f"yaw:  {yaw_deg:6.1f}°",
-            f"v:    {vx:6.3f} m/s",
-            f"w:    {wz:6.3f} rad/s",
-            f"dist: {dist:6.2f} m",
-            f"odom: {hz:5.1f} Hz",
+            f"({x:+.2f}, {y:+.2f})  yaw {yaw_deg:+.1f}\u00b0",
+            f"v={vx:+.2f} m/s  \u03c9={wz:+.2f} r/s",
+            f"dist {dist:.1f}m  odom {hz:.1f}Hz",
         ]
         try:
             self.query_one("#drive-odom", Static).update("\n".join(lines))

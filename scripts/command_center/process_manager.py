@@ -115,7 +115,42 @@ class ProcessManager:
                 result[name] = 'running'
             else:
                 result[name] = f'exited ({proc.returncode})'
+
+        # Detect externally-started processes we didn't launch
+        if 'foxglove' not in result or result['foxglove'] != 'running':
+            if self._is_port_listening(8765):
+                result['foxglove'] = 'running'
+        if 'slam' not in result or result['slam'] != 'running':
+            if self._is_process_running('slam_toolbox'):
+                result['slam'] = 'running'
+        if 'nav2' not in result or result['nav2'] != 'running':
+            if self._is_process_running('nav2_bringup'):
+                result['nav2'] = 'running'
+
         return result
+
+    @staticmethod
+    def _is_port_listening(port: int) -> bool:
+        """Check if a local TCP port is listening."""
+        import socket
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.3)
+                return s.connect_ex(('127.0.0.1', port)) == 0
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_process_running(name: str) -> bool:
+        """Check if a process with the given name is running."""
+        try:
+            result = subprocess.run(
+                ['pgrep', '-f', name],
+                capture_output=True, timeout=2
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
 
     # --- Pi service management via SSH ---
 
