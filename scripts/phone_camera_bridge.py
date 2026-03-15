@@ -22,7 +22,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import CompressedImage
-from builtin_interfaces.msg import Time
+from std_msgs.msg import Bool
 
 
 PHONE_PORT = 8080
@@ -44,6 +44,13 @@ class PhoneCameraBridge(Node):
             CompressedImage, '/phone/camera/image_raw/http', qos)
 
         self.frame_count = 0
+
+        # Flashlight control: subscribe to /phone/flashlight (std_msgs/Bool)
+        self.create_subscription(Bool, '/phone/flashlight', self._torch_cb, 10)
+        self.torch_url_on = f'http://{phone_ip}:{PHONE_PORT}/torch/on'
+        self.torch_url_off = f'http://{phone_ip}:{PHONE_PORT}/torch/off'
+        self.get_logger().info(f'Flashlight control: ros2 topic pub /phone/flashlight std_msgs/Bool "data: true"')
+
         self.get_logger().info(f'Connecting to MJPEG stream at {self.url}')
 
         # Start streaming in a timer to keep the node responsive
@@ -53,6 +60,14 @@ class PhoneCameraBridge(Node):
 
     def _noop(self):
         pass
+
+    def _torch_cb(self, msg: Bool):
+        url = self.torch_url_on if msg.data else self.torch_url_off
+        try:
+            urllib.request.urlopen(url, timeout=2)
+            self.get_logger().info(f'Flashlight {"ON" if msg.data else "OFF"}')
+        except Exception as e:
+            self.get_logger().warn(f'Torch control failed: {e}')
 
     def _start_stream(self):
         import threading
