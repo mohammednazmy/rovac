@@ -25,7 +25,7 @@ class RovacCommandCenter(App):
     }
 
     /* ── Panel widgets fill their TabPane ───────────── */
-    DashboardPanel, DrivePanel, SensorsPanel, SlamPanel, EdgePanel {
+    DashboardPanel, DrivePanel, SensorsPanel, SlamPanel, EdgePanel, PhonePanel {
         height: 1fr;
         overflow-y: auto;
         padding: 0 1;
@@ -112,6 +112,24 @@ class RovacCommandCenter(App):
         margin: 0 1;
     }
 
+    /* ── Phone panel ──────────────────────────────────── */
+    #phone-imu-row {
+        layout: horizontal;
+        height: auto;
+    }
+    #phone-imu-row > .panel-box-blue,
+    #phone-imu-row > .panel-box-cyan {
+        width: 1fr;
+    }
+    #phone-lower-row {
+        layout: horizontal;
+        height: auto;
+    }
+    #phone-lower-row > .panel-box-green,
+    #phone-lower-row > .panel-box-magenta {
+        width: 1fr;
+    }
+
     /* ── Edge panel ───────────────────────────────────── */
     #edge-services-box {
         height: auto;
@@ -146,6 +164,7 @@ class RovacCommandCenter(App):
         Binding("3", "switch_tab('sensors')", "Sensors", show=True),
         Binding("4", "switch_tab('slam')", "SLAM", show=True),
         Binding("5", "switch_tab('edge')", "Edge", show=True),
+        Binding("6", "switch_tab('phone')", "Phone", show=True),
         # Arrow keys — priority bindings to intercept before Tabs widget
         Binding("left", "arrow('left')", show=False, priority=True),
         Binding("right", "arrow('right')", show=False, priority=True),
@@ -195,6 +214,9 @@ class RovacCommandCenter(App):
             with TabPane("Edge", id="tab-edge"):
                 from .panels.edge import EdgePanel
                 yield EdgePanel()
+            with TabPane("Phone", id="tab-phone"):
+                from .panels.phone import PhonePanel
+                yield PhonePanel()
         yield Footer()
 
     def on_mount(self) -> None:
@@ -216,8 +238,9 @@ class RovacCommandCenter(App):
         from .panels.sensors import SensorsPanel
         from .panels.slam import SlamPanel
         from .panels.edge import EdgePanel
+        from .panels.phone import PhonePanel
 
-        for PanelType in (DashboardPanel, DrivePanel, SensorsPanel, SlamPanel, EdgePanel):
+        for PanelType in (DashboardPanel, DrivePanel, SensorsPanel, SlamPanel, EdgePanel, PhonePanel):
             try:
                 panel = self.query_one(PanelType)
                 panel.update_state(state, logs, proc_status)
@@ -261,6 +284,18 @@ class RovacCommandCenter(App):
                 handled = self.query_one(EdgePanel).process_key(event.key)
             except Exception as e:
                 self._log(f"Key dispatch error: {e}")
+        elif active == "tab-phone":
+            from .panels.phone import PhonePanel
+            try:
+                panel = self.query_one(PhonePanel)
+                def _toggle():
+                    if self.ros:
+                        current = self.ros.get_state().get('phone_flashlight_on', False)
+                        self.ros.publish_flashlight(not current)
+                panel._toggle_flashlight = _toggle
+                handled = panel.process_key(event.key)
+            except Exception as e:
+                self._log(f"Key dispatch error: {e}")
 
         if handled:
             event.stop()
@@ -277,11 +312,16 @@ class RovacCommandCenter(App):
             except Exception as e:
                 self._log(f"Drive key error: {e}")
         else:
-            # Default: let left/right switch tabs
-            if key == "left":
-                tabs.action_previous()
-            elif key == "right":
-                tabs.action_next()
+            # Default: let left/right switch tabs via inner Tabs widget
+            from textual.widgets import Tabs
+            try:
+                inner_tabs = tabs.query_one(Tabs)
+                if key == "left":
+                    inner_tabs.action_previous_tab()
+                elif key == "right":
+                    inner_tabs.action_next_tab()
+            except Exception:
+                pass
 
     def action_switch_tab(self, tab_id: str) -> None:
         tabs = self.query_one(TabbedContent)
