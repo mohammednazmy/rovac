@@ -39,9 +39,7 @@
   <joint name="laser_joint" type="fixed">
     <parent link="base_link"/>
     <child link="laser_frame"/>
-    <!-- LIDAR scan plane at 152.5mm from ground, base_link at 20mm → 132.5mm above.
-         LIDAR center 95mm from front edge, 125mm from rear → 15mm forward of center.
-         See docs/robot_dimensions.md -->
+    <!-- LIDAR scan plane 152.5mm from ground, 132.5mm above base_link -->
     <origin xyz="0.015 0 0.1325" rpy="0 0 0"/>
   </joint>
 
@@ -163,12 +161,7 @@
   </joint>
 
   <!-- ==================== PHONE SENSOR NODE ==================== -->
-  <!-- Samsung Galaxy A16 on gooseneck clamp at rear of chassis.
-       Landscape mode: portrait-top points LEFT (+Y).
-       Screen faces forward+up, tilted ~60° from vertical.
-       See docs/robot_dimensions.md for full measurement details. -->
-
-  <!-- Phone IMU frame — reports in Android portrait coords -->
+  <!-- Phone IMU (Samsung Galaxy A16, landscape, screen faces rear) -->
   <link name="phone_imu">
     <visual>
       <geometry>
@@ -183,14 +176,11 @@
   <joint name="phone_imu_joint" type="fixed">
     <parent link="base_link"/>
     <child link="phone_imu"/>
-    <!-- Phone center: 80mm behind center, 234mm above base_link.
-         Pitch=-60° (backward tilt, screen faces rear, camera faces forward).
-         Yaw=+90° (landscape, portrait-top LEFT).
-         See docs/robot_dimensions.md for derivation. -->
+    <!-- 80mm behind center, 234mm above base_link, pitch=-60deg yaw=+90deg -->
     <origin xyz="-0.08 0.0 0.234" rpy="0 -1.0472 1.5708"/>
   </joint>
 
-  <!-- Phone GPS frame — same physical position as IMU -->
+  <!-- Phone GPS frame -->
   <link name="phone_gps"/>
 
   <joint name="phone_gps_joint" type="fixed">
