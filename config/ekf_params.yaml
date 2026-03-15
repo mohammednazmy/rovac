@@ -35,10 +35,10 @@ ekf_node:
     # Phone publishes via rosbridge WebSocket (:9090) — proper ROS 2 topics
     imu0: /phone/imu
     imu0_config: [false, false, false,    # No position from IMU
-                  true,  true,  true,     # orientation (roll, pitch, yaw)
+                  false, false, true,     # yaw only from orientation (2D mode)
                   false, false, false,    # No velocity from IMU
-                  true,  true,  true,     # angular velocity (gyro)
-                  true,  true,  false]    # linear acceleration (ax, ay only — az noisy in 2D)
+                  false, false, true,     # yaw rate only from gyro (2D mode)
+                  false, false, false]    # acceleration DISABLED (gravity projection risk)
     imu0_queue_size: 10
     imu0_differential: false
     imu0_relative: true         # Use orientation CHANGES, not absolute
