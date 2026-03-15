@@ -1,224 +1,176 @@
-ROVAC Robot Wireframe — Verify Physical Layout
-================================================
+ROVAC Robot Wireframe — Physical Layout (Corrected 2026-03-15)
+================================================================
 
-All dimensions in millimeters. Origin = base_link (chassis center, track axle height).
-FRONT = LIDAR side (left in side view).  REAR = Phone mount side.
+All dimensions in millimeters. Origin = base_link (chassis center, motor shaft height = 20mm from ground).
+FRONT = LIDAR side.  REAR = Phone mount side.
+Coordinate frame: X = forward, Y = left, Z = up
 
-Coordinate frame: X = forward, Y = left (into page in side view), Z = up
 
+===================================================================
+SIDE VIEW (looking from the LEFT side, Y-axis into page)
+===================================================================
 
-═══════════════════════════════════════════════════════════════════════
-SIDE VIEW (looking from the LEFT side of the robot, Y-axis into page)
-═══════════════════════════════════════════════════════════════════════
-
-                                         Phone top ~300mm from ground
+                                   Phone top = 295mm from ground (Z=+275)
                                    \
                                     \  Screen faces REAR
-                                     \   (tilted 60 deg from vertical, zenith 330 deg)
-                                      \
-                                       \  Phone (164mm tall)
+                                     \   Tilted 60deg from vertical
+                                      \  Zenith 330deg
+                                       \  Rear camera faces FORWARD
                                         \
-                          Phone base -->  \  ~220mm from ground
+                          Phone base -->  \  ~213mm from ground (Z=+193)
                                           |
-         +---------+                      |
-         | XV-11   | <-- LIDAR top        | <-- Gooseneck mount
-         | LIDAR   |     ~185mm           |
-         | scan ===+=== plane ------------+-- 160mm from ground (Z=+110 above base_link)
-         | plane   |                      |
-         +----+----+                      |
-    +---------+-------------------------------+
-    |  Pi 5   |==== CHASSIS UPPER PLATFORM ===| <-- ~80mm from ground
-    |         |  ESP32   Maker Board   Batt   |
-    +---------+===============================+
-    | +-------------- TRACKS ---------------+ |
-    | | O                                 O | | <-- Track wheels dia 45mm
-    | |      ===========================    | |
-    | | O                                 O | |
-    | +-------------------------------------+ |
-    +------------------------------------------+
-    <----------------- 230mm ------------------>
+                  +---------+             |
+                  | XV-11   |             | Gooseneck mount
+                  | LIDAR   |             |
+                  | scan ===+====---------+-- 152.5mm from ground (Z=+132.5)
+                  |  plane  |             |
+                  +----+----+             |
+              =============================  Upper platform (tapered)
+              |  ~140mm at front,  ~100mm at rear  |  from ground
+              +============+=======+========+
+    +---------+  Lower platform (40mm from ground) +---------+
+    |         +====================================+         |
+    |  +-------------- TRACKS -------------------+           |
+    |  | O              Motor shaft = 20mm     O |           |
+    |  |       === base_link (0,0,0) here ===    |           |
+    |  | O                                     O |           |
+    |  +-----------------------------------------+           |
+    +--------------------------------------------------------+
+    <--------------------- ~220mm ------------------------------>
 
-     FRONT (LIDAR)                        REAR (Phone mount)
-     X = +115mm                           X = -115mm
-
-
-Heights from GROUND (Z_ground):
-    Ground ............ 0mm
-    Track axle center . 50mm  <-- base_link origin (Z=0 in robot frame)
-    Chassis platform .. 80mm  (Z=+30)
-    LIDAR scan plane .. 160mm (Z=+110)
-    LIDAR top ......... 185mm (Z=+135)
-    Phone base ........ 220mm (Z=+170)
-    Phone center ...... 260mm (Z=+210)  <-- phone_imu_link
-    Phone top ......... 300mm (Z=+250)
+     FRONT (LIDAR)                              REAR (Phone mount)
+     X = +110mm                                 X = -110mm
 
 
-═══════════════════════════════════════════════════════════════════════
+Heights from GROUND:
+    Ground .............. 0mm
+    Motor shaft/base_link 20mm  (Z = 0 in robot frame)
+    Lower platform ...... 40mm  (Z = +20)
+    Upper platform rear . 100mm (Z = +80)
+    Upper platform front. 140mm (Z = +120)
+    LIDAR scan plane .... 152.5mm (Z = +132.5)  laser_frame
+    Phone bottom ........ 213mm (Z = +193)
+    Phone center ........ 254mm (Z = +234)      phone_imu_link
+    Phone camera ........ 265mm (Z = +245)
+    Phone top ........... 295mm (Z = +275)
+
+
+===================================================================
 TOP VIEW (looking DOWN, Z-axis into page)
-═══════════════════════════════════════════════════════════════════════
+===================================================================
 
-                        FRONT (X = +115)
+                        FRONT (X = +110)
                             ^ X+
                             |
-              +-------------+-------------+
-              |   +---------+---------+   |
-              |   |   Super Sensor    |   | <-- X=+100, ultrasonic module
-    Y+ <------|---|-------------------|---|------> Y-
-              |   +-------------------+   |
-    (LEFT)    |                           |    (RIGHT)
-              |      +-----------+        |
-              |      |  XV-11    |        | <-- LIDAR at X=+80, Y=0
-              |      |  LIDAR    |        |
-              |      |   @ center|        |    LIDAR radius ~65mm
-              |      +-----------+        |
-              |           |               |
-              |     ------+------ <-- base_link (0,0)
-              |           |               |
-              |   +---------------+       |
-              |   |   Pi 5        |       |
-              |   |   ESP32 Motor |       |
-              |   +---------------+       |
-              |           |               |
-              |      +----+----+          |
-              |      | Phone   |          | <-- phone_imu at X=-70, Y=0
-              |      | Clamp   |          |
-              |      | Base    |          |
-              |      +----+----+          |
-              |   ========+========       | <-- Phone in LANDSCAPE
-              |   |  Phone Screen  |      |    Screen faces DOWN (toward ground/rear)
-              |   |  (landscape)   |      |    Portrait-top --> LEFT (Y+)
-              |   ========+========       |    REAR CAMERA faces UP (toward viewer/front)
-              |           |               |
-              +----------+----------------+
-                          |
-                          v
-                    REAR (X = -115)
+         +------------------+------------------+
+         |    +-------------+-------------+    |
+         |    |   Super Sensor            |    |
+    Y+ <-|----|-----------+-+-------------|----|--> Y-
+         |    +-------------+             |    |
+  (LEFT) |                  |             |  (RIGHT)
+         |         +--------+--------+    |
+         |         |  XV-11 LIDAR    |    |
+         |         |   @ center      |    |   LIDAR at X=+15, Y=0
+         |         |  dia 70-80mm    |    |   Centered: 122mm from each side
+         |         +--------+--------+    |
+         |                  |             |
+         |         ---------+-------- base_link (0,0)
+         |                  |             |
+         |      +-----------+-----------+ |
+         |      |   Lower platform      | |
+         |      |   ESP32 + Battery     | |
+         |      +-----------+-----------+ |
+         |                  |             |
+         |          +-------+-------+     |
+         |          | Phone clamp   |     |   Phone at X=-80, Y=0
+         |          +-------+-------+     |
+         |     =============+===========  |   Phone in LANDSCAPE
+         |     |  REAR CAMERA faces UP |  |   (faces forward = toward viewer)
+         |     |  Screen faces DOWN    |  |   Portrait-top --> LEFT (Y+)
+         |     =============+===========  |
+         |                  |             |
+         +------------------+------------------+
+                            |
+                            v
+                      REAR (X = -110)
 
-    <-- 170mm (with tracks) -->
-    <-- 150mm (track centers) ->
+         <---------- 245mm (outer tracks) ---------->
 
 
-═══════════════════════════════════════════════════════════════════════
-FRONT VIEW (looking at the robot from the FRONT, X-axis into page)
-═══════════════════════════════════════════════════════════════════════
+===================================================================
+FRONT VIEW (looking from the FRONT, X-axis into page)
+===================================================================
 
                     Phone (behind LIDAR, higher up)
-                    +---------------+ <-- 300mm from ground
-                  / |   REAR CAMERA |/
-                 /  |   faces YOU   /  <-- Tilted 60 deg from vertical
-                /   |  (forward)   /       Screen faces AWAY (rear)
-                    +-------------+ <-- 220mm from ground
+                    +---------------+ 295mm from ground
+                  / | REAR CAMERA   |/
+                 /  | faces YOU     /  60deg from vertical
+                /   | (forward)    /   Screen faces AWAY (rear)
+                    +-------------+ 213mm from ground
                          |
                +---------+---------+
-               |     XV-11 LIDAR    | <-- 160mm scan plane
+               |     XV-11 LIDAR    | 152.5mm scan plane
                |      @ center     |
                +---------+---------+
-         +---------------+---------------+
-         |    CHASSIS UPPER PLATFORM     | <-- 80mm
-         +-------------------------------+
+    +===========================================+ ~140mm upper platform
+    |                                           |
+    +===========================================+ ~40mm lower platform
     +----+                               +----+
-    |    |         CHASSIS               |    |
     |    |                               |    |
-    | O--+                               +--O | <-- Track wheels
-    |    |                               |    |
+    | O--+         base_link             +--O | 20mm motor shaft
+    |    |          (0,0,0)              |    |
     | O--+                               +--O |
-    |    |                               |    |
     +----+                               +----+
-  ========================================= GROUND
+  ================================================= GROUND (0mm)
          <-- Y+ (LEFT)              Y- (RIGHT) -->
 
-    <------------- 170mm total ------------->
-         <---- 150mm track centers ---->
+         <------------- 245mm total ------------->
 
 
-═══════════════════════════════════════════════════════════════════════
-PHONE ORIENTATION DETAIL (CORRECTED)
-═══════════════════════════════════════════════════════════════════════
+===================================================================
+PHONE ORIENTATION DETAIL
+===================================================================
 
-Side view of phone tilt (looking from LEFT side):
+Side view of phone tilt (CORRECTED — screen faces REAR):
 
-         Vertical reference -->|
-                               |
-             60 deg from       |    / Phone top leans FORWARD (toward LIDAR)
-              vertical         |   /
-                               |  /  Phone REAR CAMERA
-                               | /   faces FORWARD (toward LIDAR)
-                               |/
-                               +\ <-- Mount point
-                                 \
-                                  \ Phone SCREEN
-                                   \ faces REAR
-                                    \
-                                     \ Phone bottom toward REAR
+         Vertical |
+                  |
+        60deg     |    / Phone top leans toward FRONT
+         from     |   /
+        vertical  |  /  REAR CAMERA faces FRONT (driving direction)
+                  | /
+                  |/
+                  +\  Mount point on upper platform (rear)
+                    \
+                     \  SCREEN faces REAR
+                      \
+                       \  Phone bottom toward REAR
 
 
     CRITICAL: The phone's SCREEN faces the REAR of the robot.
               The phone's REAR CAMERA faces the FRONT (forward driving direction).
-              This is correct -- the camera sees where the robot is going.
-
-    Zenith angle: 330 deg (measured from Z-up, clockwise in side view)
-    Tilt from vertical: 60 deg (toward the rear/backward)
-    Tilt from horizontal: 30 deg
+              The camera sees where the robot is going.
 
 
-Android IMU axes (ALWAYS in portrait reference, regardless of physical rotation):
-
-    Phone in PORTRAIT:     Phone mounted LANDSCAPE on robot:
-
-    +----------+           =======================
-    |  Camera  | <-- Y+    |                     |
-    |          |           | Portrait-top (Y+)   | --> Robot LEFT (Y+)
-    |  Screen  | Z+ (out   |  points LEFT        |
-    |          | of screen)|                     |
-    | X+ -->   |           | Z+ (out of screen)  | --> Robot REAR + UP
-    |          |           |  (tilted 60 fwd)    |     (screen faces REAR)
-    |  Home    |           |                     |
-    +----------+           =======================
-
-    Phone Z-axis (out of screen) points: REAR (-X) and UP (+Z)
-        Z_phone = (-sin60, 0, cos60) = (-0.866, 0, 0.5) in robot frame
-
-    Phone Y-axis (portrait up) points: LEFT (+Y)
-        Y_phone = (0, 1, 0) in robot frame
-
-    Phone X-axis (portrait right) points: derived = Y x Z
-        X_phone = (0,1,0) x (-0.866, 0, 0.5) = (0.5, 0, 0.866)
-        = FORWARD and UP (perpendicular to screen, on the rear-camera side)
-
-
-URDF Transform: base_link --> phone_imu_link
-    xyz  = (-0.070, 0.000, 0.210)   meters
+URDF Transform: base_link -> phone_imu_link
+    xyz  = (-0.080, 0.000, 0.234)   meters
     rpy  = ( 0.000, -1.047, 1.571)  radians
              roll    pitch   yaw
-             0 deg  -60 deg  90 deg
+             0deg   -60deg   90deg
 
-    PITCH IS NEGATIVE because the phone tilts BACKWARD (screen toward rear).
+    PITCH IS NEGATIVE: phone tilts BACKWARD (screen toward rear).
 
 
-═══════════════════════════════════════════════════════════════════════
-TF TREE SUMMARY (with positions relative to base_link)
-═══════════════════════════════════════════════════════════════════════
+===================================================================
+KEY URDF TRANSFORMS (all relative to base_link)
+===================================================================
 
-base_link ---- (0, 0, 0)  Center of chassis at track axle height
-   |
-   +-- base_footprint ---- (0, 0, -0.05)  Ground projection
-   |
-   +-- laser_frame ---- (+0.08, 0, +0.11)  rpy=(0, 0, 0)
-   |     XV-11 LIDAR scan plane, horizontal, at FRONT
-   |
-   +-- super_sensor_link ---- (+0.10, 0, +0.03)
-   |     |
-   |     +-- front_top_link ---- (+0.02, 0, +0.015)
-   |     +-- front_bottom_link -- (+0.02, 0, -0.015)
-   |     +-- left_link ---- (0, +0.03, 0)
-   |     +-- right_link ---- (0, -0.03, 0)
-   |
-   +-- imu_link ---- (0, 0, +0.02)  Onboard IMU (not connected)
-   |
-   +-- phone_imu_link ---- (-0.07, 0, +0.21)  rpy=(0, -1.047, 1.571)
-         |   Phone center: landscape, 60 deg BACKWARD tilt, screen faces REAR
-         |   Rear camera faces FORWARD (driving direction)
-         |
-         +-- phone_gps_link ---- (0, +0.04, 0)  GPS antenna at phone top
-         |
-         +-- phone_camera_link -- (0, +0.07, -0.004)  Rear camera (faces FORWARD)
+Frame               XYZ (meters)            RPY (radians)
+-----------         ----------------------  ----------------------
+base_footprint      ( 0.000,  0.000, -0.020)  (0, 0, 0)
+laser_frame         (+0.015,  0.000, +0.133)  (0, 0, 0)
+super_sensor_link   (+0.100,  0.000, +0.030)  (0, 0, 0)
+imu_link            ( 0.000,  0.000, +0.020)  (0, 0, 0)
+phone_imu_link      (-0.080,  0.000, +0.234)  (0, -1.047, 1.571)
+  phone_gps_link    relative: (0, +0.04, 0)
+  phone_camera_link relative: (0, +0.07, -0.004)
