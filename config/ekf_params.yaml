@@ -20,7 +20,7 @@ ekf_node:
 
     # ── Input 0: Wheel odometry (/odom from ESP32) ────────
     # Provides: x/y position, yaw, linear velocity, angular velocity
-    odom0: /odom
+    odom0: /odom/reliable    # Relayed from best_effort /odom by tf_relay.py on Pi
     odom0_config: [true,  true,  false,   # x, y, z position
                    false, false, true,    # roll, pitch, yaw
                    true,  false, false,   # vx, vy, vz
@@ -30,11 +30,10 @@ ekf_node:
     odom0_differential: false   # Use absolute pose from wheel odom
     odom0_relative: false
 
-    # ── Input 1: Phone IMU (/phone/imu/relay) ─────────────
+    # ── Input 1: Phone IMU (/phone/imu) ─────────────────────
     # Provides: orientation, angular velocity, linear acceleration
-    # Using /relay topic because raw XRCE-DDS topics lack type hashes
-    # and robot_localization may fail to subscribe.
-    imu0: /phone/imu/relay
+    # Phone now publishes via rosbridge (proper ROS 2 topics, no relay needed)
+    imu0: /phone/imu
     imu0_config: [false, false, false,    # No position from IMU
                   true,  true,  true,     # orientation (roll, pitch, yaw)
                   false, false, false,    # No velocity from IMU

@@ -169,7 +169,7 @@
        See docs/robot_dimensions.md for full measurement details. -->
 
   <!-- Phone IMU frame — reports in Android portrait coords -->
-  <link name="phone_imu_link">
+  <link name="phone_imu">
     <visual>
       <geometry>
         <box size="0.164 0.078 0.008"/>
@@ -182,7 +182,7 @@
 
   <joint name="phone_imu_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="phone_imu_link"/>
+    <child link="phone_imu"/>
     <!-- Phone center: 80mm behind center, 234mm above base_link.
          Pitch=-60° (backward tilt, screen faces rear, camera faces forward).
          Yaw=+90° (landscape, portrait-top LEFT).
@@ -191,21 +191,21 @@
   </joint>
 
   <!-- Phone GPS frame — same physical position as IMU -->
-  <link name="phone_gps_link"/>
+  <link name="phone_gps"/>
 
   <joint name="phone_gps_joint" type="fixed">
-    <parent link="phone_imu_link"/>
-    <child link="phone_gps_link"/>
+    <parent link="phone_imu"/>
+    <child link="phone_gps"/>
     <!-- GPS antenna at top of phone, ~40mm above phone center -->
     <origin xyz="0 0.04 0" rpy="0 0 0"/>
   </joint>
 
   <!-- Phone camera frame (rear camera, faces opposite direction of screen) -->
-  <link name="phone_camera_link"/>
+  <link name="phone_camera"/>
 
   <joint name="phone_camera_joint" type="fixed">
-    <parent link="phone_imu_link"/>
-    <child link="phone_camera_link"/>
+    <parent link="phone_imu"/>
+    <child link="phone_camera"/>
     <!-- Rear camera at top-left corner of phone back, optical axis = -Z of phone -->
     <origin xyz="0 0.07 -0.004" rpy="0 0 0"/>
   </joint>

@@ -15,6 +15,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from tf2_msgs.msg import TFMessage
+from nav_msgs.msg import Odometry
 
 
 class TfRelay(Node):
@@ -28,20 +29,29 @@ class TfRelay(Node):
             durability=DurabilityPolicy.VOLATILE,
         )
 
-        # Publish with reliable so tf2 TransformListener can receive them
+        # Publish with reliable so tf2/EKF can receive them
         pub_qos = QoSProfile(
             depth=100,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
         )
 
-        self._pub = self.create_publisher(TFMessage, '/tf', pub_qos)
-        self._sub = self.create_subscription(
-            TFMessage, '/tf', self._cb, sub_qos)
+        # TF relay
+        self._tf_pub = self.create_publisher(TFMessage, '/tf', pub_qos)
+        self._tf_sub = self.create_subscription(
+            TFMessage, '/tf', self._tf_cb, sub_qos)
 
-        self.get_logger().info('TF relay started (best_effort → reliable)')
+        # Odom relay: best_effort /odom → reliable /odom/reliable (for EKF)
+        self._odom_pub = self.create_publisher(Odometry, '/odom/reliable', pub_qos)
+        self._odom_sub = self.create_subscription(
+            Odometry, '/odom', self._odom_cb, sub_qos)
 
-    def _cb(self, msg: TFMessage):
+        self.get_logger().info('TF + Odom relay started (best_effort → reliable)')
+
+    def _odom_cb(self, msg: Odometry):
+        self._odom_pub.publish(msg)
+
+    def _tf_cb(self, msg: TFMessage):
         # Only relay odom→base_link from ESP32 (avoid re-relaying our own
         # or robot_state_publisher's already-reliable messages)
         relayed = []
