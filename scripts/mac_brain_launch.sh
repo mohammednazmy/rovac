@@ -51,6 +51,7 @@ usage() {
     echo "  slam      - Run SLAM toolbox for mapping (default)"
     echo "  nav       - Run navigation with existing map"
     echo "  foxglove  - Run only Foxglove bridge for visualization"
+    echo "  ekf       - Run EKF sensor fusion (wheel odom + phone IMU)"
     echo "  all       - Run SLAM + Nav2 + Foxglove"
     echo ""
     echo "Examples:"
@@ -85,6 +86,7 @@ cleanup() {
     pkill -f "phone_camera_bridge" 2>/dev/null || true
     pkill -f "slam_toolbox" 2>/dev/null || true
     pkill -f "nav2" 2>/dev/null || true
+    pkill -f "ekf_node" 2>/dev/null || true
     start_pi_map_tf
     exit 0
 }
@@ -185,6 +187,18 @@ case "$MODE" in
             use_sim_time:=false \
             params_file:=$HOME/robots/rovac/config/nav2_params.yaml &
         NAV_PID=$!
+
+        log_info "Starting Foxglove Bridge..."
+        ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
+        start_phone_relay
+        FOX_PID=$!
+        ;;
+
+    ekf)
+        log_info "Starting EKF sensor fusion (wheel odom + phone IMU)..."
+        log_info "Requires: phone sensor relay + phone connected"
+        ros2 launch $HOME/robots/rovac/scripts/ekf_launch.py &
+        EKF_PID=$!
 
         log_info "Starting Foxglove Bridge..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &

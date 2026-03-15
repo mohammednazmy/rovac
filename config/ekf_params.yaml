@@ -1,0 +1,69 @@
+# EKF Configuration for ROVAC
+# Fuses wheel odometry (ESP32 /odom) with phone IMU (/phone/imu/relay)
+# Output: /odometry/filtered — improved localization
+#
+# See docs/robot_dimensions.md for sensor frame geometry.
+
+ekf_node:
+  ros__parameters:
+    # ── General ───────────────────────────────────────────
+    frequency: 30.0
+    two_d_mode: true          # Tank operates on a plane
+    publish_tf: true          # Publishes odom -> base_link
+    print_diagnostics: true
+
+    # ── Frame configuration ───────────────────────────────
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom         # EKF operates in odom frame
+
+    # ── Input 0: Wheel odometry (/odom from ESP32) ────────
+    # Provides: x/y position, yaw, linear velocity, angular velocity
+    odom0: /odom
+    odom0_config: [true,  true,  false,   # x, y, z position
+                   false, false, true,    # roll, pitch, yaw
+                   true,  false, false,   # vx, vy, vz
+                   false, false, true,    # vroll, vpitch, vyaw
+                   false, false, false]   # ax, ay, az
+    odom0_queue_size: 10
+    odom0_differential: false   # Use absolute pose from wheel odom
+    odom0_relative: false
+
+    # ── Input 1: Phone IMU (/phone/imu/relay) ─────────────
+    # Provides: orientation, angular velocity, linear acceleration
+    # Using /relay topic because raw XRCE-DDS topics lack type hashes
+    # and robot_localization may fail to subscribe.
+    imu0: /phone/imu/relay
+    imu0_config: [false, false, false,    # No position from IMU
+                  true,  true,  true,     # orientation (roll, pitch, yaw)
+                  false, false, false,    # No velocity from IMU
+                  true,  true,  true,     # angular velocity (gyro)
+                  true,  true,  false]    # linear acceleration (ax, ay only — az noisy in 2D)
+    imu0_queue_size: 10
+    imu0_differential: false
+    imu0_relative: true         # Use orientation CHANGES, not absolute
+                                # Prevents EKF from fighting wheel odom yaw
+    imu0_remove_gravitational_acceleration: true
+
+    # ── Process noise covariance (15x15 diagonal) ─────────
+    # State: [x, y, z, roll, pitch, yaw,
+    #         vx, vy, vz, vroll, vpitch, vyaw,
+    #         ax, ay, az]
+    # Lower = trust the model more; higher = trust measurements more
+    process_noise_covariance:
+      [0.05,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.05,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.06,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.03,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.03,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.06,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.025, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.025, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.04,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.02,  0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.015]

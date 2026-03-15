@@ -38,8 +38,8 @@
   <joint name="laser_joint" type="fixed">
     <parent link="base_link"/>
     <child link="laser_frame"/>
-    <!-- LIDAR positioned on top of robot, ~12.5cm above base_link center -->
-    <origin xyz="0 0 0.125" rpy="0 0 0"/>
+    <!-- LIDAR at front, scan plane 160mm from ground, base_link at 50mm → 110mm above -->
+    <origin xyz="0.08 0 0.11" rpy="0 0 0"/>
   </joint>
 
   <!-- ==================== SUPER SENSOR BASE ==================== -->
@@ -159,43 +159,51 @@
     <origin xyz="0 0 0.02" rpy="0 0 0"/>
   </joint>
 
-  <!-- ==================== CAMERA (Phone) ==================== -->
-  <link name="camera_link">
+  <!-- ==================== PHONE SENSOR NODE ==================== -->
+  <!-- Samsung Galaxy A16 on gooseneck clamp at rear of chassis.
+       Landscape mode: portrait-top points LEFT (+Y).
+       Screen faces forward+up, tilted ~60° from vertical.
+       See docs/robot_dimensions.md for full measurement details. -->
+
+  <!-- Phone IMU frame — reports in Android portrait coords -->
+  <link name="phone_imu_link">
     <visual>
       <geometry>
-        <box size="0.08 0.04 0.01"/>
+        <box size="0.164 0.078 0.008"/>
       </geometry>
-      <material name="black">
-        <color rgba="0.1 0.1 0.1 1"/>
+      <material name="phone_dark">
+        <color rgba="0.15 0.15 0.15 1"/>
       </material>
     </visual>
   </link>
 
-  <joint name="camera_joint" type="fixed">
+  <joint name="phone_imu_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="camera_link"/>
-    <!-- Camera phone mounted on servo arm at front -->
-    <origin xyz="0.08 0 0.10" rpy="0 0 0"/>
+    <child link="phone_imu_link"/>
+    <!-- Phone center: 70mm behind center, 210mm above base_link.
+         RPY: pitch=60° forward tilt, yaw=90° landscape rotation.
+         See docs/robot_dimensions.md for derivation. -->
+    <origin xyz="-0.07 0.0 0.21" rpy="0 1.0472 1.5708"/>
   </joint>
 
+  <!-- Phone GPS frame — same physical position as IMU -->
+  <link name="phone_gps_link"/>
 
-  <!-- ==================== STEREO CAMERA ==================== -->
-  <link name="stereo_camera">
-    <visual>
-      <geometry>
-        <box size="0.15 0.03 0.03"/>
-      </geometry>
-      <material name="gray">
-        <color rgba="0.5 0.5 0.5 1"/>
-      </material>
-    </visual>
-  </link>
+  <joint name="phone_gps_joint" type="fixed">
+    <parent link="phone_imu_link"/>
+    <child link="phone_gps_link"/>
+    <!-- GPS antenna at top of phone, ~40mm above phone center -->
+    <origin xyz="0 0.04 0" rpy="0 0 0"/>
+  </joint>
 
-  <joint name="stereo_camera_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="stereo_camera"/>
-    <!-- Stereo cameras mounted at front top of robot, ~10cm baseline -->
-    <origin xyz="0.10 0 0.12" rpy="0 0 0"/>
+  <!-- Phone camera frame (rear camera, faces opposite direction of screen) -->
+  <link name="phone_camera_link"/>
+
+  <joint name="phone_camera_joint" type="fixed">
+    <parent link="phone_imu_link"/>
+    <child link="phone_camera_link"/>
+    <!-- Rear camera at top-left corner of phone back, optical axis = -Z of phone -->
+    <origin xyz="0 0.07 -0.004" rpy="0 0 0"/>
   </joint>
 
 </robot>
