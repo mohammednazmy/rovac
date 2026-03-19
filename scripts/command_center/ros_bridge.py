@@ -42,9 +42,8 @@ class RosBridge:
             'map_hz': 0.0, 'map_width': 0, 'map_height': 0,
             'map_resolution': 0.0,
 
-            # ESP32 diagnostics (from /diagnostics)
+            # ESP32 Motor diagnostics (from /diagnostics)
             'diag_motor': {},  # parsed DiagnosticArray values
-            'diag_lidar': {},
 
             # Edge health (from /rovac/edge/health)
             'edge_health': {},  # full parsed JSON
@@ -310,13 +309,11 @@ class RosBridge:
 
     def _on_diagnostics(self, msg):
         for status in msg.status:
-            values = {kv.key: kv.value for kv in status.values}
             name_lower = status.name.lower()
-            with self.lock:
-                if 'motor' in name_lower or 'esp32_motor' in name_lower:
+            if 'motor' in name_lower or 'esp32_motor' in name_lower:
+                values = {kv.key: kv.value for kv in status.values}
+                with self.lock:
                     self.state['diag_motor'] = values
-                elif 'lidar' in name_lower or 'esp32_lidar' in name_lower:
-                    self.state['diag_lidar'] = values
 
     def _on_edge_health(self, msg):
         try:

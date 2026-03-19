@@ -69,15 +69,10 @@ class SensorsPanel(Widget):
                 id="sens-ultra",
             )
 
-        # ESP32 diagnostics — side by side
-        with Horizontal(id="sensors-diag-row"):
-            with Container(classes="panel-box-magenta") as c:
-                c.border_title = "ESP32 Motor"
-                yield Static("[dim]No motor diagnostics[/]", id="sens-diag-motor")
-
-            with Container(classes="panel-box-magenta") as c:
-                c.border_title = "RPLIDAR C1"
-                yield Static("[dim]No LIDAR diagnostics[/]", id="sens-diag-lidar")
+        # ESP32 Motor diagnostics (only motor ESP32 publishes /diagnostics)
+        with Container(classes="panel-box-magenta") as c:
+            c.border_title = "ESP32 Motor"
+            yield Static("[dim]No motor diagnostics[/]", id="sens-diag-motor")
 
         # Phone IMU
         with Container(classes="panel-box-blue") as c:
@@ -99,7 +94,6 @@ class SensorsPanel(Widget):
         self._update_lidar(state)
         self._update_ultra(state)
         self._update_diag_motor(state)
-        self._update_diag_lidar(state)
         self._update_phone_imu(state)
         self._update_phone_gps(state)
         self._update_phone_camera(state)
@@ -201,43 +195,6 @@ class SensorsPanel(Widget):
         text = f"WiFi RSSI: {rssi_text}    Heap: {heap}    Up: {uptime}"
         try:
             self.query_one("#sens-diag-motor", Static).update(text)
-        except Exception:
-            pass
-
-    def _update_diag_lidar(self, state: dict) -> None:
-        diag = state.get("diag_lidar", {})
-        if not diag:
-            try:
-                self.query_one("#sens-diag-lidar", Static).update(
-                    "[dim]No LIDAR diagnostics[/]"
-                )
-            except Exception:
-                pass
-            return
-
-        rssi = diag.get("wifi_rssi", "---")
-        heap = _fmt_heap(diag.get("heap_free", "0"))
-        rpm = diag.get("rpm", "---")
-        chk_err = diag.get("checksum_errors", "0")
-
-        # Color-code RSSI
-        try:
-            rssi_val = int(rssi)
-            if rssi_val > -50:
-                rssi_text = f"[green]{rssi} dBm[/]"
-            elif rssi_val > -70:
-                rssi_text = f"[yellow]{rssi} dBm[/]"
-            else:
-                rssi_text = f"[red]{rssi} dBm[/]"
-        except (ValueError, TypeError):
-            rssi_text = f"[dim]{rssi}[/]"
-
-        lines = [
-            f"WiFi RSSI: {rssi_text}    Heap: {heap}",
-            f"RPM: {rpm}    Checksum Errors: {chk_err}",
-        ]
-        try:
-            self.query_one("#sens-diag-lidar", Static).update("\n".join(lines))
         except Exception:
             pass
 
