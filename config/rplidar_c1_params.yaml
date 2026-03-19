@@ -16,11 +16,7 @@ rplidar_node:
     dummy_mode: false
     publish_tf: false
     qos_policy: "sensor_data"
-    # Raised from 3 → 10 to tolerate transient CP2102N USB control
-    # transfer timeouts on Pi 5 (request 0x12 PURGE status -110).
-    # SDK grab_scan_data() blocks ~2s per attempt, so 10 retries = ~20s
-    # tolerance before triggering a full hardware reset.
-    max_retries: 10
+    max_retries: 3
     angle_offset: 0.0
     publish_point_cloud: false
     intensities_as_angles: false
