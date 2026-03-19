@@ -1,5 +1,5 @@
 [Unit]
-Description=ROVAC RPLIDAR C1 DTOF LIDAR (frozenreboot/rplidar_ros2_driver, USB serial)
+Description=ROVAC RPLIDAR C1 DTOF LIDAR (rplidar_ros official, USB serial)
 Wants=network-online.target
 After=network-online.target
 PartOf=rovac-edge.target
@@ -25,7 +25,7 @@ SyslogIdentifier=rovac-rplidar-c1
 TimeoutStartSec=30
 TimeoutStopSec=10
 
-# Resource limits — lightweight native ROS2 lifecycle node
+# Resource limits — lightweight native ROS2 node
 MemoryMax=128M
 CPUQuota=15%
 
@@ -33,12 +33,16 @@ CPUQuota=15%
 Restart=always
 RestartSec=5
 
-# Launch rplidar_ros2_driver with params from repo config
+# Launch rplidar_ros (official Slamtec) with C1 parameters
 ExecStart=/bin/bash -lc '\
   source /opt/ros/jazzy/setup.bash && \
   source /home/pi/robots/rovac/ros2_ws/install/setup.bash && \
-  exec ros2 launch rplidar_ros2_driver rplidar.launch.py \
-    params_file:=/home/pi/robots/rovac/config/rplidar_c1_params.yaml'
+  exec ros2 launch rplidar_ros rplidar_c1_launch.py \
+    serial_port:=/dev/rplidar_c1 \
+    serial_baudrate:=460800 \
+    frame_id:=laser_frame \
+    angle_compensate:=true \
+    scan_mode:=Standard'
 
 [Install]
 WantedBy=rovac-edge.target
