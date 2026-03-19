@@ -95,7 +95,7 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 |-----------|---------|
 | Motor Controller | NULLLAB Maker-ESP32 (ESP32-WROOM-32E, CH340) with 4x TB67H450FNG drivers. Wireless micro-ROS firmware: `hardware/esp32_motor_wireless/`. WiFi static IP 192.168.1.221. 50Hz PID loop. |
 | Motors | 2x JGB37-520R60-12 (12V, 60:1 gear, Hall encoders, 2640 ticks/rev). Max: 0.57 m/s linear, 6.5 rad/s angular. |
-| LIDAR | RPLIDAR C1 DTOF (12m range, ~10Hz, 5KHz). USB via CP2102N → `/dev/rplidar_c1`. Driver: `frozenreboot/rplidar_ros2_driver` in `ros2_ws/src/rplidar_ros2_driver/`. |
+| LIDAR | RPLIDAR C1 DTOF (16m range, ~10Hz, 5KHz). USB via CP2102N → `/dev/rplidar_c1`. Driver: `rplidar_ros` (official Slamtec, ros2 branch, SDK patched) in `ros2_ws/src/rplidar_ros/`. |
 | Computer | Raspberry Pi 5 (8GB RAM, 117GB SD), Ubuntu 24.04, hostname `rovac-pi`. Runs micro-ROS Agent (UDP 8888). |
 | Ultrasonic | 4x HC-SR04 (Super Sensor module, Arduino Nano) |
 | Stereo Cameras | 2x USB cameras (102.67mm baseline, StereoSGBM depth) |
@@ -157,7 +157,8 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 │       └── ...                            # stereo, webcam, phone services
 ├── ros2_ws/src/
 │   ├── tank_description/            # URDF, cmd_vel_mux.py
-│   ├── rplidar_ros2_driver/         # RPLIDAR C1 ROS2 driver (frozenreboot, lifecycle node)
+│   ├── rplidar_ros/                 # RPLIDAR C1 ROS2 driver (official Slamtec, SDK patched)
+│   ├── rplidar_ros2_driver/         # RPLIDAR C1 community driver (frozenreboot, has SDK threading bug)
 │   ├── xv11_lidar_python/           # XV11 LIDAR ROS2 driver (legacy, unused)
 │   └── rf2o_laser_odometry/         # Laser-based odometry
 ├── tools/
