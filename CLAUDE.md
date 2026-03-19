@@ -7,7 +7,7 @@ ROVAC is a mobile robot (Yahboom G1 Tank) with a wireless micro-ROS architecture
 - **Raspberry Pi 5 (Edge)**: micro-ROS Agent bridge + sensor services at `192.168.1.200` (hostname: `rovac-pi`, user: `pi`)
 - **MacBook Pro (Brain)**: Nav2, SLAM, path planning, teleop at `192.168.1.104`
 
-Communication: ESP32s ←WiFi UDP→ micro-ROS Agent on Pi ←CycloneDDS→ Mac. Phone ←WebSocket→ rosbridge on Pi :9090 ←CycloneDDS→ Mac. All on `ROS_DOMAIN_ID=42`.
+Communication: ESP32 Motor ←WiFi UDP→ micro-ROS Agent on Pi ←CycloneDDS→ Mac. RPLIDAR C1 ←USB→ Pi (native ROS2 driver). Phone ←WebSocket→ rosbridge on Pi :9090 ←CycloneDDS→ Mac. All on `ROS_DOMAIN_ID=42`.
 
 Both machines clone the same monorepo: `github.com/mohammednazmy/rovac`
 - **Mac path**: `~/robots/rovac/`
@@ -20,6 +20,7 @@ Both machines clone the same monorepo: `github.com/mohammednazmy/rovac`
 | GitHub Repo | `git@github.com:mohammednazmy/rovac.git` |
 | Edge SSH | `ssh pi@192.168.1.200` |
 | ESP32 Motor WiFi IP | `192.168.1.221` |
+| RPLIDAR C1 USB | `/dev/rplidar_c1` on Pi |
 | micro-ROS Agent | Pi UDP port 8888 |
 | rosbridge WebSocket | Pi port 9090 (phone sensors) |
 | Foxglove | `ws://localhost:8765` |
@@ -50,7 +51,7 @@ python3 scripts/keyboard_teleop.py
 ./scripts/mac_brain_launch.sh foxglove
 
 # Edge status
-ssh pi@192.168.1.200 'sudo systemctl status rovac-edge-uros-agent rovac-edge-mux'
+ssh pi@192.168.1.200 'sudo systemctl status rovac-edge-uros-agent rovac-edge-rplidar-c1 rovac-edge-mux'
 ```
 
 ## Key ROS2 Topics
@@ -76,7 +77,7 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 ### Sensors
 | Topic | Type | Description |
 |-------|------|-------------|
-| `/scan` | LaserScan | XV11 LIDAR (360 ranges, ~5.0 Hz) via ESP32 micro-ROS |
+| `/scan` | LaserScan | RPLIDAR C1 DTOF (~500 pts, ~10 Hz) via USB on Pi |
 | `/sensors/ultrasonic/range` | Range | HC-SR04 distance |
 | `/phone/imu` | Imu | Phone IMU (50Hz) via rosbridge WebSocket :9090 |
 | `/phone/gps/fix` | NavSatFix | Phone GPS (1Hz) via rosbridge WebSocket :9090 |
@@ -94,7 +95,7 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 |-----------|---------|
 | Motor Controller | NULLLAB Maker-ESP32 (ESP32-WROOM-32E, CH340) with 4x TB67H450FNG drivers. Wireless micro-ROS firmware: `hardware/esp32_motor_wireless/`. WiFi static IP 192.168.1.221. 50Hz PID loop. |
 | Motors | 2x JGB37-520R60-12 (12V, 60:1 gear, Hall encoders, 2640 ticks/rev). Max: 0.57 m/s linear, 6.5 rad/s angular. |
-| LIDAR | XV11 (Neato) via ESP32-S3 wireless micro-ROS bridge. Firmware: `hardware/esp32_lidar_wireless/`. WiFi static IP 192.168.1.222. |
+| LIDAR | RPLIDAR C1 DTOF (12m range, ~10Hz, 5KHz). USB via CP2102N → `/dev/rplidar_c1`. Driver: `frozenreboot/rplidar_ros2_driver` in `ros2_ws/src/rplidar_ros2_driver/`. |
 | Computer | Raspberry Pi 5 (8GB RAM, 117GB SD), Ubuntu 24.04, hostname `rovac-pi`. Runs micro-ROS Agent (UDP 8888). |
 | Ultrasonic | 4x HC-SR04 (Super Sensor module, Arduino Nano) |
 | Stereo Cameras | 2x USB cameras (102.67mm baseline, StereoSGBM depth) |
@@ -109,7 +110,7 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 ├── hardware/
 │   ├── esp32_motor_wireless/        # ACTIVE — micro-ROS motor firmware (ESP-IDF v5.2)
 │   ├── esp32_at8236_driver/         # ACTIVE — USB serial ROS2 driver (fallback mode)
-│   ├── esp32_lidar_wireless/         # ACTIVE — LIDAR wireless micro-ROS firmware (ESP-IDF v5.2)
+│   ├── rplidar_c1/                  # RPLIDAR C1 docs + SDK reference
 │   ├── esp32_xv11_bridge/           # Legacy LIDAR bridge (Arduino, USB serial)
 │   ├── maker_esp32/                 # Board docs + wiring guide
 │   ├── super_sensor/                # Edge ROS2 nodes (supersensor, obstacle)
@@ -145,7 +146,7 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 │       ├── rovac-edge-mux.service         # cmd_vel priority mux
 │       ├── rovac-edge-tf.service          # robot_state_publisher
 │       ├── rovac-edge-map-tf.service      # map→odom static TF
-│       ├── rovac-edge-lidar.service       # XV11 LIDAR driver
+│       ├── rovac-edge-rplidar-c1.service  # RPLIDAR C1 driver (USB serial)
 │       ├── rovac-edge-obstacle.service    # Obstacle avoidance
 │       ├── rovac-edge-supersensor.service # HC-SR04 ultrasonic
 │       ├── rovac-edge-ps2-joy.service     # PS2 controller input
@@ -156,7 +157,8 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 │       └── ...                            # stereo, webcam, phone services
 ├── ros2_ws/src/
 │   ├── tank_description/            # URDF, cmd_vel_mux.py
-│   ├── xv11_lidar_python/           # XV11 LIDAR ROS2 driver
+│   ├── rplidar_ros2_driver/         # RPLIDAR C1 ROS2 driver (frozenreboot, lifecycle node)
+│   ├── xv11_lidar_python/           # XV11 LIDAR ROS2 driver (legacy, unused)
 │   └── rf2o_laser_odometry/         # Laser-based odometry
 ├── tools/
 │   ├── motor_characterization.py    # Motor PID tuning (standalone serial)
@@ -166,7 +168,7 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 ├── super_sensor/                    # Super Sensor desktop app + firmware
 ├── foxglove_layouts/                # Foxglove Studio layout configs
 ├── archive/                         # All legacy/deprecated code
-│   ├── legacy_hardware/             # L298N, Hiwonder, BST-4WD, Nano encoder, etc.
+│   ├── legacy_hardware/             # L298N, Hiwonder, BST-4WD, Nano encoder, esp32_lidar_wireless (XV11), etc.
 │   └── legacy_scripts/              # Lenovo setup, old launchers, phone_sensor_relay.py
 └── docs/
     ├── architecture/

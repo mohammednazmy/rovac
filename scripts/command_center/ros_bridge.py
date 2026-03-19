@@ -235,7 +235,7 @@ class RosBridge:
             # Monitor current cmd_vel output
             self._node.create_subscription(Twist, '/cmd_vel', self._on_cmd_vel_out, best_effort_qos)
 
-            # Phone sensor topics (XRCE-DDS via micro-ROS Agent)
+            # Phone sensor topics (via rosbridge WebSocket on Pi :9090)
             from sensor_msgs.msg import Imu, NavSatFix, CompressedImage
             self._hz['phone_imu'] = HzTracker()
             self._hz['phone_gps'] = HzTracker()

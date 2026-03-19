@@ -5,7 +5,7 @@ ROVAC Edge Health Node — publishes comprehensive Pi edge health to ROS2.
 Publishes JSON to /rovac/edge/health (std_msgs/String) every 5 seconds:
   - System stats (CPU, memory, disk, temperature)
   - Systemd service status for all edge services
-  - Network reachability (ESP32 motor, ESP32 LIDAR, Mac brain)
+  - Network reachability (ESP32 motor, Mac brain)
   - USB device presence
   - micro-ROS Agent process info
 
@@ -32,9 +32,9 @@ from std_msgs.msg import String
 # Edge services to monitor
 SERVICES = [
     'rovac-edge-uros-agent',
+    'rovac-edge-rplidar-c1',
     'rovac-edge-mux',
     'rovac-edge-tf',
-    'rovac-edge-lidar',
     'rovac-edge-obstacle',
     'rovac-edge-supersensor',
     'rovac-edge-map-tf',
@@ -46,7 +46,6 @@ SERVICES = [
 # Network hosts to ping
 NETWORK_HOSTS = {
     'esp32_motor': '192.168.1.221',
-    'esp32_lidar': '192.168.1.222',
     'mac_brain': '192.168.1.104',
 }
 

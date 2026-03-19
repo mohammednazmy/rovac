@@ -85,15 +85,19 @@ class DashboardPanel(Widget):
         net = edge.get("network", {})
 
         esp_motor_ok = net.get("esp32_motor", {}).get("reachable")
-        esp_lidar_ok = net.get("esp32_lidar", {}).get("reachable")
         pi_ok = bool(edge)
         fox_ok = proc_status.get("foxglove") == "running"
+
+        # RPLIDAR C1 is USB — check service status instead of network ping
+        services = edge.get("services", {})
+        rplidar_info = services.get("rovac-edge-rplidar-c1", {})
+        rplidar_ok = rplidar_info.get("active", False) if isinstance(rplidar_info, dict) else False
 
         line1 = (
             f"[dim]ROS2[/] {_dot(ros_ok)}  "
             f"[dim]Pi[/] {_dot(pi_ok)}  "
             f"[dim]Motor[/] {_dot(esp_motor_ok)}  "
-            f"[dim]LIDAR[/] {_dot(esp_lidar_ok)}"
+            f"[dim]LIDAR[/] {_dot(rplidar_ok if pi_ok else None)}"
         )
         if fox_ok:
             line2 = f"[dim]Foxglove[/] [green]● ws://localhost:8765[/]"

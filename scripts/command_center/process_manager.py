@@ -26,9 +26,9 @@ NAV2_CMD_TEMPLATE = [
 # Pi edge services
 PI_SERVICES = [
     'rovac-edge-uros-agent',
+    'rovac-edge-rplidar-c1',
     'rovac-edge-mux',
     'rovac-edge-tf',
-    'rovac-edge-lidar',
     'rovac-edge-obstacle',
     'rovac-edge-supersensor',
     'rovac-edge-map-tf',
@@ -211,7 +211,7 @@ class ProcessManager:
 
     def save_map(self, name: str) -> bool:
         """Save SLAM map using ros2 service call."""
-        maps_dir = os.path.expanduser('~/maps')
+        maps_dir = os.path.join(ROVAC_DIR, 'maps')
         os.makedirs(maps_dir, exist_ok=True)
         filepath = os.path.join(maps_dir, name)
         try:

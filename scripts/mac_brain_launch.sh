@@ -162,8 +162,8 @@ if [ "$TOPICS_FOUND" = true ]; then
     fi
 else
     log_error "/scan topic NOT found after 15s!"
-    log_error "Check: Pi edge services running? ESP32 LIDAR powered? micro-ROS Agent up?"
-    log_error "  ssh pi@$PI_HOST 'sudo systemctl status rovac-edge-uros-agent'"
+    log_error "Check: Pi edge services running? RPLIDAR C1 USB connected?"
+    log_error "  ssh pi@$PI_HOST 'sudo systemctl status rovac-edge-rplidar-c1'"
     exit 1
 fi
 

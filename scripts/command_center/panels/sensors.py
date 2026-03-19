@@ -76,7 +76,7 @@ class SensorsPanel(Widget):
                 yield Static("[dim]No motor diagnostics[/]", id="sens-diag-motor")
 
             with Container(classes="panel-box-magenta") as c:
-                c.border_title = "ESP32 LIDAR"
+                c.border_title = "RPLIDAR C1"
                 yield Static("[dim]No LIDAR diagnostics[/]", id="sens-diag-lidar")
 
         # Phone IMU
