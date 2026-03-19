@@ -1,0 +1,59 @@
+diff --git a/sdk/src/sl_async_transceiver.cpp b/sdk/src/sl_async_transceiver.cpp
+index bb398a3..ff69a0b 100644
+--- a/sdk/src/sl_async_transceiver.cpp
++++ b/sdk/src/sl_async_transceiver.cpp
+@@ -31,7 +31,6 @@
+   */
+
+
+-
+ #include "sdkcommon.h"
+ #include "hal/abs_rxtx.h"
+ #include "hal/thread.h"
+@@ -42,14 +41,13 @@
+ #include "hal/event.h"
+
+ #include "sl_async_transceiver.h"
+-
++#include <thread>
++#include <chrono>
+
+
+ namespace sl { namespace internal {
+
+
+-
+-
+ ProtocolMessage::ProtocolMessage()
+         : len(0)
+         , cmd(0)
+@@ -223,8 +221,6 @@ u_result AsyncTransceiver::openChannelAndBind(IChannel* channel)
+ 		_rxThread = CLASS_THREAD(AsyncTransceiver, _proc_rxThread);
+
+
+-
+-
+ 	} while (0);
+
+ 	return ans;
+@@ -339,13 +335,15 @@ sl_result AsyncTransceiver::_proc_rxThread()
+
+         if  (!decodeBuffer->size) {
+             delete decodeBuffer;
+-
+-
+-            _workingFlag |= WORKING_FLAG_ERROR;
+-            _codec.onChannelError(RESULT_OPERATION_ABORTED);
+-            break;
++            // ROVAC FIX: SDK bug - read() returning 0 bytes killed RX thread.
++            // This happens when select() reports data but read() returns
++            // EAGAIN (race condition with O_NDELAY non-blocking I/O).
++            // Sleep briefly to avoid busy-spinning, then retry.
++            std::this_thread::sleep_for(std::chrono::milliseconds(10));
++            continue;
+         }
+
++
+         assert(hintedSize >= decodeBuffer->size);
+
+
