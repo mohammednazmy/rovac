@@ -209,8 +209,8 @@ case "$MODE" in
     ekf)
         stop_pi_tf_relay
 
-        log_info "Starting EKF sensor fusion (wheel odom + phone IMU)..."
-        log_info "Requires: phone connected to rosbridge on Pi :9090"
+        log_info "Starting EKF sensor fusion (wheel odom + BNO055 IMU)..."
+        log_info "BNO055 onboard IMU provides gyro-fused heading correction"
         ros2 launch $HOME/robots/rovac/scripts/ekf_launch.py &
         EKF_PID=$!
 
@@ -224,7 +224,7 @@ case "$MODE" in
         stop_pi_tf_relay
 
         log_info "Starting EKF + GPS navigation stack..."
-        log_info "Requires: phone connected + GPS fix (go outdoors)"
+        log_info "BNO055 IMU heading + phone GPS fix (go outdoors)"
         ros2 launch $HOME/robots/rovac/scripts/ekf_launch.py gps:=true &
         EKF_PID=$!
 

@@ -6,10 +6,14 @@
  *
  * Hardware: SSD1306 on Maker-ESP32 OLED header (JP2)
  *   SDA=GPIO21, SCL=GPIO22, Addr=0x3C
+ *
+ * Uses new ESP-IDF I2C master driver (driver/i2c_master.h) which is
+ * thread-safe — no external mutex needed for bus sharing with BNO055.
  */
 #pragma once
 
 #include "esp_err.h"
+#include "driver/i2c_master.h"
 #include <stdint.h>
 
 #define OLED_WIDTH   128
@@ -18,8 +22,12 @@
 #define OLED_SDA_PIN  21
 #define OLED_SCL_PIN  22
 
-/** Initialize I2C and SSD1306. Returns ESP_OK or error. */
-esp_err_t oled_init(void);
+/**
+ * Initialize SSD1306 display on an existing I2C bus.
+ * @param bus  I2C master bus handle (created by caller).
+ * @return ESP_OK or error.
+ */
+esp_err_t oled_init(i2c_master_bus_handle_t bus);
 
 /** Clear the framebuffer (call oled_update() to push to screen). */
 void oled_clear(void);

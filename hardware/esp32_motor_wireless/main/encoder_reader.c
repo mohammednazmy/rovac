@@ -195,7 +195,6 @@ void encoder_reader_get_and_reset_deltas(int32_t *left_delta, int32_t *right_del
     s_total_left  += dl;
     s_total_right += dr;
 
-    // Return the deltas
     if (left_delta)  *left_delta  = dl;
     if (right_delta) *right_delta = dr;
 

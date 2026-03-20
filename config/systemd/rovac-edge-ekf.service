@@ -1,0 +1,31 @@
+[Unit]
+Description=ROVAC EKF Sensor Fusion (wheel odom + BNO055 IMU)
+After=rovac-edge-uros-agent.service rovac-edge-odom-relay.service rovac-edge-imu-relay.service rovac-edge-tf-relay.service
+Wants=rovac-edge-odom-relay.service rovac-edge-imu-relay.service rovac-edge-tf-relay.service
+PartOf=rovac-edge.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+
+# DDS Configuration
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rovac-edge-ekf
+
+Restart=always
+RestartSec=5
+MemoryMax=128M
+CPUQuota=20%
+
+# Wait for relay services to start
+ExecStartPre=/bin/sleep 5
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; source /home/pi/robots/rovac/config/ros2_env.sh; exec ros2 launch /home/pi/robots/rovac/scripts/ekf_launch.py'
+
+[Install]
+WantedBy=rovac-edge.target

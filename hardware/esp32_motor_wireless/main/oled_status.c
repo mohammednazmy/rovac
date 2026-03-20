@@ -52,9 +52,9 @@ static void oled_status_task(void *arg)
     }
 }
 
-esp_err_t oled_status_init(void)
+esp_err_t oled_status_init(i2c_master_bus_handle_t bus)
 {
-    esp_err_t rc = oled_init();
+    esp_err_t rc = oled_init(bus);
     if (rc != ESP_OK) {
         ESP_LOGW(TAG, "OLED not detected — display disabled (not fatal)");
         return ESP_OK;  /* non-fatal */

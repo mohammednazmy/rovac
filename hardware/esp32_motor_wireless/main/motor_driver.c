@@ -139,7 +139,6 @@ void motor_driver_set(int16_t left, int16_t right)
     s_left_speed  = left;
     s_right_speed = right;
 
-    // Direct drive: positive speed = forward (matches encoder convention)
     set_motor_channel(LEDC_LEFT_IN1_CH,  LEDC_LEFT_IN2_CH,  left);
     set_motor_channel(LEDC_RIGHT_IN1_CH, LEDC_RIGHT_IN2_CH, right);
 }

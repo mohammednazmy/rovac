@@ -92,6 +92,17 @@ install_units() {
   remote_sudo_install "/etc/systemd/system/rovac-edge-ps2-joy.service" "$UNIT_DIR/rovac-edge-ps2-joy.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-ps2-mapper.service" "$UNIT_DIR/rovac-edge-ps2-mapper.service"
 
+  # QoS relays (best_effort→reliable for robot_localization)
+  remote_sudo_install "/etc/systemd/system/rovac-edge-odom-relay.service" "$UNIT_DIR/rovac-edge-odom-relay.service"
+  remote_sudo_install "/etc/systemd/system/rovac-edge-imu-relay.service" "$UNIT_DIR/rovac-edge-imu-relay.service"
+  remote_sudo_install "/etc/systemd/system/rovac-edge-tf-relay.service" "$UNIT_DIR/rovac-edge-tf-relay.service"
+
+  # rosbridge (phone sensors WebSocket)
+  remote_sudo_install "/etc/systemd/system/rovac-edge-rosbridge.service" "$UNIT_DIR/rovac-edge-rosbridge.service"
+
+  # EKF sensor fusion
+  remote_sudo_install "/etc/systemd/system/rovac-edge-ekf.service" "$UNIT_DIR/rovac-edge-ekf.service"
+
   ssh "$PI_HOST" "sudo systemctl daemon-reload"
 
   # Stop any ad-hoc instances to avoid duplicates (safe if already stopped).

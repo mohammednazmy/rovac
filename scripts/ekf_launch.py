@@ -2,8 +2,8 @@
 """
 Launch EKF sensor fusion + optional GPS navigation for ROVAC.
 
-EKF fuses wheel odometry (/odom) with phone IMU (/phone/imu).
-navsat_transform converts phone GPS to local coordinates.
+EKF fuses wheel odometry (/odom) with onboard BNO055 IMU (/imu/data).
+navsat_transform converts phone GPS to local coordinates using BNO055 heading.
 
 Usage:
     source config/ros2_env.sh
@@ -27,7 +27,7 @@ def generate_launch_description():
         DeclareLaunchArgument('gps', default_value='false',
                               description='Enable GPS navigation'),
 
-        # EKF node — fuses wheel odom + phone IMU
+        # EKF node — fuses wheel odom + BNO055 IMU
         Node(
             package='robot_localization',
             executable='ekf_node',
@@ -45,7 +45,7 @@ def generate_launch_description():
             parameters=[os.path.join(config_dir, 'navsat_params.yaml')],
             remappings=[
                 ('gps/fix', '/phone/gps/fix'),
-                ('imu/data', '/phone/imu'),
+                ('imu/data', '/imu/data'),
                 ('odometry/filtered', '/odometry/filtered'),
             ],
             condition=IfCondition(LaunchConfiguration('gps')),

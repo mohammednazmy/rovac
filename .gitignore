@@ -103,3 +103,7 @@ TODO.md
 
 # === Legacy Config (abandoned experiments) ===
 config/fastdds_agent.xml
+
+# Large vendor SDK/docs (reference only, not needed for build)
+hardware/rplidar_c1/rplidar_sdk/
+hardware/yahboom-at8236-motor-driver/2-Channel-Motor-Driver-Module/

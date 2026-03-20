@@ -27,6 +27,7 @@
 #include "encoder_reader.h"
 #include "pid_controller.h"
 #include "odometry.h"
+#include "bno055.h"
 
 #include <math.h>
 #include <string.h>
@@ -239,6 +240,13 @@ void motor_control_set_target(float v_left, float v_right)
     xSemaphoreGive(s_target_lock);
 }
 
+// ---- Gyro-assisted heading correction ----
+// When cmd_vel requests straight-line motion (angular_z ≈ 0), the gyro
+// detects yaw drift from wheel asymmetry and feeds back a correction.
+// Proportional gain: angular_correction = -KP_HEADING * measured_gyro_z
+#define HEADING_CORRECTION_KP    0.5f    // Tunable: start conservative
+#define HEADING_CORRECTION_THRESH 0.05f  // rad/s — only correct if target angular < this
+
 void motor_control_cmd_vel(float linear_x, float angular_z)
 {
     // Clamp inputs
@@ -249,6 +257,14 @@ void motor_control_cmd_vel(float linear_x, float angular_z)
     if (fabsf(linear_x) < 0.01f && fabsf(angular_z) < 0.01f) {
         motor_control_stop();
         return;
+    }
+
+    // Gyro heading correction: when driving "straight" (angular ≈ 0),
+    // counteract measured yaw rate to maintain heading
+    if (fabsf(angular_z) < HEADING_CORRECTION_THRESH && fabsf(linear_x) > 0.02f) {
+        float gyro_z = bno055_get_gyro_z();  // rad/s, 0 if IMU not ready
+        angular_z += -HEADING_CORRECTION_KP * gyro_z;
+        angular_z = clampf(angular_z, -MC_MAX_ANGULAR_SPEED, MC_MAX_ANGULAR_SPEED);
     }
 
     // Differential drive kinematics:

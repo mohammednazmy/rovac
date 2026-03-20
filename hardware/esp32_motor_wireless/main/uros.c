@@ -40,6 +40,7 @@
 #include <geometry_msgs/msg/twist.h>
 #include <geometry_msgs/msg/transform_stamped.h>
 #include <tf2_msgs/msg/tf_message.h>
+#include <sensor_msgs/msg/imu.h>
 #include <diagnostic_msgs/msg/diagnostic_array.h>
 #include <diagnostic_msgs/msg/diagnostic_status.h>
 #include <diagnostic_msgs/msg/key_value.h>
@@ -49,6 +50,7 @@
 #include "led_status.h"
 #include "odometry.h"
 #include "motor_control.h"
+#include "bno055.h"
 
 static const char *TAG = "uros";
 
@@ -65,16 +67,18 @@ static rclc_support_t s_support;
 static rcl_node_t s_node;
 static rclc_executor_t s_executor;
 
-// Publishers (3 — no scan)
+// Publishers (4 — odom, tf, imu, diagnostics)
 static rcl_publisher_t s_odom_pub;
 static rcl_publisher_t s_tf_pub;
+static rcl_publisher_t s_imu_pub;
 static rcl_publisher_t s_diag_pub;
 
 // Subscriber
 static rcl_subscription_t s_cmd_vel_sub;
 
-// Timers (3 — no scan timer)
+// Timers (4 — odom, imu, diagnostics, watchdog)
 static rcl_timer_t s_odom_timer;
+static rcl_timer_t s_imu_timer;
 static rcl_timer_t s_diag_timer;
 static rcl_timer_t s_watchdog_timer;
 
@@ -83,9 +87,10 @@ static nav_msgs__msg__Odometry s_odom_msg;
 static geometry_msgs__msg__Twist s_cmd_vel_msg;
 static tf2_msgs__msg__TFMessage s_tf_msg;
 static geometry_msgs__msg__TransformStamped s_tf_transform;
+static sensor_msgs__msg__Imu s_imu_msg;
 static diagnostic_msgs__msg__DiagnosticArray s_diag_msg;
 static diagnostic_msgs__msg__DiagnosticStatus s_diag_status;
-static diagnostic_msgs__msg__KeyValue s_diag_kvs[8];
+static diagnostic_msgs__msg__KeyValue s_diag_kvs[12];
 
 // State
 static uros_state_t s_state = STATE_WAITING_AGENT;
@@ -120,6 +125,7 @@ static RTC_NOINIT_ATTR uint32_t s_reboot_streak;
 // Frame ID strings (must persist — micro-ROS references them by pointer)
 static char s_odom_frame[] = "odom";
 static char s_base_frame[] = "base_link";
+static char s_imu_frame[] = "imu_link";
 
 // --- Helper: check rcl return codes ---
 #define RCCHECK(fn) { rcl_ret_t rc = (fn); if (rc != RCL_RET_OK) { \
@@ -157,16 +163,20 @@ static void odom_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
     s_odom_msg.child_frame_id.size = strlen(s_base_frame);
     s_odom_msg.child_frame_id.capacity = sizeof(s_base_frame);
 
-    s_odom_msg.pose.pose.position.x = odom.x;
+    // Frame correction: firmware +X = phone (rear), ROS +X = LIDAR (front).
+    // Motor labels are swapped (fw "left" = physical right), which inverts heading.
+    // Correction: negate x (linear direction), keep y (already correct due to
+    // sin(-θ) cancellation), negate qz (fix heading sign), negate velocities.
+    s_odom_msg.pose.pose.position.x = -odom.x;
     s_odom_msg.pose.pose.position.y = odom.y;
     s_odom_msg.pose.pose.position.z = 0.0;
     s_odom_msg.pose.pose.orientation.x = 0.0;
     s_odom_msg.pose.pose.orientation.y = 0.0;
-    s_odom_msg.pose.pose.orientation.z = odom.qz;
+    s_odom_msg.pose.pose.orientation.z = -odom.qz;
     s_odom_msg.pose.pose.orientation.w = odom.qw;
 
-    s_odom_msg.twist.twist.linear.x = odom.v_linear;
-    s_odom_msg.twist.twist.angular.z = odom.v_angular;
+    s_odom_msg.twist.twist.linear.x = -odom.v_linear;
+    s_odom_msg.twist.twist.angular.z = -odom.v_angular;
 
     // Covariance — 6x6 row-major, only set diagonal elements
     memset(s_odom_msg.pose.covariance, 0, sizeof(s_odom_msg.pose.covariance));
@@ -193,12 +203,13 @@ static void odom_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
     s_tf_transform.child_frame_id.data = s_base_frame;
     s_tf_transform.child_frame_id.size = strlen(s_base_frame);
     s_tf_transform.child_frame_id.capacity = sizeof(s_base_frame);
-    s_tf_transform.transform.translation.x = odom.x;
+    // Same frame correction as odom (must match exactly)
+    s_tf_transform.transform.translation.x = -odom.x;
     s_tf_transform.transform.translation.y = odom.y;
     s_tf_transform.transform.translation.z = 0.0;
     s_tf_transform.transform.rotation.x = 0.0;
     s_tf_transform.transform.rotation.y = 0.0;
-    s_tf_transform.transform.rotation.z = odom.qz;
+    s_tf_transform.transform.rotation.z = -odom.qz;
     s_tf_transform.transform.rotation.w = odom.qw;
 
     s_tf_msg.transforms.data = &s_tf_transform;
@@ -206,6 +217,67 @@ static void odom_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
     s_tf_msg.transforms.capacity = 1;
 
     RC_IGNORE(rcl_publish(&s_tf_pub, &s_tf_msg, NULL));
+}
+
+static void imu_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
+{
+    (void)last_call_time;
+    if (timer == NULL) return;
+
+    bno055_data_t imu;
+    bno055_get_data(&imu);
+    if (!imu.valid) return;  /* No data yet — skip */
+
+    /* Timestamp */
+    if (s_time_synced) {
+        int64_t epoch_ns = rmw_uros_epoch_nanos();
+        s_imu_msg.header.stamp.sec = (int32_t)(epoch_ns / 1000000000LL);
+        s_imu_msg.header.stamp.nanosec = (uint32_t)(epoch_ns % 1000000000LL);
+    } else {
+        int64_t now_us = esp_timer_get_time();
+        s_imu_msg.header.stamp.sec = (int32_t)(now_us / 1000000);
+        s_imu_msg.header.stamp.nanosec = (uint32_t)((now_us % 1000000) * 1000);
+    }
+    s_imu_msg.header.frame_id.data = s_imu_frame;
+    s_imu_msg.header.frame_id.size = strlen(s_imu_frame);
+    s_imu_msg.header.frame_id.capacity = sizeof(s_imu_frame);
+
+    /* Orientation quaternion (from BNO055 NDOF fusion) */
+    s_imu_msg.orientation.w = imu.qw;
+    s_imu_msg.orientation.x = imu.qx;
+    s_imu_msg.orientation.y = imu.qy;
+    s_imu_msg.orientation.z = imu.qz;
+
+    /* Orientation covariance (diagonal, from BNO055 datasheet: ±3° heading accuracy) */
+    /* 3° = 0.0524 rad, variance = 0.00274 rad² */
+    memset(s_imu_msg.orientation_covariance, 0, sizeof(s_imu_msg.orientation_covariance));
+    s_imu_msg.orientation_covariance[0] = 0.003;   /* roll */
+    s_imu_msg.orientation_covariance[4] = 0.003;   /* pitch */
+    s_imu_msg.orientation_covariance[8] = 0.003;   /* yaw */
+
+    /* Angular velocity (rad/s) */
+    s_imu_msg.angular_velocity.x = imu.gyro_x;
+    s_imu_msg.angular_velocity.y = imu.gyro_y;
+    s_imu_msg.angular_velocity.z = imu.gyro_z;
+
+    /* Gyro noise: 0.014 °/s/√Hz @ 100Hz BW → σ = 0.14 °/s = 0.00244 rad/s, var ≈ 6e-6 */
+    memset(s_imu_msg.angular_velocity_covariance, 0, sizeof(s_imu_msg.angular_velocity_covariance));
+    s_imu_msg.angular_velocity_covariance[0] = 6e-6;
+    s_imu_msg.angular_velocity_covariance[4] = 6e-6;
+    s_imu_msg.angular_velocity_covariance[8] = 6e-6;
+
+    /* Linear acceleration (m/s², gravity removed) */
+    s_imu_msg.linear_acceleration.x = imu.accel_x;
+    s_imu_msg.linear_acceleration.y = imu.accel_y;
+    s_imu_msg.linear_acceleration.z = imu.accel_z;
+
+    /* Accel noise: 0.2 mg/√Hz @ 62.5Hz BW → σ ≈ 0.016 m/s², var ≈ 2.5e-4 */
+    memset(s_imu_msg.linear_acceleration_covariance, 0, sizeof(s_imu_msg.linear_acceleration_covariance));
+    s_imu_msg.linear_acceleration_covariance[0] = 2.5e-4;
+    s_imu_msg.linear_acceleration_covariance[4] = 2.5e-4;
+    s_imu_msg.linear_acceleration_covariance[8] = 2.5e-4;
+
+    RC_IGNORE(rcl_publish(&s_imu_pub, &s_imu_msg, NULL));
 }
 
 static void diag_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
@@ -252,12 +324,13 @@ static void diag_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
     s_diag_status.hardware_id.size = strlen(status_hw_id);
     s_diag_status.hardware_id.capacity = sizeof(status_hw_id);
 
-    // Key-value pairs
+    // Key-value pairs (8 motor + 4 BNO055 calibration)
     static char kv_keys[][32] = {
         "wifi_rssi", "heap_free", "pid_active", "v_left",
-        "v_right", "odom_updates", "wifi_ip", "agent_ip"
+        "v_right", "odom_updates", "wifi_ip", "agent_ip",
+        "imu_cal_sys", "imu_cal_gyro", "imu_cal_accel", "imu_cal_mag"
     };
-    static char kv_vals[8][64];
+    static char kv_vals[12][64];
 
     snprintf(kv_vals[0], sizeof(kv_vals[0]), "%d", wifi_get_rssi());
     snprintf(kv_vals[1], sizeof(kv_vals[1]), "%lu", (unsigned long)esp_get_free_heap_size());
@@ -274,7 +347,15 @@ static void diag_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
     snprintf(kv_vals[6], sizeof(kv_vals[6]), "%s", s_cfg->wifi_ip);
     snprintf(kv_vals[7], sizeof(kv_vals[7]), "%s", s_cfg->agent_ip);
 
-    for (int i = 0; i < 8; i++) {
+    // BNO055 calibration status (0=uncalibrated, 3=fully calibrated)
+    bno055_data_t imu_diag;
+    bno055_get_data(&imu_diag);
+    snprintf(kv_vals[8], sizeof(kv_vals[8]), "%d", imu_diag.valid ? imu_diag.cal_sys : -1);
+    snprintf(kv_vals[9], sizeof(kv_vals[9]), "%d", imu_diag.valid ? imu_diag.cal_gyro : -1);
+    snprintf(kv_vals[10], sizeof(kv_vals[10]), "%d", imu_diag.valid ? imu_diag.cal_accel : -1);
+    snprintf(kv_vals[11], sizeof(kv_vals[11]), "%d", imu_diag.valid ? imu_diag.cal_mag : -1);
+
+    for (int i = 0; i < 12; i++) {
         s_diag_kvs[i].key.data = kv_keys[i];
         s_diag_kvs[i].key.size = strlen(kv_keys[i]);
         s_diag_kvs[i].key.capacity = sizeof(kv_keys[i]);
@@ -283,7 +364,7 @@ static void diag_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
         s_diag_kvs[i].value.capacity = sizeof(kv_vals[i]);
     }
     s_diag_status.values.data = s_diag_kvs;
-    s_diag_status.values.size = 8;
+    s_diag_status.values.size = 12;
     s_diag_status.values.capacity = 8;
 
     s_diag_msg.status.data = &s_diag_status;
@@ -323,7 +404,10 @@ static void cmd_vel_cb(const void *msg_in)
                  (unsigned long)cmd_count, msg->linear.x, msg->angular.z);
     }
 
-    motor_control_cmd_vel(msg->linear.x, msg->angular.z);
+    // Firmware's internal +X = toward phone (rear), ROS convention +X = toward LIDAR (front).
+    // Negate linear only. Angular is NOT negated because firmware motor labels are swapped
+    // (fw "left" = physical right), which already inverts the turn direction.
+    motor_control_cmd_vel(-msg->linear.x, msg->angular.z);
 }
 
 // --- Entity creation/destruction ---
@@ -393,14 +477,14 @@ static bool create_entities(void)
     // Create node
     RCCHECK(rclc_node_init_default(&s_node, "rovac_motor", "", &s_support));
 
-    // Publishers (3 — no scan)
+    // Publishers (4 — odom, tf, imu, diagnostics)
     // All best_effort QoS over WiFi:
     //   - Reliable XRCE-DDS streams block when Agent ACKs are delayed (DDS
     //     discovery load causes >200ms stalls), triggering false ping timeouts
     //     and cyclic reboots. Best_effort is fire-and-forget — never blocks.
     //   - QoS relays on Pi bridge best_effort→reliable for consumers that need
     //     it (robot_localization, tf2_ros::Buffer).
-    //   - MTU=1024 in app-colcon.meta, odom (~730 bytes) fits in single packet.
+    //   - MTU=1024 in app-colcon.meta, odom (~730 bytes) and imu (~340 bytes) fit.
     RCCHECK(rclc_publisher_init_best_effort(
         &s_odom_pub, &s_node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "odom"));
@@ -408,6 +492,10 @@ static bool create_entities(void)
     RCCHECK(rclc_publisher_init_best_effort(
         &s_tf_pub, &s_node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(tf2_msgs, msg, TFMessage), "tf"));
+
+    RCCHECK(rclc_publisher_init_best_effort(
+        &s_imu_pub, &s_node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "imu/data"));
 
     RCCHECK(rclc_publisher_init_best_effort(
         &s_diag_pub, &s_node,
@@ -419,9 +507,12 @@ static bool create_entities(void)
         &s_cmd_vel_sub, &s_node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
 
-    // Timers (3 — no scan timer, autostart=true)
+    // Timers (4 — odom, imu, diagnostics, watchdog, autostart=true)
     RCCHECK(rclc_timer_init_default2(&s_odom_timer, &s_support,
         RCL_MS_TO_NS(50), odom_timer_cb, true));       // 20 Hz
+
+    RCCHECK(rclc_timer_init_default2(&s_imu_timer, &s_support,
+        RCL_MS_TO_NS(50), imu_timer_cb, true));        // 20 Hz
 
     RCCHECK(rclc_timer_init_default2(&s_diag_timer, &s_support,
         RCL_MS_TO_NS(1000), diag_timer_cb, true));     // 1 Hz
@@ -429,15 +520,16 @@ static bool create_entities(void)
     RCCHECK(rclc_timer_init_default2(&s_watchdog_timer, &s_support,
         RCL_MS_TO_NS(100), watchdog_timer_cb, true));   // 10 Hz
 
-    // Executor: 1 subscriber + 3 timers = 4 handles
-    RCCHECK(rclc_executor_init(&s_executor, &s_support.context, 4, &s_allocator));
+    // Executor: 1 subscriber + 4 timers = 5 handles
+    RCCHECK(rclc_executor_init(&s_executor, &s_support.context, 5, &s_allocator));
     RCCHECK(rclc_executor_add_subscription(&s_executor, &s_cmd_vel_sub,
         &s_cmd_vel_msg, &cmd_vel_cb, ON_NEW_DATA));
     RCCHECK(rclc_executor_add_timer(&s_executor, &s_odom_timer));
+    RCCHECK(rclc_executor_add_timer(&s_executor, &s_imu_timer));
     RCCHECK(rclc_executor_add_timer(&s_executor, &s_diag_timer));
     RCCHECK(rclc_executor_add_timer(&s_executor, &s_watchdog_timer));
 
-    ESP_LOGI(TAG, "micro-ROS entities created (3 pub, 1 sub, 3 timer)");
+    ESP_LOGI(TAG, "micro-ROS entities created (4 pub, 1 sub, 4 timer)");
     return true;
 
 cleanup_opts:
@@ -454,11 +546,13 @@ static void destroy_entities(void)
 
     RC_IGNORE(rclc_executor_fini(&s_executor));
     RC_IGNORE(rcl_timer_fini(&s_odom_timer));
+    RC_IGNORE(rcl_timer_fini(&s_imu_timer));
     RC_IGNORE(rcl_timer_fini(&s_diag_timer));
     RC_IGNORE(rcl_timer_fini(&s_watchdog_timer));
     RC_IGNORE(rcl_subscription_fini(&s_cmd_vel_sub, &s_node));
     RC_IGNORE(rcl_publisher_fini(&s_odom_pub, &s_node));
     RC_IGNORE(rcl_publisher_fini(&s_tf_pub, &s_node));
+    RC_IGNORE(rcl_publisher_fini(&s_imu_pub, &s_node));
     RC_IGNORE(rcl_publisher_fini(&s_diag_pub, &s_node));
     RC_IGNORE(rcl_node_fini(&s_node));
     RC_IGNORE(rclc_support_fini(&s_support));
@@ -632,6 +726,7 @@ esp_err_t uros_init(const motor_wireless_config_t *cfg)
     memset(&s_cmd_vel_msg, 0, sizeof(s_cmd_vel_msg));
     memset(&s_tf_msg, 0, sizeof(s_tf_msg));
     memset(&s_tf_transform, 0, sizeof(s_tf_transform));
+    memset(&s_imu_msg, 0, sizeof(s_imu_msg));
     memset(&s_diag_msg, 0, sizeof(s_diag_msg));
     memset(&s_diag_status, 0, sizeof(s_diag_status));
     memset(s_diag_kvs, 0, sizeof(s_diag_kvs));

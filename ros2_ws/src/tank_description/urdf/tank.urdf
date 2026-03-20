@@ -13,6 +13,26 @@
     </visual>
   </link>
 
+  <!-- Front indicator — red wedge showing forward direction (+X) -->
+  <link name="front_indicator">
+    <visual>
+      <geometry>
+        <box size="0.06 0.04 0.02"/>
+      </geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <material name="red_front">
+        <color rgba="0.9 0.1 0.1 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="front_indicator_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="front_indicator"/>
+    <!-- FRONT = LIDAR side = +X per docs/robot_dimensions.md -->
+    <origin xyz="0.13 0 0.04" rpy="0 0 0"/>
+  </joint>
+
   <!-- Base Footprint (Projected on ground) -->
   <link name="base_footprint"/>
 
@@ -23,12 +43,12 @@
     <origin xyz="0 0 -0.02" rpy="0 0 0"/>
   </joint>
 
-  <!-- ==================== XV-11 LIDAR ==================== -->
-  <!-- Mounted on top of robot, pointing forward -->
+  <!-- ==================== RPLIDAR C1 ==================== -->
+  <!-- SLAMTEC RPLIDAR C1 DTOF, 55.6x55.6x41.3mm, scan height 23.1mm from base -->
   <link name="laser_frame">
     <visual>
       <geometry>
-        <cylinder length="0.04" radius="0.035"/>
+        <box size="0.0556 0.0556 0.0413"/>
       </geometry>
       <material name="black">
         <color rgba="0 0 0 1"/>
@@ -39,8 +59,8 @@
   <joint name="laser_joint" type="fixed">
     <parent link="base_link"/>
     <child link="laser_frame"/>
-    <!-- LIDAR scan plane 152.5mm from ground, 132.5mm above base_link -->
-    <origin xyz="0.015 0 0.1325" rpy="0 0 0"/>
+    <!-- LIDAR scan plane 140mm from ground, 120mm above base_link -->
+    <origin xyz="0.015 0 0.12" rpy="0 0 0"/>
   </joint>
 
   <!-- ==================== SUPER SENSOR BASE ==================== -->
@@ -156,8 +176,9 @@
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child link="imu_link"/>
-    <!-- IMU mounted on main board, centered -->
-    <origin xyz="0 0 0.02" rpy="0 0 0"/>
+    <!-- BNO055 mounted face-down on main board, upper edge toward front.
+         180° rotation around X flips Z-axis from down (board face) to up (ROS). -->
+    <origin xyz="0 0 0.02" rpy="3.14159 0 0"/>
   </joint>
 
   <!-- ==================== PHONE SENSOR NODE ==================== -->

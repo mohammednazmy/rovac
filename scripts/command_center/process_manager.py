@@ -35,6 +35,10 @@ PI_SERVICES = [
     'rovac-edge-ps2-joy',
     'rovac-edge-ps2-mapper',
     'rovac-edge-health',
+    'rovac-edge-imu-relay',
+    'rovac-edge-odom-relay',
+    'rovac-edge-tf-relay',
+    'rovac-edge-rosbridge',
 ]
 
 

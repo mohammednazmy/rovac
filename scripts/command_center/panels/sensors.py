@@ -74,6 +74,11 @@ class SensorsPanel(Widget):
             c.border_title = "ESP32 Motor"
             yield Static("[dim]No motor diagnostics[/]", id="sens-diag-motor")
 
+        # BNO055 IMU
+        with Container(classes="panel-box-green") as c:
+            c.border_title = "BNO055 IMU"
+            yield Static("[dim]No BNO055 IMU data[/]", id="sens-bno055-imu")
+
         # Phone IMU
         with Container(classes="panel-box-blue") as c:
             c.border_title = "Phone IMU"
@@ -94,6 +99,7 @@ class SensorsPanel(Widget):
         self._update_lidar(state)
         self._update_ultra(state)
         self._update_diag_motor(state)
+        self._update_bno055_imu(state)
         self._update_phone_imu(state)
         self._update_phone_gps(state)
         self._update_phone_camera(state)
@@ -195,6 +201,35 @@ class SensorsPanel(Widget):
         text = f"WiFi RSSI: {rssi_text}    Heap: {heap}    Up: {uptime}"
         try:
             self.query_one("#sens-diag-motor", Static).update(text)
+        except Exception:
+            pass
+
+    def _update_bno055_imu(self, state: dict) -> None:
+        hz = state.get("bno055_imu_hz", 0)
+        if hz <= 0:
+            try:
+                self.query_one("#sens-bno055-imu", Static).update("[dim]No BNO055 IMU data[/]")
+            except Exception:
+                pass
+            return
+
+        ax = state.get("bno055_accel_x", 0)
+        ay = state.get("bno055_accel_y", 0)
+        az = state.get("bno055_accel_z", 0)
+        gx = state.get("bno055_gyro_x", 0)
+        gy = state.get("bno055_gyro_y", 0)
+        gz = state.get("bno055_gyro_z", 0)
+        roll = state.get("bno055_orient_roll", 0)
+        pitch = state.get("bno055_orient_pitch", 0)
+        yaw = state.get("bno055_orient_yaw", 0)
+
+        text = (
+            f"Accel   x:{ax:+7.2f}  y:{ay:+7.2f}  z:{az:+7.2f} m/s²    Rate: {hz:.0f} Hz\n"
+            f"Gyro    x:{gx:+7.2f}  y:{gy:+7.2f}  z:{gz:+7.2f} rad/s\n"
+            f"Orient  R:{roll:+6.1f}°  P:{pitch:+6.1f}°  Y:{yaw:+6.1f}°"
+        )
+        try:
+            self.query_one("#sens-bno055-imu", Static).update(text)
         except Exception:
             pass
 

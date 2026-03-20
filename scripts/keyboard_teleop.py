@@ -177,10 +177,10 @@ def run_teleop(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10
         def _process_key(self, key):
             """Returns True if this was a movement key."""
             if key == curses.KEY_UP or key == ord('w') or key == ord('W'):
-                self.linear_x = -self.max_linear
+                self.linear_x = self.max_linear
                 self.angular_z = 0.0
             elif key == curses.KEY_DOWN or key == ord('s') or key == ord('S'):
-                self.linear_x = self.max_linear
+                self.linear_x = -self.max_linear
                 self.angular_z = 0.0
             elif key == curses.KEY_LEFT or key == ord('a') or key == ord('A'):
                 self.linear_x = 0.0
@@ -189,10 +189,10 @@ def run_teleop(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10
                 self.linear_x = 0.0
                 self.angular_z = -self.max_angular
             elif key == ord('q') or key == ord('Q'):
-                self.linear_x = -self.max_linear
+                self.linear_x = self.max_linear
                 self.angular_z = self.max_linear * ARC_ANG_SCALE
             elif key == ord('e') or key == ord('E'):
-                self.linear_x = -self.max_linear
+                self.linear_x = self.max_linear
                 self.angular_z = -self.max_linear * ARC_ANG_SCALE
             else:
                 return False
@@ -332,17 +332,17 @@ def run_teleop(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10
                               f"angular={self.angular_z:+.3f} rad/s",
                               curses.A_DIM)
 
-                if self.linear_x < 0 and self.angular_z == 0:
+                if self.linear_x > 0 and self.angular_z == 0:
                     arrow = "    ^"
-                elif self.linear_x > 0 and self.angular_z == 0:
+                elif self.linear_x < 0 and self.angular_z == 0:
                     arrow = "    v"
                 elif self.angular_z > 0 and self.linear_x == 0:
                     arrow = "  <  "
                 elif self.angular_z < 0 and self.linear_x == 0:
                     arrow = "    >"
-                elif self.linear_x < 0 and self.angular_z > 0:
+                elif self.linear_x > 0 and self.angular_z > 0:
                     arrow = "  ^ /"
-                elif self.linear_x < 0 and self.angular_z < 0:
+                elif self.linear_x > 0 and self.angular_z < 0:
                     arrow = "  \\ ^"
                 else:
                     arrow = "  [ ]"

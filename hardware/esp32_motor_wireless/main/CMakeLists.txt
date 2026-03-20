@@ -12,6 +12,7 @@ idf_component_register(
         "motor_control.c"
         "oled_ssd1306.c"
         "oled_status.c"
+        "bno055.c"
         "uros.c"
     INCLUDE_DIRS "."
     REQUIRES

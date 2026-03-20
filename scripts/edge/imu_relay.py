@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
 """
-odom_relay.py — Relay /odom from best_effort to reliable QoS.
+imu_relay.py — Relay /imu/data from best_effort to reliable QoS.
 
-ESP32 motor publishes /odom with best_effort QoS for low-latency WiFi
-transport. robot_localization (ekf_node) needs reliable QoS.
+ESP32 motor publishes /imu/data (BNO055) with best_effort QoS for
+low-latency WiFi transport via micro-ROS Agent. robot_localization
+(ekf_node) needs reliable QoS.
 
-Publishes to /odom_reliable (separate topic) to avoid double-delivery:
-if the relay published back to /odom, subscribers would receive both
-the original best_effort AND relayed reliable copies, causing
-out-of-order timestamps and EKF oscillation.
+Publishes to /imu/data_reliable (separate topic) to avoid double-delivery.
 
 Runs on the Pi alongside the micro-ROS Agent.
 """
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
-from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Imu
 
 
-class OdomRelay(Node):
+class ImuRelay(Node):
     def __init__(self):
-        super().__init__('odom_relay')
+        super().__init__('imu_relay')
 
         sub_qos = QoSProfile(
             depth=50,
@@ -34,20 +32,20 @@ class OdomRelay(Node):
         )
 
         # Publish to SEPARATE topic — prevents double-delivery to EKF
-        self._pub = self.create_publisher(Odometry, '/odom_reliable', pub_qos)
+        self._pub = self.create_publisher(Imu, '/imu/data_reliable', pub_qos)
         self._sub = self.create_subscription(
-            Odometry, '/odom', self._cb, sub_qos)
+            Imu, '/imu/data', self._cb, sub_qos)
 
         self.get_logger().info(
-            'Odom relay started: /odom (best_effort) → /odom_reliable (reliable)')
+            'IMU relay started: /imu/data (best_effort) → /imu/data_reliable (reliable)')
 
-    def _cb(self, msg: Odometry):
+    def _cb(self, msg: Imu):
         self._pub.publish(msg)
 
 
 def main():
     rclpy.init()
-    node = OdomRelay()
+    node = ImuRelay()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

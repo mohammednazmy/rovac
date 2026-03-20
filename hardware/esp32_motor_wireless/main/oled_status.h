@@ -11,9 +11,11 @@
 #pragma once
 
 #include "esp_err.h"
+#include "driver/i2c_master.h"
 
 /**
  * Initialize OLED hardware and start the status display task.
+ * @param bus  I2C master bus handle.
  * Non-fatal: logs a warning and returns ESP_OK if OLED is not connected.
  */
-esp_err_t oled_status_init(void);
+esp_err_t oled_status_init(i2c_master_bus_handle_t bus);

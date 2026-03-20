@@ -1,10 +1,12 @@
 # EKF Configuration for ROVAC
-# Fuses wheel odometry (ESP32 /odom) with phone IMU (/phone/imu)
-# Output: /odometry/filtered — improved localization
+# Fuses wheel odometry (ESP32 /odom) with onboard BNO055 IMU (/imu/data)
+# Output: /odometry/filtered — improved localization with gyro-corrected heading
 #
+# BNO055 runs NDOF 9-axis fusion (accel + gyro + magnetometer) on-chip.
+# Provides: fused orientation quaternion, angular velocity, gravity-free acceleration.
 # See docs/robot_dimensions.md for sensor frame geometry.
 
-ekf_node:
+/**:
   ros__parameters:
     # ── General ───────────────────────────────────────────
     frequency: 30.0
@@ -18,9 +20,11 @@ ekf_node:
     base_link_frame: base_link
     world_frame: odom         # EKF operates in odom frame
 
-    # ── Input 0: Wheel odometry (/odom from ESP32) ────────
+    # ── Input 0: Wheel odometry (from ESP32 via odom_relay) ────────
     # Provides: x/y position, yaw, linear velocity, angular velocity
-    odom0: /odom             # ESP32 best_effort → odom_relay (reliable) on Pi
+    # ESP32 publishes /odom (best_effort) → relay publishes /odom_reliable (reliable)
+    # EKF subscribes to /odom_reliable to avoid double-delivery from same-topic relay
+    odom0: /odom_reliable
     odom0_config: [true,  true,  false,   # x, y, z position
                    false, false, true,    # roll, pitch, yaw
                    true,  false, false,   # vx, vy, vz
@@ -30,19 +34,30 @@ ekf_node:
     odom0_differential: false   # Use absolute pose from wheel odom
     odom0_relative: false
 
-    # ── Input 1: Phone IMU (/phone/imu) ─────────────────────
-    # Provides: orientation, angular velocity, linear acceleration
-    # Phone publishes via rosbridge WebSocket (:9090) — proper ROS 2 topics
-    imu0: /phone/imu
+    # ── Input 1: Onboard BNO055 IMU (/imu/data from ESP32) ──
+    # Provides: orientation (NDOF fusion), angular velocity, linear acceleration
+    # BNO055 NDOF fusion gives magnetometer-calibrated absolute heading.
+    # ESP32 best_effort → imu_relay (reliable) on Pi
+    #
+    # ── Input 1: Onboard BNO055 IMU (from ESP32 via imu_relay) ──
+    # ESP32 publishes /imu/data (best_effort) → relay publishes /imu/data_reliable (reliable)
+    #
+    # Orientation: fuse yaw (differential mode converts to rate, avoiding
+    # reference frame mismatch between mag-north heading and odom yaw).
+    #
+    # Angular velocity: fuse vyaw — BNO055 gyro is much lower noise than
+    # wheel-derived angular velocity (0.014 deg/s/√Hz vs encoder aliasing).
+    #
+    # Acceleration: DISABLED — tank acceleration is low, noise floor dominates.
+    imu0: /imu/data_reliable
     imu0_config: [false, false, false,    # No position from IMU
                   false, false, true,     # yaw only from orientation (2D mode)
                   false, false, false,    # No velocity from IMU
-                  false, false, true,     # yaw rate only from gyro (2D mode)
-                  false, false, false]    # accel DISABLED — residual gravity causes drift
+                  false, false, true,     # yaw rate from gyro (2D mode)
+                  false, false, false]    # accel DISABLED
     imu0_queue_size: 10
-    imu0_differential: false
-    imu0_relative: true         # Use orientation CHANGES, not absolute
-                                # Prevents EKF from fighting wheel odom yaw
+    imu0_differential: true      # Convert orientation to rate (avoids mag-north vs odom-yaw conflict)
+    imu0_relative: false
     imu0_remove_gravitational_acceleration: true
 
     # ── Process noise covariance (15x15 diagonal) ─────────

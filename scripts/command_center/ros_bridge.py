@@ -61,6 +61,12 @@ class RosBridge:
             'phone_gyro_x': 0.0, 'phone_gyro_y': 0.0, 'phone_gyro_z': 0.0,
             'phone_orient_roll': 0.0, 'phone_orient_pitch': 0.0, 'phone_orient_yaw': 0.0,
 
+            # BNO055 IMU (from /imu/data, best_effort)
+            'bno055_imu_hz': 0.0,
+            'bno055_accel_x': 0.0, 'bno055_accel_y': 0.0, 'bno055_accel_z': 0.0,
+            'bno055_gyro_x': 0.0, 'bno055_gyro_y': 0.0, 'bno055_gyro_z': 0.0,
+            'bno055_orient_roll': 0.0, 'bno055_orient_pitch': 0.0, 'bno055_orient_yaw': 0.0,
+
             # Phone GPS (from /phone/gps/fix, best_effort, ~1 Hz)
             'phone_gps_hz': 0.0,
             'phone_lat': 0.0, 'phone_lon': 0.0, 'phone_alt': 0.0,
@@ -239,10 +245,12 @@ class RosBridge:
             self._hz['phone_imu'] = HzTracker()
             self._hz['phone_gps'] = HzTracker()
             self._hz['phone_camera'] = HzTracker()
+            self._hz['bno055_imu'] = HzTracker()
 
             self._node.create_subscription(Imu, '/phone/imu', self._on_phone_imu, best_effort_qos)
             self._node.create_subscription(NavSatFix, '/phone/gps/fix', self._on_phone_gps, best_effort_qos)
             self._node.create_subscription(CompressedImage, '/phone/camera/image_raw/compressed', self._on_phone_camera, best_effort_qos)
+            self._node.create_subscription(Imu, '/imu/data', self._on_bno055_imu, best_effort_qos)
 
             # --- Publishers ---
             # cmd_vel_teleop must be RELIABLE (depth 10) to match the mux subscriber.
@@ -387,3 +395,39 @@ class RosBridge:
         with self.lock:
             self.state['phone_camera_hz'] = self._hz['phone_camera'].hz()
             self.state['phone_camera_bytes'] = len(msg.data)
+
+    def _on_bno055_imu(self, msg):
+        self._hz['bno055_imu'].tick()
+        # Accelerometer
+        ax = msg.linear_acceleration.x
+        ay = msg.linear_acceleration.y
+        az = msg.linear_acceleration.z
+        # Gyroscope
+        gx = msg.angular_velocity.x
+        gy = msg.angular_velocity.y
+        gz = msg.angular_velocity.z
+        # Orientation from quaternion → euler
+        q = msg.orientation
+        # Roll
+        sinr = 2.0 * (q.w * q.x + q.y * q.z)
+        cosr = 1.0 - 2.0 * (q.x * q.x + q.y * q.y)
+        roll = math.atan2(sinr, cosr)
+        # Pitch
+        sinp = 2.0 * (q.w * q.y - q.z * q.x)
+        pitch = math.asin(max(-1.0, min(1.0, sinp)))
+        # Yaw
+        siny = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        yaw = math.atan2(siny, cosy)
+
+        with self.lock:
+            self.state['bno055_imu_hz'] = self._hz['bno055_imu'].hz()
+            self.state['bno055_accel_x'] = ax
+            self.state['bno055_accel_y'] = ay
+            self.state['bno055_accel_z'] = az
+            self.state['bno055_gyro_x'] = gx
+            self.state['bno055_gyro_y'] = gy
+            self.state['bno055_gyro_z'] = gz
+            self.state['bno055_orient_roll'] = math.degrees(roll)
+            self.state['bno055_orient_pitch'] = math.degrees(pitch)
+            self.state['bno055_orient_yaw'] = math.degrees(yaw)

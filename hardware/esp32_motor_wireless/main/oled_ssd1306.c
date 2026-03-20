@@ -4,19 +4,19 @@
  * Framebuffer approach: 512-byte buffer (128×32/8), flushed via I2C.
  * SSD1306 page format: each byte = 8 vertical pixels, LSB at top.
  * Includes embedded 5x7 ASCII font (printable chars 0x20–0x7E).
+ *
+ * Uses new ESP-IDF I2C master driver — thread-safe, no mutex needed.
  */
 #include "oled_ssd1306.h"
-#include "driver/i2c.h"
 #include "esp_log.h"
 #include <string.h>
 
 static const char *TAG = "oled";
 
-#define I2C_NUM     I2C_NUM_0
-#define I2C_FREQ_HZ 400000
 #define FB_SIZE     (OLED_WIDTH * OLED_HEIGHT / 8)  /* 512 bytes */
 
 static uint8_t s_fb[FB_SIZE];
+static i2c_master_dev_handle_t s_dev = NULL;
 
 /* ── 5x7 ASCII font (chars 0x20–0x7E, 95 glyphs × 5 bytes = 475 bytes) ── */
 /* Each glyph: 5 columns left→right, each byte bit0=top .. bit6=bottom      */
@@ -118,14 +118,12 @@ static const uint8_t font5x7[][5] = {
     {0x10,0x08,0x08,0x10,0x08}, /* ~ */
 };
 
-/* ── I2C helpers ─────────────────────────────────────────────────────────── */
+/* ── I2C helpers (new master driver — thread-safe, no mutex needed) ──────── */
 
 static esp_err_t oled_write_cmd(uint8_t cmd)
 {
     uint8_t buf[2] = {0x00, cmd};  /* Co=0, D/C#=0 (command) */
-    return i2c_master_write_to_device(I2C_NUM, OLED_I2C_ADDR,
-                                       buf, sizeof(buf),
-                                       pdMS_TO_TICKS(50));
+    return i2c_master_transmit(s_dev, buf, sizeof(buf), 50);
 }
 
 static esp_err_t oled_write_cmds(const uint8_t *cmds, size_t len)
@@ -139,20 +137,15 @@ static esp_err_t oled_write_cmds(const uint8_t *cmds, size_t len)
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
-esp_err_t oled_init(void)
+esp_err_t oled_init(i2c_master_bus_handle_t bus)
 {
-    /* Configure I2C master */
-    i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = OLED_SDA_PIN,
-        .scl_io_num = OLED_SCL_PIN,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = I2C_FREQ_HZ,
+    /* Add OLED as device on the shared I2C bus */
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = OLED_I2C_ADDR,
+        .scl_speed_hz = 400000,  /* OLED handles 400kHz fine */
     };
-    esp_err_t rc = i2c_param_config(I2C_NUM, &conf);
-    if (rc != ESP_OK) return rc;
-    rc = i2c_driver_install(I2C_NUM, I2C_MODE_MASTER, 0, 0, 0);
+    esp_err_t rc = i2c_master_bus_add_device(bus, &dev_cfg, &s_dev);
     if (rc != ESP_OK) return rc;
 
     /* SSD1306 init sequence for 128x32 */
@@ -224,6 +217,8 @@ void oled_draw_text(int x, int y, const char *text, int scale)
 
 void oled_update(void)
 {
+    if (s_dev == NULL) return;
+
     /* Set column and page address to cover full display */
     static const uint8_t addr_cmds[] = {
         0x21, 0x00, 0x7F,  /* column address 0–127 */
@@ -235,7 +230,5 @@ void oled_update(void)
     uint8_t buf[FB_SIZE + 1];
     buf[0] = 0x40;  /* Co=0, D/C#=1 (data) */
     memcpy(&buf[1], s_fb, FB_SIZE);
-    i2c_master_write_to_device(I2C_NUM, OLED_I2C_ADDR,
-                                buf, sizeof(buf),
-                                pdMS_TO_TICKS(100));
+    i2c_master_transmit(s_dev, buf, sizeof(buf), 100);
 }

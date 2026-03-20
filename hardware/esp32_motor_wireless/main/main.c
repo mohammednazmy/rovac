@@ -14,8 +14,10 @@
  *   6. Init odometry
  *   7. Init motor control (starts PID task on Core 1)
  *   8. Init debug console
- *   9. Init micro-ROS (starts uros task on Core 0)
- *  10. Print heap free
+ *   9. Init I2C bus (new master driver, shared by OLED + BNO055)
+ *  10. Init OLED status display
+ *  11. Init BNO055 IMU
+ *  12. Init micro-ROS (publishes /odom, /tf, /imu/data, /diagnostics)
  *
  * Part of the ROVAC Robotics Project
  */
@@ -24,6 +26,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/i2c_master.h"
 
 #include "nvs_config.h"
 #include "wifi.h"
@@ -35,6 +38,8 @@
 #include "motor_control.h"
 #include "uros.h"
 #include "oled_status.h"
+#include "oled_ssd1306.h"
+#include "bno055.h"
 
 static const char *TAG = "main";
 
@@ -49,12 +54,36 @@ static void led_update_task(void *arg)
     }
 }
 
+/* Initialize shared I2C bus using new master driver (GPIO21=SDA, GPIO22=SCL) */
+static i2c_master_bus_handle_t i2c_bus_init(void)
+{
+    i2c_master_bus_config_t bus_cfg = {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = I2C_NUM_0,
+        .scl_io_num = OLED_SCL_PIN,    /* GPIO22 */
+        .sda_io_num = OLED_SDA_PIN,    /* GPIO21 */
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
+    };
+
+    i2c_master_bus_handle_t bus = NULL;
+    esp_err_t rc = i2c_new_master_bus(&bus_cfg, &bus);
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create I2C bus: %s", esp_err_to_name(rc));
+        return NULL;
+    }
+
+    ESP_LOGI(TAG, "I2C bus initialized: SDA=GPIO%d SCL=GPIO%d (new master driver, OLED+BNO055)",
+             OLED_SDA_PIN, OLED_SCL_PIN);
+    return bus;
+}
+
 void app_main(void)
 {
     printf("\n");
     printf("========================================\n");
-    printf("  ROVAC Motor Wireless ESP32 v1.0.0\n");
-    printf("  TB67H450FNG + PCNT + PID + micro-ROS\n");
+    printf("  ROVAC Motor Wireless ESP32 v2.0.0\n");
+    printf("  TB67H450FNG + PID + BNO055 + uROS\n");
     printf("========================================\n");
 
     // Step 1: NVS + config
@@ -105,11 +134,29 @@ void app_main(void)
     ESP_LOGI(TAG, "Starting debug console...");
     ESP_ERROR_CHECK(debug_console_init(&g_config));
 
-    // Step 8: OLED status display (non-fatal if not connected)
-    ESP_LOGI(TAG, "Initializing OLED display...");
-    ESP_ERROR_CHECK(oled_status_init());
+    // Step 8: Initialize shared I2C bus (new master driver, before OLED and BNO055)
+    ESP_LOGI(TAG, "Initializing I2C bus...");
+    i2c_master_bus_handle_t i2c_bus = i2c_bus_init();
+    if (i2c_bus == NULL) {
+        ESP_LOGE(TAG, "I2C bus init failed — OLED and IMU disabled");
+    }
 
-    // Step 9: micro-ROS node (publishes /odom, /tf, /diagnostics; subscribes /cmd_vel)
+    // Step 9: OLED status display (non-fatal if not connected)
+    if (i2c_bus != NULL) {
+        ESP_LOGI(TAG, "Initializing OLED display...");
+        ESP_ERROR_CHECK(oled_status_init(i2c_bus));
+    }
+
+    // Step 10: BNO055 IMU (non-fatal if not connected)
+    if (i2c_bus != NULL) {
+        ESP_LOGI(TAG, "Initializing BNO055 IMU...");
+        esp_err_t bno_rc = bno055_init(i2c_bus);
+        if (bno_rc != ESP_OK) {
+            ESP_LOGW(TAG, "BNO055 not detected — IMU disabled (rc=%s)", esp_err_to_name(bno_rc));
+        }
+    }
+
+    // Step 11: micro-ROS node (publishes /odom, /tf, /imu/data, /diagnostics; subscribes /cmd_vel)
     ESP_LOGI(TAG, "Starting micro-ROS...");
     ESP_ERROR_CHECK(uros_init(&g_config));
 
