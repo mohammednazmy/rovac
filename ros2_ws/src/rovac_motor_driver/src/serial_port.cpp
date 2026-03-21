@@ -1,0 +1,122 @@
+/*
+ * serial_port.cpp — Linux serial port wrapper (termios)
+ */
+#include "rovac_motor_driver/serial_port.hpp"
+
+#include <fcntl.h>
+#include <unistd.h>
+#include <termios.h>
+#include <sys/select.h>
+#include <cerrno>
+#include <cstring>
+
+namespace rovac {
+
+SerialPort::~SerialPort()
+{
+    close();
+}
+
+static speed_t baud_to_speed(int baud)
+{
+    switch (baud) {
+        case 9600:    return B9600;
+        case 19200:   return B19200;
+        case 38400:   return B38400;
+        case 57600:   return B57600;
+        case 115200:  return B115200;
+        case 230400:  return B230400;
+        case 460800:  return B460800;
+        case 921600:  return B921600;
+        default:      return B460800;
+    }
+}
+
+bool SerialPort::open(const std::string& device, int baud_rate)
+{
+    close();
+
+    fd_ = ::open(device.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (fd_ < 0) return false;
+
+    /* Clear O_NONBLOCK after open (we use select() for timeout reads) */
+    int flags = fcntl(fd_, F_GETFL, 0);
+    fcntl(fd_, F_SETFL, flags & ~O_NONBLOCK);
+
+    struct termios tty;
+    memset(&tty, 0, sizeof(tty));
+    if (tcgetattr(fd_, &tty) != 0) {
+        ::close(fd_);
+        fd_ = -1;
+        return false;
+    }
+
+    speed_t speed = baud_to_speed(baud_rate);
+    cfsetispeed(&tty, speed);
+    cfsetospeed(&tty, speed);
+
+    /* Raw mode — no line processing, no echo, no signals */
+    cfmakeraw(&tty);
+
+    /* 8N1 */
+    tty.c_cflag &= ~(CSIZE | PARENB | CSTOPB);
+    tty.c_cflag |= CS8;
+
+    /* Enable receiver, ignore modem control lines */
+    tty.c_cflag |= (CLOCAL | CREAD);
+
+    /* CRITICAL: Disable HUPCL to prevent CH340 DTR reset on port open/close */
+    tty.c_cflag &= ~HUPCL;
+
+    /* No hardware flow control */
+    tty.c_cflag &= ~CRTSCTS;
+
+    /* Non-blocking reads with 100ms inter-byte timeout */
+    tty.c_cc[VMIN] = 0;
+    tty.c_cc[VTIME] = 1;  /* 100ms */
+
+    if (tcsetattr(fd_, TCSANOW, &tty) != 0) {
+        ::close(fd_);
+        fd_ = -1;
+        return false;
+    }
+
+    /* Flush any stale data (bootloader garbage at wrong baud) */
+    tcflush(fd_, TCIOFLUSH);
+
+    return true;
+}
+
+void SerialPort::close()
+{
+    if (fd_ >= 0) {
+        ::close(fd_);
+        fd_ = -1;
+    }
+}
+
+ssize_t SerialPort::read(uint8_t* buf, size_t max_len, int timeout_ms)
+{
+    if (fd_ < 0) return -1;
+
+    if (timeout_ms > 0) {
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(fd_, &fds);
+        struct timeval tv;
+        tv.tv_sec = timeout_ms / 1000;
+        tv.tv_usec = (timeout_ms % 1000) * 1000;
+        int ret = select(fd_ + 1, &fds, nullptr, nullptr, &tv);
+        if (ret <= 0) return ret;  /* 0 = timeout, -1 = error */
+    }
+
+    return ::read(fd_, buf, max_len);
+}
+
+ssize_t SerialPort::write(const uint8_t* buf, size_t len)
+{
+    if (fd_ < 0) return -1;
+    return ::write(fd_, buf, len);
+}
+
+}  // namespace rovac

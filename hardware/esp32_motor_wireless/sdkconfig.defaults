@@ -1,5 +1,5 @@
-# ESP32-WROOM-32E (Maker ESP32) — Motor Wireless defaults
-# Flash: 4MB DIO, No PSRAM, UART0 console (CH340)
+# ESP32-WROOM-32E (Maker ESP32) — Motor Serial defaults
+# Flash: 4MB DIO, No PSRAM, UART0 binary protocol (CH340)
 
 # Target
 CONFIG_IDF_TARGET="esp32"
@@ -20,33 +20,18 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_FREERTOS_HZ=1000
 CONFIG_FREERTOS_UNICORE=n
 
-# WiFi
-CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=10
-CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=32
-CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=32
-CONFIG_ESP_WIFI_TX_BUFFER_TYPE=1
-
-# Console via UART0 (default — connected to CH340 USB-UART bridge)
+# Console via UART0 (bootloader only — firmware takes over UART0 for binary protocol)
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y
 
-# Log level — INFO
+# Log level — INFO (routed through MSG_LOG binary frames after serial_transport_init)
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_LOG_DEFAULT_LEVEL=3
 
-# Watchdog — increase task WDT for WiFi reconnect delays
+# Watchdog
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
 
-# UART ISR in IRAM
+# UART ISR in IRAM (critical for serial performance)
 CONFIG_UART_ISR_IN_IRAM=y
 
 # Newlib — nano printf (saves flash)
 CONFIG_NEWLIB_NANO_FORMAT=y
-
-# micro-ROS — WiFi UDP transport to Agent on Pi
-CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE=y
-CONFIG_MICRO_ROS_ESP_NETIF_WLAN=y
-CONFIG_ESP_WIFI_SSID="Hurry"
-CONFIG_ESP_WIFI_PASSWORD="Gaza@2023"
-CONFIG_ESP_MAXIMUM_RETRY=5
-CONFIG_MICRO_ROS_AGENT_IP="192.168.1.200"
-CONFIG_MICRO_ROS_AGENT_PORT="8888"

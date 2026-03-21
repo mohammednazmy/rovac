@@ -9,8 +9,7 @@
  */
 #include "oled_status.h"
 #include "oled_ssd1306.h"
-#include "wifi.h"
-#include "uros.h"
+#include "serial_transport.h"
 #include "motor_control.h"
 
 #include "esp_log.h"
@@ -30,14 +29,8 @@ static void oled_status_task(void *arg)
 
         /* ── Line 1 (y=0): Connectivity ── */
         char line1[12];
-        if (wifi_is_connected()) {
-            int rssi = wifi_get_rssi();
-            bool agent = uros_is_connected();
-            snprintf(line1, sizeof(line1), "W%d A:%s",
-                     rssi, agent ? "OK" : "--");
-        } else {
-            snprintf(line1, sizeof(line1), "W:-- A:--");
-        }
+        bool usb_ok = serial_transport_is_connected();
+        snprintf(line1, sizeof(line1), "USB:%s", usb_ok ? "OK" : "--");
         oled_draw_text(0, 1, line1, 2);
 
         /* ── Line 2 (y=16): Motor velocities ── */

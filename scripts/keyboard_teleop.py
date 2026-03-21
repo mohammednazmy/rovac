@@ -51,11 +51,33 @@ def ssh_to_pi(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10.
     # execvp replaces the process — never returns
 
 
+def _kill_stale_cmd_vel_publishers():
+    """Kill any stale processes publishing to cmd_vel_teleop.
+    These ghost processes override real teleop commands and cause
+    the robot to appear unresponsive."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "ros2 topic pub.*cmd_vel_teleop"],
+            capture_output=True, text=True, timeout=2)
+        pids = result.stdout.strip().split('\n')
+        my_pid = str(os.getpid())
+        for pid in pids:
+            pid = pid.strip()
+            if pid and pid != my_pid:
+                print(f"Killing stale cmd_vel_teleop publisher (PID {pid})")
+                subprocess.run(["kill", pid], timeout=2)
+    except Exception:
+        pass  # Best-effort cleanup
+
+
 def run_teleop(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10.0):
     """Run the teleop node locally (on Pi or Mac)."""
     import time
     import math
     import curses
+
+    _kill_stale_cmd_vel_publishers()
 
     import rclpy
     from rclpy.node import Node
@@ -96,8 +118,7 @@ def run_teleop(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10
         def __init__(self):
             super().__init__("keyboard_teleop")
             self.cmd_pub = self.create_publisher(Twist, "cmd_vel_teleop", 10)
-            # Must match ESP32's best_effort QoS (reliable subscriber can't
-            # receive from best_effort publisher)
+            # best_effort subscriber works with both reliable and best_effort publishers
             qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
             self.odom_sub = self.create_subscription(
                 Odometry, "odom", self.odom_cb, qos)
@@ -367,7 +388,7 @@ def run_teleop(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10
     rclpy.init()
     node = KeyboardTeleop()
 
-    print("Publishing to /cmd_vel (direct)")
+    print("Publishing to /cmd_vel_teleop (via mux)")
     print("Connecting to ROS2 topics...")
     deadline = time.time() + 8.0
     while node.odom_count == 0 and time.time() < deadline:

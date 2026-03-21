@@ -1,0 +1,26 @@
+[Unit]
+Description=ROVAC Motor Driver (USB serial binary protocol to ESP32)
+After=network.target dev-esp32_motor.device
+BindsTo=dev-esp32_motor.device
+PartOf=rovac-edge.target
+Before=rovac-edge-mux.service rovac-edge-obstacle.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
+ExecStartPre=/bin/stty -F /dev/esp32_motor 460800 -hupcl
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && source /home/pi/robots/rovac/ros2_ws/install/setup.bash && exec ros2 run rovac_motor_driver motor_driver_node --ros-args --params-file /home/pi/robots/rovac/ros2_ws/src/rovac_motor_driver/config/motor_driver.yaml'
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rovac-motor-driver
+MemoryMax=128M
+CPUQuota=20%
+
+[Install]
+WantedBy=rovac-edge.target

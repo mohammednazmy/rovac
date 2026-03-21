@@ -2,9 +2,7 @@ idf_component_register(
     SRCS
         "main.c"
         "nvs_config.c"
-        "wifi.c"
         "led_status.c"
-        "debug_console.c"
         "motor_driver.c"
         "encoder_reader.c"
         "pid_controller.c"
@@ -13,15 +11,12 @@ idf_component_register(
         "oled_ssd1306.c"
         "oled_status.c"
         "bno055.c"
-        "uros.c"
-    INCLUDE_DIRS "."
+        "serial_transport.c"
+        "../../../common/cobs.c"
+    INCLUDE_DIRS "." "../../../common"
     REQUIRES
         driver
         nvs_flash
-        esp_wifi
-        esp_event
-        esp_netif
         esp_timer
         vfs
-        micro_ros_espidf_component
 )

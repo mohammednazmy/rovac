@@ -1,23 +1,21 @@
 /*
- * main.c — ROVAC Motor Wireless ESP32 Firmware
+ * main.c — ROVAC Motor Serial ESP32 Firmware
  *
  * Direct motor/encoder/PID controller running on Maker ESP32 (WROOM-32E).
  * Drives TB67H450FNG motor drivers, reads PCNT encoders, runs PID control
- * locally, and communicates with Raspberry Pi 5 via WiFi UDP (micro-ROS).
+ * locally, and communicates with Raspberry Pi 5 via USB serial (COBS binary).
  *
  * Boot sequence:
  *   1. Print banner
- *   2. Init NVS, load config
+ *   2. Init NVS
  *   3. Init LED status indicator
- *   4. Connect WiFi (wait up to 10s)
- *   5. Init motor hardware (motor_driver, encoder_reader)
- *   6. Init odometry
- *   7. Init motor control (starts PID task on Core 1)
- *   8. Init debug console
- *   9. Init I2C bus (new master driver, shared by OLED + BNO055)
- *  10. Init OLED status display
- *  11. Init BNO055 IMU
- *  12. Init micro-ROS (publishes /odom, /tf, /imu/data, /diagnostics)
+ *   4. Init motor hardware (motor_driver, encoder_reader)
+ *   5. Init odometry
+ *   6. Init motor control (starts PID task on Core 1)
+ *   7. Init I2C bus (new master driver, shared by OLED + BNO055)
+ *   8. Init OLED status display
+ *   9. Init BNO055 IMU
+ *  10. Init serial transport (COBS binary on UART0 @ 460800 baud)
  *
  * Part of the ROVAC Robotics Project
  */
@@ -29,21 +27,19 @@
 #include "driver/i2c_master.h"
 
 #include "nvs_config.h"
-#include "wifi.h"
 #include "led_status.h"
-#include "debug_console.h"
 #include "motor_driver.h"
 #include "encoder_reader.h"
 #include "odometry.h"
 #include "motor_control.h"
-#include "uros.h"
+#include "serial_transport.h"
 #include "oled_status.h"
 #include "oled_ssd1306.h"
 #include "bno055.h"
 
 static const char *TAG = "main";
 
-// Global config — loaded from NVS at boot, modifiable via debug console
+// Global config — loaded from NVS at boot
 static motor_wireless_config_t g_config;
 
 static void led_update_task(void *arg)
@@ -82,8 +78,8 @@ void app_main(void)
 {
     printf("\n");
     printf("========================================\n");
-    printf("  ROVAC Motor Wireless ESP32 v2.0.0\n");
-    printf("  TB67H450FNG + PID + BNO055 + uROS\n");
+    printf("  ROVAC Motor Serial ESP32 v3.0.0\n");
+    printf("  TB67H450FNG + PID + BNO055 + USB\n");
     printf("========================================\n");
 
     // Step 1: NVS + config
@@ -93,61 +89,41 @@ void app_main(void)
     // Step 2: LED status indicator
     ESP_LOGI(TAG, "Initializing LED...");
     ESP_ERROR_CHECK(led_status_init());
-    led_status_set(LED_STATE_NO_WIFI);
+    led_status_set(LED_STATE_NO_AGENT);  /* Yellow = waiting for Pi driver */
     led_status_update();
 
     // Start LED update task on Core 0
     xTaskCreatePinnedToCore(led_update_task, "led", 2048, NULL, 1, NULL, 0);
 
-    // Step 3: WiFi
-    ESP_LOGI(TAG, "Starting WiFi...");
-    ESP_ERROR_CHECK(wifi_init(&g_config));
-
-    // Wait for WiFi connection (up to 10s)
-    for (int i = 0; i < 100; i++) {
-        if (wifi_is_connected()) break;
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-    if (wifi_is_connected()) {
-        ESP_LOGI(TAG, "WiFi connected (RSSI %d dBm)", wifi_get_rssi());
-        led_status_set(LED_STATE_NO_AGENT);
-    } else {
-        ESP_LOGW(TAG, "WiFi not connected yet, continuing...");
-    }
-
-    // Step 4: Initialize motor hardware
+    // Step 3: Initialize motor hardware
     ESP_LOGI(TAG, "Initializing motor driver...");
     ESP_ERROR_CHECK(motor_driver_init());
 
     ESP_LOGI(TAG, "Initializing encoders...");
     ESP_ERROR_CHECK(encoder_reader_init());
 
-    // Step 5: Initialize odometry engine
+    // Step 4: Initialize odometry engine
     ESP_LOGI(TAG, "Initializing odometry...");
     odometry_init();
 
-    // Step 6: Initialize motor control (starts PID task on Core 1)
+    // Step 5: Initialize motor control (starts PID task on Core 1)
     ESP_LOGI(TAG, "Starting motor control (PID on Core 1)...");
     ESP_ERROR_CHECK(motor_control_init());
 
-    // Step 7: Debug console
-    ESP_LOGI(TAG, "Starting debug console...");
-    ESP_ERROR_CHECK(debug_console_init(&g_config));
-
-    // Step 8: Initialize shared I2C bus (new master driver, before OLED and BNO055)
+    // Step 6: Initialize shared I2C bus (new master driver, before OLED and BNO055)
     ESP_LOGI(TAG, "Initializing I2C bus...");
     i2c_master_bus_handle_t i2c_bus = i2c_bus_init();
     if (i2c_bus == NULL) {
         ESP_LOGE(TAG, "I2C bus init failed — OLED and IMU disabled");
     }
 
-    // Step 9: OLED status display (non-fatal if not connected)
+    // Step 7: OLED status display (non-fatal if not connected)
     if (i2c_bus != NULL) {
         ESP_LOGI(TAG, "Initializing OLED display...");
         ESP_ERROR_CHECK(oled_status_init(i2c_bus));
     }
 
-    // Step 10: BNO055 IMU (non-fatal if not connected)
+    // Step 8: BNO055 IMU (non-fatal if not connected)
     if (i2c_bus != NULL) {
         ESP_LOGI(TAG, "Initializing BNO055 IMU...");
         esp_err_t bno_rc = bno055_init(i2c_bus);
@@ -156,10 +132,12 @@ void app_main(void)
         }
     }
 
-    // Step 11: micro-ROS node (publishes /odom, /tf, /imu/data, /diagnostics; subscribes /cmd_vel)
-    ESP_LOGI(TAG, "Starting micro-ROS...");
-    ESP_ERROR_CHECK(uros_init(&g_config));
+    // Step 9: Serial transport (COBS binary on UART0 @ 460800 baud)
+    // NOTE: This takes over UART0 from the console. All ESP_LOG output
+    // after this point is routed through MSG_LOG binary frames.
+    ESP_LOGI(TAG, "Starting serial transport (USB COBS binary)...");
+    ESP_ERROR_CHECK(serial_transport_init());
 
-    ESP_LOGI(TAG, "Motor Wireless startup complete. Heap free: %lu bytes",
+    ESP_LOGI(TAG, "Motor Serial startup complete. Heap free: %lu bytes",
              (unsigned long)esp_get_free_heap_size());
 }
