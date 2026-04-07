@@ -66,6 +66,8 @@ fi
 
 : "${ROVAC_LOCAL_IP:=$ROVAC_LOCAL_IP_DEFAULT}"
 : "${ROVAC_REMOTE_IP:=$ROVAC_REMOTE_IP_DEFAULT}"
+export ROVAC_LOCAL_IP
+export ROVAC_REMOTE_IP
 
 # Static peers (optional). Multicast discovery works on this network; keep this OFF by default.
 # Enable with: export ROVAC_USE_STATIC_PEERS=1

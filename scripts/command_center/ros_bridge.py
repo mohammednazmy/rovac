@@ -195,7 +195,7 @@ class RosBridge:
             rclpy.init()
             self._node = rclpy.create_node('rovac_command_center')
 
-            # QoS for micro-ROS topics (all best_effort)
+            # QoS for best-effort telemetry topics
             best_effort_qos = QoSProfile(
                 reliability=ReliabilityPolicy.BEST_EFFORT,
                 history=HistoryPolicy.KEEP_LAST,

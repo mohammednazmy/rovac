@@ -1,7 +1,7 @@
 [Unit]
 Description=ROVAC EKF Sensor Fusion (wheel odom + BNO055 IMU)
-After=rovac-edge-uros-agent.service rovac-edge-odom-relay.service rovac-edge-imu-relay.service rovac-edge-tf-relay.service
-Wants=rovac-edge-odom-relay.service rovac-edge-imu-relay.service rovac-edge-tf-relay.service
+After=rovac-edge-motor-driver.service rovac-edge-tf.service
+Wants=rovac-edge-motor-driver.service rovac-edge-tf.service
 PartOf=rovac-edge.target
 
 [Service]
@@ -23,7 +23,7 @@ RestartSec=5
 MemoryMax=128M
 CPUQuota=20%
 
-# Wait for relay services to start
+# Optional Pi-side EKF. The current primary workflow runs EKF from the Mac.
 ExecStartPre=/bin/sleep 5
 ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; source /home/pi/robots/rovac/config/ros2_env.sh; exec ros2 launch /home/pi/robots/rovac/scripts/ekf_launch.py'
 

@@ -1,7 +1,7 @@
 [Unit]
 Description=ROVAC Edge Health Monitor (system/service/network status to ROS2)
 Wants=network-online.target
-After=network-online.target rovac-edge-uros-agent.service
+After=network-online.target
 PartOf=rovac-edge.target
 StartLimitIntervalSec=300
 StartLimitBurst=10

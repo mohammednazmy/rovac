@@ -25,7 +25,7 @@ NAV2_CMD_TEMPLATE = [
 
 # Pi edge services
 PI_SERVICES = [
-    'rovac-edge-uros-agent',
+    'rovac-edge-motor-driver',
     'rovac-edge-rplidar-c1',
     'rovac-edge-mux',
     'rovac-edge-tf',
@@ -35,9 +35,6 @@ PI_SERVICES = [
     'rovac-edge-ps2-joy',
     'rovac-edge-ps2-mapper',
     'rovac-edge-health',
-    'rovac-edge-imu-relay',
-    'rovac-edge-odom-relay',
-    'rovac-edge-tf-relay',
     'rovac-edge-rosbridge',
 ]
 

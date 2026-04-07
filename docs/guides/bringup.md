@@ -1,318 +1,209 @@
 # Robot Bringup Guide
 
-This document describes the **exact power-on and startup procedure** for the robot, including recovery paths and diagnostics.
+This guide documents the current operator workflow for the USB-serial ESP32 + Pi edge + Mac brain architecture.
 
----
+## Assumptions
 
-## Power-On Sequence
+- Pi edge host is reachable at `pi@192.168.1.200`
+- Both machines use the same repository checkout path layout
+- ROS 2 distro is Jazzy
+- DDS is CycloneDDS with unicast peer configuration from `config/ros2_env.sh`
 
-1. Ensure battery is charged and main power switch is **OFF**
-2. Connect:
-   - Motor power
-   - USB devices (LiDAR ESP32 bridge, camera, controller dongles)
-3. Switch **main power ON**
-4. Raspberry Pi boots automatically (no display required)
-5. Wait ~45-60s for systemd services to start
+## One-Time Setup
 
----
-
-## Network Assumptions
-
-- Both Mac and Pi connect through the **home network** (AT&T router at `192.168.1.254`)
-  - Mac: `192.168.1.104` (WiFi, en0)
-  - Pi: `192.168.1.200` (static via netplan, eth0)
-- DDS is **unicast-only** (multicast disabled) to ensure reliable peer discovery across interfaces.
-- Do not rely on mDNS (`robot.local`) for this setup.
-
-```
-Mac (192.168.1.104)                    Pi (192.168.1.200)
-     en0 (WiFi)                             eth0
-         |                                    |
-         +---- AT&T Router (192.168.1.254) ---+
-                    (Home Network)
-```
-
----
-
-## SSH Access
-
-An SSH alias is configured in `~/.ssh/config`, so you only need:
+### Pi edge services
 
 ```bash
-ssh pi
-```
-
-Recovery access:
-- Connect to the same home network
-- Verify Pi is reachable: `ping 192.168.1.200`
-- Fall back to full address if alias is missing: `ssh pi@192.168.1.200`
-
----
-
-## ROS 2 / DDS Environment
-
-Environment setup is handled by:
-
-- `config/ros2_env.sh` (relative to repo root, same file on both machines -- auto-detects OS and loads Pi-specific config)
-  - Mac: `~/robots/rovac/config/ros2_env.sh`
-  - Pi: `/home/pi/robots/rovac/config/ros2_env.sh`
-
-This configures:
-- ROS 2 distro (Jazzy)
-- DDS implementation (CycloneDDS)
-- `ROS_DOMAIN_ID=42`
-- Peer configuration via XML
-
-To manually source on Mac:
-```bash
-source config/ros2_env.sh
-```
-
-To manually source on Pi:
-```bash
-source ~/robots/rovac/config/ros2_env.sh
-```
-
-Verify:
-```bash
-echo $RMW_IMPLEMENTATION    # should print rmw_cyclonedds_cpp
-echo $CYCLONEDDS_URI        # should point to the XML config file
-```
-
----
-
-## Normal Startup (Expected Path)
-
-1. Power on robot
-2. SSH into Pi and pull latest code:
-   ```bash
-   ssh pi 'cd ~/robots/rovac && git pull'
-   ```
-3. Pi auto-starts the edge stack (if installed):
-   - `rovac-edge.target` (hiwonder board + TF publisher + mux + stereo cameras)
-   - If systemd unit files changed, reload and restart:
-     ```bash
-     ssh pi 'sudo systemctl daemon-reload && sudo systemctl restart rovac-edge.target'
-     ```
-4. On Mac, pull latest and source environment:
-   ```bash
-   cd ~/robots/rovac && git pull
-   source config/ros2_env.sh
-   ```
-5. Mac auto-starts the controller stack at login (if installed):
-   - launchd `com.rovac.controller` (joy_node + joy_mapper)
-6. Run brain nodes on Mac as needed (SLAM/Nav2/Foxglove)
-7. Robot responds to controller input
-
-### One-time Persistence Install (recommended)
-```bash
+ssh pi@192.168.1.200
 cd ~/robots/rovac
-./scripts/install_mac_autostart.sh install
 ./scripts/install_pi_systemd.sh install
 ```
 
----
+This installs udev rules and the `rovac-edge.target` service group.
 
-## Recovery Startup
+### Optional Mac helpers
 
-Use this if:
-- No controller
-- No network
-- ROS graph is broken
+If you rely on login-time helper processes, install them explicitly. They are not required for the core runtime path documented here.
 
-Steps:
+## Daily Bringup
 
-```bash
-# From Mac (recommended)
-cd ~/robots/rovac
-./scripts/standalone_control.sh restart
+### 1. Power the robot
 
-# Or restart edge stack directly on Pi
-ssh pi 'sudo systemctl restart rovac-edge.target'
-```
+- Verify the battery is charged
+- Turn the motor power switch ON
+- Wait for the Pi to boot and edge services to come up
 
-Manually launch brain nodes on Mac if needed:
-`./scripts/mac_brain_launch.sh slam|nav|foxglove`
-
----
-
-## systemd Services (on Pi)
-
-All services are grouped under **`rovac-edge.target`**.
-
-### Active Core Services
-
-| Service | Description |
-|---------|-------------|
-| `rovac-edge-hiwonder.service` | Hiwonder ROS Controller V1.2 (motors, QMI8658 IMU at ~72 Hz, dead-reckoning odom, battery) |
-| `rovac-edge-tf.service` | URDF/TF publisher (robot_state_publisher) |
-| `rovac-edge-mux.service` | cmd_vel multiplexer (`/cmd_vel_obstacle` + `/cmd_vel_joy` + `/cmd_vel_smoothed` -> `/cmd_vel`) |
-| `rovac-edge-map-tf.service` | Static map→odom TF (fallback when SLAM not running) |
-| `rovac-edge-supersensor.service` | Super Sensor board (4x HC-SR04 ultrasonic) |
-| `rovac-edge-stereo.target` | Stereo camera subsystem (groups depth + obstacle services) |
-| `rovac-edge-stereo-depth.service` | Stereo depth computation from dual USB cameras |
-| `rovac-edge-stereo-obstacle.service` | Obstacle detection from stereo depth → `/cmd_vel_obstacle` |
-
-### Inactive Services (hardware not currently connected)
-
-| Service | Description |
-|---------|-------------|
-| `rovac-edge-lidar.service` | XV11 LIDAR via ESP32 bridge (`/dev/esp32_lidar`) |
-| `rovac-edge-phone-sensors.service` | Phone IMU/GPS |
-| `rovac-edge-webcam.service` | NexiGo webcam |
-| `rovac-edge-sensors.service` | Deprecated — old BST-4WD board GPIO sensors (still running, high CPU) |
-| `rovac-edge-hiwonder.service` | **Disabled** — replaced by `rovac-edge-hiwonder.service` |
-| `rovac-edge-motor.service` | **Failed** — old GPIO motor driver, replaced by hiwonder |
-
-### Useful Commands
+### 2. Verify the Pi edge stack
 
 ```bash
-# Check overall edge stack status
-ssh pi 'sudo systemctl status rovac-edge.target'
-
-# Restart entire edge stack
-ssh pi 'sudo systemctl restart rovac-edge.target'
-
-# Check a specific service
-ssh pi 'sudo systemctl status rovac-edge-hiwonder.service'
-
-# View logs for a service (last 100 lines)
-ssh pi 'sudo journalctl -u rovac-edge-hiwonder.service -n 100 --no-pager'
-
-# View logs for the mux
-ssh pi 'sudo journalctl -u rovac-edge-mux.service -n 100 --no-pager'
+ssh pi@192.168.1.200 'sudo systemctl status rovac-edge.target'
 ```
 
-Disable for debugging:
+If unit files changed:
+
 ```bash
-ssh pi 'sudo systemctl stop rovac-edge.target'
+ssh pi@192.168.1.200 'sudo systemctl daemon-reload && sudo systemctl restart rovac-edge.target'
 ```
 
-### Manual Start on Pi
-
-If systemd services are not installed, you can start the ROS 2 environment manually on the Pi:
+### 3. Prepare the Mac environment
 
 ```bash
 cd ~/robots/rovac
-git pull
+conda activate ros_jazzy
 source config/ros2_env.sh
 ```
 
-The `ros2_env.sh` script auto-detects the OS (Linux vs. Darwin) and loads the correct DDS config and IP addresses for the Pi.
-
----
-
-## DDS Configuration (CycloneDDS Unicast)
-
-**Current Setup:** CycloneDDS with **unicast-only** peer discovery (multicast disabled).
-
-This configuration was chosen because:
-- Multicast routing can be unreliable across WiFi and wired interfaces on a home network
-- Unicast peer lists guarantee discovery between the two known machines
-- Eliminates multicast routing issues across different network interfaces
-
-### Configuration Files
-
-| File | Location | Binds To |
-|------|----------|----------|
-| `cyclonedds_mac.xml` | `config/` | `192.168.1.104` on en0 (WiFi) |
-| `cyclonedds_pi.xml` | `config/cyclonedds_pi.xml` (in repo) | `192.168.1.200` on eth0 |
-
-Both configs use the same structure:
-```xml
-<Interfaces>
-  <NetworkInterface address="<local-ip>" priority="default" multicast="false"/>
-</Interfaces>
-<Discovery>
-  <ParticipantIndex>auto</ParticipantIndex>
-  <Peers>
-    <Peer address="192.168.1.104"/>
-    <Peer address="192.168.1.200"/>
-  </Peers>
-</Discovery>
-```
-
-### Verify DDS is Working
-
-**Important:** On macOS, the ROS 2 daemon hangs with CycloneDDS. Always use `--no-daemon` with introspection commands.
+Verify:
 
 ```bash
-# On Mac - check environment
-source config/ros2_env.sh
-echo "RMW: $RMW_IMPLEMENTATION"
-echo "CYCLONEDDS_URI: $CYCLONEDDS_URI"
+echo "$ROS_DOMAIN_ID"
+echo "$RMW_IMPLEMENTATION"
+echo "$CYCLONEDDS_URI"
+```
 
-# List topics (use --no-daemon to avoid daemon hang on macOS)
-# Should see Pi topics after ~3s discovery
+### 4. Check discovery
+
+```bash
 ros2 topic list --no-daemon
 ```
 
-### Common DDS Issues
+On macOS, use `--no-daemon` with topic listing. Do not use it with `ros2 topic hz`.
+
+### 5. Start a brain workflow
+
+```bash
+./scripts/mac_brain_launch.sh slam-ekf
+./scripts/mac_brain_launch.sh slam
+./scripts/mac_brain_launch.sh nav ~/maps/house.yaml
+./scripts/mac_brain_launch.sh foxglove
+```
+
+### 6. Teleoperate
+
+```bash
+python3 scripts/keyboard_teleop.py
+```
+
+By default the teleop script SSHes to the Pi and publishes to `/cmd_vel_teleop`.
+
+## What The Pi Starts By Default
+
+`rovac-edge.target` currently starts:
+
+- `rovac-edge-motor-driver.service`
+- `rovac-edge-rplidar-c1.service`
+- `rovac-edge-mux.service`
+- `rovac-edge-tf.service`
+- `rovac-edge-map-tf.service`
+- `rovac-edge-obstacle.service`
+- `rovac-edge-supersensor.service`
+- `rovac-edge-health.service`
+- `rovac-edge-rosbridge.service`
+- `rovac-edge-ps2-joy.service`
+- `rovac-edge-ps2-mapper.service`
+
+Optional services for phone sensors, phone cameras, stereo, and webcam are available but are not part of the default edge target.
+
+## Primary Verification Commands
+
+```bash
+# Pi service state
+ssh pi@192.168.1.200 'sudo systemctl status rovac-edge.target'
+
+# Topics on the Mac
+ros2 topic list --no-daemon
+ros2 topic hz /odom
+ros2 topic hz /imu/data
+ros2 topic hz /scan
+
+# Health and diagnostics
+ros2 topic echo /diagnostics --once
+ros2 topic echo /rovac/edge/health --once
+```
+
+## Recovery Commands
+
+```bash
+# Restart the entire edge stack
+ssh pi@192.168.1.200 'sudo systemctl restart rovac-edge.target'
+
+# Restart one service
+ssh pi@192.168.1.200 'sudo systemctl restart rovac-edge-motor-driver.service'
+
+# Lidar only
+ssh pi@192.168.1.200 'sudo systemctl restart rovac-edge-rplidar-c1.service'
+
+# Show recent logs
+ssh pi@192.168.1.200 'sudo journalctl -u rovac-edge-motor-driver.service -n 100 --no-pager'
+```
+
+## Optional Sensor Workflows
+
+### Phone sensors
+
+```bash
+ssh pi@192.168.1.200 'sudo systemctl start rovac-edge-phone-sensors.service'
+```
+
+### Phone cameras
+
+```bash
+ssh pi@192.168.1.200 'sudo systemctl start rovac-phone-cameras.service'
+```
+
+### Stereo
+
+```bash
+ssh pi@192.168.1.200 'sudo systemctl start rovac-edge-stereo.target'
+```
+
+## Note on rplidar_ros
+
+The LIDAR service uses `rplidar_ros` (patched Slamtec driver), cloned separately on the Pi. It is not tracked in this shared Git repo and is not needed on the Mac.
+
+## DDS Troubleshooting
+
+CycloneDDS with **unicast-only** peer discovery (multicast disabled) is used because multicast routing is unreliable across WiFi interfaces on a home network.
+
+### Configuration files
+
+| File | Binds to |
+|------|----------|
+| `config/cyclonedds_mac.xml` | Mac en0 (WiFi, DHCP — auto-detected) |
+| `config/cyclonedds_pi.xml` | Pi wlan0 (`192.168.1.200`) |
+
+### Verify DDS is working
+
+```bash
+source config/ros2_env.sh
+echo "RMW: $RMW_IMPLEMENTATION"        # rmw_cyclonedds_cpp
+echo "DDS: $CYCLONEDDS_URI"            # should point to .xml
+ros2 topic list --no-daemon            # wait 3-5s for discovery
+```
+
+### Common DDS issues
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `ros2 topic list` hangs | macOS daemon issue with CycloneDDS | Use `ros2 topic list --no-daemon` |
-| No topics discovered | Wrong interface in XML | Verify `192.168.1.104` on Mac en0, `192.168.1.200` on Pi eth0 |
-| No topics discovered | Pi nodes not running | `ssh pi 'sudo systemctl status rovac-edge.target'` |
+| `ros2 topic list` hangs | macOS daemon issue with CycloneDDS | Use `--no-daemon` |
+| No topics discovered | Wrong interface in XML | Verify Mac IP matches en0, run `source config/ros2_env.sh` to re-sync |
+| No topics discovered | Pi nodes not running | `ssh pi@192.168.1.200 'sudo systemctl status rovac-edge.target'` |
 | Partial discovery | Firewall blocking UDP | `sudo pfctl -d` on Mac |
-| Topics appear then vanish | IP address changed (DHCP) | Confirm static IPs match XML configs |
-
-### Legacy: Static Peers (Not Recommended)
-
-The `ROS_STATIC_PEERS` environment variable is **not used** with CycloneDDS.
-Peer discovery is configured in the XML files instead.
-
----
+| Topics appear then vanish | IP changed (DHCP) | Re-run `source config/ros2_env.sh` (auto-detects and syncs) |
 
 ## "Robot Won't Move" Checklist
 
-### 1. Power
-- Motor driver LED on
-- Battery voltage OK
-
-### 2. Status Feedback
-- Check LED color (Green = OK, Red = Error)
-- Listen for beeps
-- See `docs/feedback_patterns.md` for codes
-
-### 3. ROS Graph
-```bash
-ros2 topic list --no-daemon
-```
-- `/cmd_vel` present
-
-### 4. Input
-```bash
-ros2 topic echo /cmd_vel_joy --no-daemon
-```
-- Values changing when controller moves
-
-### 5. Edge Stack (Pi)
-```bash
-ssh pi 'sudo systemctl status rovac-edge.target'
-ssh pi 'sudo systemctl status rovac-edge-hiwonder.service'
-```
-
-### 6. DDS
-- Correct XML loaded (`echo $CYCLONEDDS_URI`)
-- No firewall blocking DDS UDP
-- Using `--no-daemon` for all `ros2` CLI commands on Mac
-
-### 7. Safety
-- Deadman button held
-- No emergency stop active
-
-### 8. Motors
-- Hiwonder board node running (`rovac-edge-hiwonder.service`)
-- USB serial `/dev/hiwonder_board` accessible
-- **Motor power switch must be ON** for motors to spin
-
----
+1. **Power**: Motor driver switch ON, battery voltage > 8V
+2. **Motor service**: `ssh pi@192.168.1.200 'systemctl is-active rovac-edge-motor-driver'`
+3. **USB connected**: `ssh pi@192.168.1.200 'ls -la /dev/esp32_motor'`
+4. **Odom flowing**: `ros2 topic hz /odom` — expect ~20 Hz
+5. **Stale publishers**: `ssh pi@192.168.1.200 'pgrep -a -f "ros2 topic pub.*cmd_vel"'` — kill any found
+6. **Mux running**: `ssh pi@192.168.1.200 'systemctl is-active rovac-edge-mux'`
+7. **DDS working**: `echo $ROS_DOMAIN_ID` should be 42, `echo $CYCLONEDDS_URI` should point to XML
+8. **Input reaching mux**: `ros2 topic echo /cmd_vel_teleop --once` — verify values when pressing keys
 
 ## Notes
 
-- If in doubt, reboot and follow **Normal Startup** again
-- Always use `--no-daemon` with `ros2` CLI commands on macOS to avoid CycloneDDS daemon hangs
-- LIDAR uses `/dev/esp32_lidar` (ESP32 bridge), not `/dev/ttyAMA0`
-- **Shared files:** `~/robots/rovac/shared/` is a Syncthing P2P sync folder between Mac and Pi. Drop files there to transfer between machines instantly (see README for details).
-- Keep this file updated when hardware or launch flow changes
+- The current bringup path is Pi systemd plus Mac brain launch scripts.
+- Legacy scripts still exist in-tree but are no longer the primary path.
+- Keep this file aligned with service names, topic owners, and the current architecture docs.

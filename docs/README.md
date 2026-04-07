@@ -1,33 +1,55 @@
 # ROVAC Documentation
 
-This directory contains documentation for the ROVAC robot project.
+This directory now separates current operator documentation from archived iteration-era material.
 
-## Table of Contents
+## Start Here
 
-### Core Documentation
-- [`architecture.md`](architecture/architecture.md) - System architecture overview
-- [`ARCHITECTURE_VERIFIED.md`](architecture/ARCHITECTURE_VERIFIED.md) - Verified system architecture with component details and data flow
+- [`ACTIVE_REPO_MAP.md`](ACTIVE_REPO_MAP.md): active files and directories by subsystem
+- [`architecture/architecture.md`](architecture/architecture.md): current architecture and ownership boundaries
+- [`architecture/ARCHITECTURE_VERIFIED.md`](architecture/ARCHITECTURE_VERIFIED.md): deployment-aligned snapshot of the live stack
+- [`guides/bringup.md`](guides/bringup.md): bringup and daily operator workflow
+- [`troubleshooting/field_recovery_checklist.md`](troubleshooting/field_recovery_checklist.md): fast recovery checklist
+- [`ros2_reference_card.md`](ros2_reference_card.md): daily ROS 2 commands
+- [`robot_dimensions.md`](robot_dimensions.md): current frame geometry derived from the active URDF
 
-### Operational Guides
-- [`bringup.md`](guides/bringup.md) - System bringup procedures and troubleshooting
-- [`feedback_patterns.md`](guides/feedback_patterns.md) - System feedback and status indicators (LED, buzzer)
+## Current Documentation Areas
 
-### Troubleshooting
-- [`field_recovery_checklist.md`](troubleshooting/field_recovery_checklist.md) - Field recovery procedures
+### Architecture
 
-### Hardware Programming
-- [`pic16f917_programmer.md`](guides/pic16f917_programmer.md) - PIC16F917 programmer documentation
+- [`architecture/architecture.md`](architecture/architecture.md)
+- [`architecture/ARCHITECTURE_VERIFIED.md`](architecture/ARCHITECTURE_VERIFIED.md)
 
-### Reference Files
-- [`QR_CODE_URL.txt`](QR_CODE_URL.txt) - QR code reference URLs
+### Operations
 
-## Overview
+- [`guides/bringup.md`](guides/bringup.md)
+- [`troubleshooting/field_recovery_checklist.md`](troubleshooting/field_recovery_checklist.md)
+- [`ros2_reference_card.md`](ros2_reference_card.md)
+- [`guides/feedback_patterns.md`](guides/feedback_patterns.md)
 
-The documentation covers:
-1. System architecture and component interactions
-2. Hardware setup and configuration
-3. Software installation and bringup procedures
-4. Troubleshooting and recovery procedures
-5. Custom hardware development
+### Specialized Reference
 
-For project instructions and quick start, see [`CLAUDE.md`](../CLAUDE.md) in the project root.
+- [`robot_dimensions.md`](robot_dimensions.md)
+- [`guides/pic16f917_programmer.md`](guides/pic16f917_programmer.md)
+- [`QR_CODE_URL.txt`](QR_CODE_URL.txt)
+
+## Documentation Policy
+
+- Current runtime documentation should match the active ESP32 USB serial + Pi edge + Mac brain architecture.
+- Historical plans, phase summaries, and superseded wiring or wireless-architecture docs belong under [`archive/`](archive/README.md).
+- When runtime behavior changes, update both the operator-facing docs and the architecture snapshot in the same change.
+
+## Source Of Truth
+
+When docs disagree, trust these first:
+
+- `CLAUDE.md`
+- `AGENTS.md`
+- `config/systemd/`
+- `config/ros2_env.sh`
+- `scripts/mac_brain_launch.sh`
+- `ros2_ws/src/rovac_motor_driver/`
+- `ros2_ws/src/tank_description/`
+
+## Archive
+
+Archived docs live under [`archive/`](archive/README.md). That includes older wireless-era plans, wiring references from earlier hardware generations, and project phase summaries.

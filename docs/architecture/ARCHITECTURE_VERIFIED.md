@@ -1,230 +1,97 @@
 # ROVAC Architecture (Verified)
 
-**Last Updated:** 2026-02-18
+Last aligned against the repository on 2026-04-07.
 
-**System:**
-- **Brain:** MacBook Pro (Nav2, SLAM, Controllers, Logic) at `192.168.1.104`
-- **Edge:** Raspberry Pi 5 (Drivers, Sensors, Mux) at `192.168.1.200`
-- **Network:** Home network (`192.168.1.x` subnet, AT&T router at `192.168.1.254`)
-- **Internet:** Direct via home network (no tethering needed)
-- **Middleware:** ROS 2 Jazzy + CycloneDDS (unicast-only)
+This file is a deployment-aligned snapshot of what the current repository is set up to run. It is intentionally narrower than the broader architecture document.
 
-## Working Components
+## Verified Against
+
+- `config/systemd/rovac-edge.target`
+- `config/systemd/rovac-edge-*.service`
+- `config/ros2_env.sh`
+- `scripts/mac_brain_launch.sh`
+- `scripts/ekf_launch.py`
+- `common/serial_protocol.h`
+- `ros2_ws/src/rovac_motor_driver/`
+- `ros2_ws/src/tank_description/`
+
+## Current Topology
+
+| Layer | Host | Current responsibility |
+|------|------|------------------------|
+| ESP32 motor controller | On robot | Motor control, odometry, BNO055, serial framing |
+| Pi edge stack | `192.168.1.200` | Drivers, mux, TF, safety, rosbridge, optional peripherals |
+| Mac brain | DHCP on `en0` | SLAM, Nav2, EKF, Foxglove, teleop |
+| DDS | CycloneDDS | Unicast-only peer discovery, `ROS_DOMAIN_ID=42` |
+
+## Core Runtime Components
 
 | Component | Status | Location | Notes |
 |-----------|--------|----------|-------|
-| Hiwonder Board Node | Working | Pi | `hiwonder_driver.py` - Motors, IMU (QMI8658 6-axis), Odom (dead-reckoning), Battery via USB serial `/dev/hiwonder_board` (CH9102, 1Mbaud) |
-| Yahboom Board Node | **Replaced** | Pi | Disabled — replaced by Hiwonder ROS Controller V1.2 |
-| cmd_vel Mux | Working | Pi | Routes `/cmd_vel_obstacle` (highest) + `/cmd_vel_joy` + `/cmd_vel_smoothed` -> `/cmd_vel` |
-| TF Publisher | Working | Pi | `robot_state_publisher` - URDF transforms |
-| Super Sensor | Working | Pi | `super_sensor_node` - 4x HC-SR04 ultrasonic via Arduino Nano |
-| Obstacle Detector | Working | Pi | `obstacle_detector` (stereo depth) + `obstacle_avoidance_node` (super sensor) |
-| Stereo Cameras | Working | Pi | 2x USB cameras, StereoSGBM depth, ~2-3 Hz, 102.67mm baseline |
-| LIDAR (XV11) | Disconnected | Pi | ESP32 USB bridge at `/dev/esp32_lidar`, service `rovac-edge-lidar.service` |
-| Phone Camera | Disconnected | Pi | scrcpy + v4l2loopback, service `rovac-edge-camera.service` |
-| Joy Node | Working | Mac | `ros2 run joy joy_node` via launchd - reads Pro Controller |
-| Joy Mapper | Working | Mac | `joy_mapper_node.py` via launchd - maps inputs to topics |
-| DDS (CycloneDDS) | Working | Both | Unicast peer discovery (multicast disabled) |
-| Syncthing (File Sync) | Working | Both | P2P file sync via `~/robots/rovac/shared/`, LAN-only, TLS-encrypted |
+| ESP32 firmware | Active | `hardware/esp32_motor_wireless/` | USB serial COBS transport |
+| Shared serial protocol | Active | `common/serial_protocol.h` | Message types, payloads, CRC |
+| Pi motor driver | Active | `ros2_ws/src/rovac_motor_driver/` | Publishes `/odom`, `/imu/data`, `/diagnostics`, optional `/tf` |
+| Velocity mux | Active | `ros2_ws/src/tank_description/tank_description/cmd_vel_mux.py` | Human override over safety and Nav2 |
+| URDF / TF model | Active | `ros2_ws/src/tank_description/urdf/tank.urdf` | Current frame geometry |
+| Mac brain launcher | Active | `scripts/mac_brain_launch.sh` | `slam`, `slam-ekf`, `nav`, `ekf`, `ekf-gps`, `foxglove` |
+| Pi edge installer | Active | `scripts/install_pi_systemd.sh` | Installs units and udev rules on the Pi |
+| Optional MCP server | Sidecar | `robot_mcp_server/` | Not part of core bringup |
 
-## Data Flow
+## Verified Pi Services
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                                    MAC (192.168.1.104)                          │
-│                                                                                 │
-│  Pro Controller ──> joy_node ──> /tank/joy ──> joy_mapper_node                 │
-│                                                        │                        │
-│                                    ┌───────────────────┼───────────────────┐   │
-│                                    │                   │                   │   │
-│                                    v                   v                   v   │
-│                              /cmd_vel_joy      /sensors/*_cmd        /tank/speed│
-└────────────────────────────────────┬───────────────────┬───────────────────┬───┘
-                                     │                   │                   │
-                              Home Network (WiFi/Eth via 192.168.1.254)
-                                     │                   │                   │
-┌────────────────────────────────────v───────────────────v───────────────────v───┐
-│                                    PI (192.168.1.200)                           │
-│                                                                                 │
-│  /cmd_vel_obstacle ─┐                                                        │
-│  /cmd_vel_joy ─────>│ cmd_vel_mux ──> /cmd_vel ──> hiwonder_driver ──> Motors │
-│  /cmd_vel_smoothed ─┘                                      │                  │
-│                                                             │                  │
-│  hiwonder_driver ──> /imu/data (~72Hz, 6-axis QMI8658)    │                  │
-│                   ──> /odom (dead-reckoning + gyro Z)       │                  │
-│                   ──> /battery_voltage (Float32)            │                  │
-│                   ──> /diagnostics                          │                  │
-│                                                                                 │
-│  super_sensor_node ──> /super_sensor/ranges                                    │
-│  obstacle_detector ──> /obstacles                                              │
-│  robot_state_publisher ──> /tf, /tf_static                                     │
-│                                                                                 │
-│  [Disconnected] XV11 LIDAR ──> /scan                                           │
-│  [Disconnected] Phone Camera ──> /phone/camera/image_raw                       │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
+These are the services the default edge target tries to start:
 
-## Controller Mapping (Nintendo Pro Controller on macOS)
+- `rovac-edge-motor-driver.service`
+- `rovac-edge-rplidar-c1.service`
+- `rovac-edge-mux.service`
+- `rovac-edge-tf.service`
+- `rovac-edge-map-tf.service`
+- `rovac-edge-obstacle.service`
+- `rovac-edge-supersensor.service`
+- `rovac-edge-health.service`
+- `rovac-edge-rosbridge.service`
+- `rovac-edge-ps2-joy.service`
+- `rovac-edge-ps2-mapper.service`
 
-| Control | Topic | Action |
-|---------|-------|--------|
-| Left Stick | `/cmd_vel_joy` | Drive (linear.x + angular.z) |
-| Right Stick X | `/sensors/servo_cmd` | Pan servo (-90 to +90 degrees) |
-| ZL Trigger | `/cmd_vel_joy` | Reverse (proportional) |
-| ZR Trigger | `/cmd_vel_joy` | Forward (proportional) |
-| L Bumper | `/cmd_vel_joy` | Turn left |
-| R Bumper | `/cmd_vel_joy` | Turn right |
-| D-Pad Up/Down | `/tank/speed` | Speed +/- 10% |
-| Y Button | `/tank/speed` | Cycle speed mode (30/60/100%) |
-| A Button | `/sensors/led_cmd` | Toggle LED on/off |
-| X Button | `/sensors/led_cmd` | Cycle LED colors |
-| B Button | `/sensors/buzzer_cmd` | Buzzer (held) |
+Optional but separate units also exist for stereo, phone sensors, phone cameras, and webcam.
 
-## Quick Start
+## Key Topics
 
-### 0. One-time Persistence Setup (recommended)
-```bash
-cd ~/robots/rovac
-./scripts/install_mac_autostart.sh install   # macOS launchd: joy_node + joy_mapper
-./scripts/install_pi_systemd.sh install      # Pi systemd: motors + sensors + mux + lidar
-```
+| Topic | Source | Notes |
+|------|--------|-------|
+| `/odom` | `rovac_motor_driver` | Wheel odometry from ESP32 |
+| `/imu/data` | `rovac_motor_driver` | BNO055 output from ESP32 |
+| `/diagnostics` | `rovac_motor_driver` | Motor/IMU health |
+| `/scan` | `rplidar_ros` on Pi | Expected from RPLIDAR C1 |
+| `/cmd_vel_teleop` | Keyboard teleop | Highest mux priority |
+| `/cmd_vel_joy` | PS2 mapper | Human control |
+| `/cmd_vel_obstacle` | Safety nodes | Overrides Nav2 but not human control |
+| `/cmd_vel_smoothed` | Nav2 | Lowest mux priority |
+| `/cmd_vel` | Mux output | Only the mux should publish here |
+| `/odometry/filtered` | EKF on Mac | Produced when EKF is running |
 
-### 1. Power On
-1. Turn on Robot (battery switch). Pi auto-connects to home network.
-2. No need to connect Ethernet cable or Android phone anymore.
+## Control Arbitration
 
-### 2. Start Control Stack (Mac Terminal)
-```bash
-cd ~/robots/rovac
-conda activate ros_jazzy
-source config/ros2_env.sh
-```
+Current priority order in the live mux implementation:
 
-### 3. Verify System (Mac)
-```bash
-# Check topics (wait 3s for discovery)
-# IMPORTANT: --no-daemon flag is needed on macOS
-ros2 topic list --no-daemon
+1. `/cmd_vel_teleop`
+2. `/cmd_vel_joy`
+3. `/cmd_vel_obstacle`
+4. `/cmd_vel_smoothed`
 
-# Expected topics:
-#   /cmd_vel
-#   /cmd_vel_joy
-#   /cmd_vel_obstacle
-#   /tank/speed
-#   /imu/data          (QMI8658 6-axis, ~72Hz)
-#   /odom              (dead-reckoning, 20Hz)
-#   /battery_voltage   (Float32)
-#   /diagnostics
-#   /super_sensor/ranges
-#   /obstacles
-#   /stereo/depth/image_raw
-#   /tf
-#   /tf_static
-#   /sensors/servo_cmd
-#   /sensors/led_cmd
-#   /sensors/buzzer_cmd
-```
+This matches the current human-override design in `cmd_vel_mux.py`.
 
-### 4. Drive the Robot
-- Connect Pro Controller via Bluetooth
-- Use Left Stick to drive
-- Use triggers for forward/reverse
+## Notes
 
-### 5. Stop
-```bash
-./scripts/standalone_control.sh stop
-```
+- `rplidar_ros` is cloned separately on the Pi (patched Slamtec driver) and is not tracked in this shared Git repo. The LIDAR service runs on the Pi only.
+- Legacy packages are still present in `ros2_ws/src/` but are not part of the current bringup path.
+- Historical docs from older wireless, XV-11, and Hiwonder eras have been moved under `docs/archive/`.
 
-## Manual Start (Debugging)
+## Practical Reading Order
 
-### On Pi (SSH)
-```bash
-ssh pi
+If you need to change behavior:
 
-# Systemd (preferred)
-sudo systemctl status rovac-edge.target
-sudo systemctl restart rovac-edge.target
-sudo journalctl -u rovac-edge-hiwonder.service -n 100 --no-pager
-
-# Manual env (fallback)
-cd ~/robots/rovac
-git pull
-source config/ros2_env.sh
-```
-
-### On Mac
-```bash
-cd ~/robots/rovac
-conda activate ros_jazzy
-source config/ros2_env.sh
-
-# launchd (preferred)
-./scripts/install_mac_autostart.sh status
-./scripts/install_mac_autostart.sh restart
-
-# Manual start (fallback)
-ros2 run joy joy_node --ros-args -p device_id:=0 -p autorepeat_rate:=20.0 -r joy:=/tank/joy &
-python3 scripts/joy_mapper_node.py &
-```
-
-## Configuration Files
-
-| File | Location | Purpose |
-|------|----------|---------|
-| `config/ros2_env.sh` | Both (same repo on Mac + Pi) | ROS2 environment setup (auto-detects OS) |
-| `config/cyclonedds_mac.xml` | Both (used on Mac) | DDS config - peers to `192.168.1.104`, `.200` |
-| `config/cyclonedds_pi.xml` | Both (used on Pi) | DDS config - peers to `192.168.1.200`, `.104` |
-| `scripts/joy_mapper_node.py` | Mac | Controller input mapping |
-| `scripts/standalone_control.sh` | Mac | Full stack launcher |
-
-## Network Topology
-
-```
-Mac (192.168.1.104)                    Pi (192.168.1.200)
-     en0 (WiFi)                             eth0
-         │                                    │
-         └──── AT&T Router (192.168.1.254) ───┘
-                    (Home Network)
-```
-
-## CycloneDDS Configuration
-
-**IMPORTANT:** Both Mac and Pi configs must include BOTH peer addresses for full discovery:
-- `192.168.1.104` (Mac)
-- `192.168.1.200` (Pi - required for Pi-to-Pi local communication!)
-
-Without the Pi's own address as a peer, nodes running on Pi cannot discover each other via unicast DDS.
-
-## Troubleshooting
-
-### Robot not moving when using controller?
-1. Check joy_node is receiving input: `ros2 topic echo /tank/joy --no-daemon`
-2. Check joy_mapper is publishing: `ros2 topic echo /cmd_vel_joy --no-daemon`
-3. Check Pi edge stack: `ssh pi "sudo systemctl status rovac-edge.target"`
-4. Check mux + yahboom logs: `ssh pi "sudo journalctl -u rovac-edge-mux.service -n 50 --no-pager; sudo journalctl -u rovac-edge-hiwonder.service -n 50 --no-pager"`
-
-### Buttons (LED, buzzer) not working?
-1. Sensors service must be active: `ssh pi "sudo systemctl status rovac-edge-sensors.service"`
-2. Restart it: `ssh pi "sudo systemctl restart rovac-edge-sensors.service"`
-3. If buzzer still fails, confirm SPI is disabled (GPIO8): `ssh pi "grep -n '^dtparam=spi' /boot/firmware/config.txt"`
-
-### No topics discovered?
-1. Wait 3-5 seconds (unicast discovery is slower)
-2. Check CycloneDDS config: `echo $CYCLONEDDS_URI`
-3. Verify network: `ping 192.168.1.200`
-4. Check Pi DDS config has BOTH peer addresses
-5. Always use `--no-daemon` flag: `ros2 topic list --no-daemon`
-
-### LIDAR not publishing? (currently disconnected)
-1. Check service: `ssh pi "sudo systemctl status rovac-edge-lidar.service"`
-2. Restart LIDAR: `ssh pi "sudo systemctl restart rovac-edge-lidar.service"`
-3. Confirm ESP32 USB bridge device: `ssh pi "ls -la /dev/esp32_lidar"`
-
-### Phone camera not publishing? (currently disconnected)
-1. Check service: `ssh pi "sudo systemctl status rovac-edge-camera.service"`
-2. Restart camera: `ssh pi "sudo systemctl restart rovac-edge-camera.service"`
-3. Confirm ADB sees phone: `ssh pi "adb devices"`
-
-### GPIO busy error?
-1. Kill orphan processes: `ssh pi "pkill -9 -f hiwonder_driver"`
-2. Check USB serial: `ssh pi "ls -la /dev/hiwonder_board"`
+1. Start with `docs/ACTIVE_REPO_MAP.md`
+2. Read the relevant live config in `config/`
+3. Read the responsible runtime package or script
+4. Confirm how the Pi service or Mac launcher actually starts it

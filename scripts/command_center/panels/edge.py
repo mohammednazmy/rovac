@@ -200,7 +200,7 @@ class EdgePanel(Widget):
     def _update_pi_stats(self, state: dict) -> None:
         edge = state.get("edge_health", {})
         sys_info = edge.get("system", {})
-        agent = edge.get("agent", {})
+        transport = edge.get("agent", {})
 
         if not sys_info:
             try:
@@ -215,11 +215,11 @@ class EdgePanel(Widget):
         ram = sys_info.get("memory_percent", 0)
         temp = sys_info.get("cpu_temp", 0)
         disk = sys_info.get("disk_percent", 0)
-        rss = agent.get("rss_mb", 0)
+        rss = transport.get("rss_mb", 0)
 
         text = (
             f"CPU: {cpu:5.1f}%    RAM: {ram:5.1f}%    Temp: {temp:4.1f}°C\n"
-            f"Disk: {disk:4.1f}%    Agent RSS: {rss:.1f} MB"
+            f"Disk: {disk:4.1f}%    Motor driver RSS: {rss:.1f} MB"
         )
         try:
             self.query_one("#edge-pi-stats", Static).update(text)

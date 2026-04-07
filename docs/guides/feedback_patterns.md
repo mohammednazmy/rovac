@@ -1,58 +1,43 @@
-# Robot Feedback Patterns
+# Operator Feedback And Status Signals
 
-This document describes the audio (buzzer) and visual (LED) feedback patterns used by the robot to communicate status and recovery states.
+This document covers operator-visible feedback in the current stack.
 
----
+The important distinction is that most status information now comes from ROS topics, systemd state, Foxglove, and the command center UI. LED and buzzer behavior are optional and depend on the super sensor and controller integrations being connected.
 
-## 🔊 Buzzer Patterns
+## Primary Status Sources
 
-The robot uses a piezo buzzer for audible feedback.
+Use these first:
 
-| Pattern Name | Sequence | Meaning |
-|--------------|----------|---------|
-| **short** | `•` (0.1s) | Command received / Acknowledge |
-| **long** | `▬` (0.5s) | Operation complete / Mode switch |
-| **happy** | `• • ▬` | Success / Ready / Connected |
-| **sad** | `▬ ▬ ▬` | Error / Disconnected / Failure |
-| **sos** | `••• ▬▬▬ •••` | Emergency / Critical Error |
+- `sudo systemctl status rovac-edge.target`
+- `/diagnostics`
+- `/rovac/edge/health`
+- Foxglove
+- service logs via `journalctl`
 
-**Test Command:**
-```bash
-# Via MCP tool
-call_tool beep times=1 pattern="happy"
-```
+## Optional Buzzer Meanings
 
----
+Where a buzzer is wired through the super sensor or related control path, these meanings are reasonable conventions:
 
-## 💡 LED Status
+| Pattern | Meaning |
+|---------|---------|
+| short beep | acknowledgement |
+| long beep | mode change or completed action |
+| repeating triple beep | failure or blocked state |
 
-The RGB LED indicates power and software state.
+These are conventions, not a guaranteed contract across all hardware configurations in the repo.
+
+## Optional LED Meanings
+
+If the RGB LED path is wired and active:
 
 | Color | Meaning |
 |-------|---------|
-| **Green** | Normal Operation / Idle |
-| **Blue** | Teleoperation Active (Manual Control) |
-| **Red** | Error / E-Stop Active |
-| **Yellow** | Warning / Obstacle Detected |
-| **Cyan** | Autonomous Mode (Nav2/SLAM) |
-| **Magenta** | Service Processing (Thinking) |
-| **White** | Flashlight / Camera Illuminator |
-| **Off** | Deep Sleep / Power Save |
+| Green | edge stack healthy / idle |
+| Blue | teleop active |
+| Yellow | warning or obstacle condition |
+| Red | error, stop condition, or degraded runtime |
+| Off | unavailable, disabled, or not wired |
 
-**Test Command:**
-```bash
-# Via MCP tool
-call_tool set_led color="blue"
-call_tool flash_led color="red" times=5
-```
+## Practical Rule
 
----
-
-## Recovery State Indicators
-
-When restarting the stack (recommended: `./scripts/standalone_control.sh restart`):
-
-1.  **Power On:** Power LED (Hardware) lights up.
-2.  **Service Start:** System default (usually Green or Off).
-3.  **Controller Connect:** Controller vibration + Solid **Blue** (typically set by `joy_mapper_node`).
-4.  **Error:** If robot fails to move, listen for **sad** beeps or look for **Red** LED flashes.
+If LED or buzzer state disagrees with ROS diagnostics or service state, trust the software-visible state first. The current runtime is designed around systemd and ROS observability, not around standalone light or sound codes.

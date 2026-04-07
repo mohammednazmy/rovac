@@ -84,7 +84,8 @@ class DashboardPanel(Widget):
         edge = state.get("edge_health", {})
         net = edge.get("network", {})
 
-        esp_motor_ok = net.get("esp32_motor", {}).get("reachable")
+        usb = edge.get("usb", {})
+        esp_motor_ok = usb.get("esp32_motor")
         pi_ok = bool(edge)
         fox_ok = proc_status.get("foxglove") == "running"
 
@@ -133,7 +134,7 @@ class DashboardPanel(Widget):
     def _update_pi_system(self, state: dict) -> None:
         edge = state.get("edge_health", {})
         sys_info = edge.get("system", {})
-        agent = edge.get("agent", {})
+        transport = edge.get("agent", {})
 
         if not sys_info:
             self.query_one("#dash-pi-system", Static).update(
@@ -145,12 +146,12 @@ class DashboardPanel(Widget):
         ram = sys_info.get("memory_percent") or 0
         temp = sys_info.get("cpu_temp") or 0
         disk = sys_info.get("disk_percent") or 0
-        rss = agent.get("rss_mb") or 0
+        rss = transport.get("rss_mb") or 0
 
         text = (
             f"CPU {_bar(cpu)}  RAM {_bar(ram)}\n"
             f"Temp {temp:.0f}°C  Disk {_bar(disk)}\n"
-            f"Agent {rss:.0f} MB RSS"
+            f"Motor driver {rss:.0f} MB RSS"
         )
         self.query_one("#dash-pi-system", Static).update(text)
 

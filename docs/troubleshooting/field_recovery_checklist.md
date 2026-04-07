@@ -1,98 +1,109 @@
-# ROVAC – Field Recovery Checklist
+# ROVAC Field Recovery Checklist
 
-**Use this when the robot is dead, unresponsive, or unsafe.**
+Use this when the robot is unresponsive, unsafe, or only partially online.
 
----
+## 1. Power
 
-## 1. Power (30s)
 - Battery charged
 - Main switch ON
-- Motor driver LED lit
+- Pi powered
+- Motor power switch ON
 
----
+If the robot moves erratically, stop here and cut power immediately.
 
-## 2. Network (30s)
+## 2. Network
+
 ```bash
 ping 192.168.1.200
 ```
-- If fail: check Pi is powered and on home network (192.168.1.x)
 
----
+If the Pi does not respond, fix power or network connectivity first.
 
-## 3. SSH (30s)
+## 3. SSH
+
 ```bash
-ssh pi
+ssh pi@192.168.1.200
 ```
 
----
+If SSH fails but ping works, check the Pi locally before touching ROS.
 
-## 4. ROS / DDS (60s)
+## 4. Edge Stack
+
+```bash
+ssh pi@192.168.1.200 'sudo systemctl status rovac-edge.target'
+```
+
+If degraded, restart:
+
+```bash
+ssh pi@192.168.1.200 'sudo systemctl restart rovac-edge.target'
+```
+
+## 5. ROS / DDS From The Mac
+
 ```bash
 cd ~/robots/rovac
 source config/ros2_env.sh
-echo $RMW_IMPLEMENTATION
 ros2 topic list --no-daemon
 ```
-- Expect `/scan`, `/tank/joy`, `/cmd_vel_joy` (and `/cmd_vel` once mux is up)
 
----
+Expected core topics:
 
-## 5. Restart Control Stack (30s)
+- `/odom`
+- `/imu/data`
+- `/diagnostics`
+- `/cmd_vel`
+- `/cmd_vel_teleop`
+- `/cmd_vel_joy`
+- `/scan`
+
+## 6. Sensor Split
+
+If `/odom` or `/imu/data` is missing:
+
 ```bash
-cd ~/robots/rovac
-./scripts/install_mac_autostart.sh restart
-./scripts/install_pi_systemd.sh restart
+ssh pi@192.168.1.200 'sudo systemctl status rovac-edge-motor-driver.service'
 ```
 
----
+If `/scan` is missing:
 
-## 6. Input Check (30s)
 ```bash
-ros2 topic echo /cmd_vel_joy
-```
-- Move controller
-- Values must change
-
----
-
-## 7. Emergency Manual Control
-
-**Automated Recovery (Mac):**
-```bash
-cd ~/robots/rovac
-./scripts/standalone_control.sh restart
+ssh pi@192.168.1.200 'sudo systemctl status rovac-edge-rplidar-c1.service'
 ```
 
-**Manual Fallback (Pi):**
+If `/cmd_vel` exists but motion does not:
+
 ```bash
-ssh pi 'sudo systemctl restart rovac-edge.target'
+ssh pi@192.168.1.200 'sudo systemctl status rovac-edge-mux.service'
 ```
 
----
+## 7. Safe Manual Drive Test
 
-## 8. Feedback Interpretation
-- **Sad Beep** (`▬ ▬ ▬`): Critical Failure
-- **Happy Beep** (`• • ▬`): System Ready
-- **Red LED**: Error / E-Stop
+```bash
+python3 scripts/keyboard_teleop.py
+```
 
-See `docs/feedback_patterns.md` for full list.
+If teleop cannot take control, stop and inspect the mux and motor-driver logs before trying Nav2.
 
----
+## 8. Logs
 
-## HARD STOP
-- If motors behave erratically → **POWER OFF IMMEDIATELY**
+```bash
+ssh pi@192.168.1.200 'sudo journalctl -u rovac-edge-motor-driver.service -n 80 --no-pager'
+ssh pi@192.168.1.200 'sudo journalctl -u rovac-edge-rplidar-c1.service -n 80 --no-pager'
+ssh pi@192.168.1.200 'sudo journalctl -u rovac-edge-mux.service -n 80 --no-pager'
+```
 
----
+## 9. Hard Stop Conditions
 
-✅ If all checks pass and robot still won’t move:
-- Motor wiring
-- GPIO device presence
-- DDS peer mismatch
+Power off immediately if:
 
----
+- motors spin without a live operator command
+- steering oscillates continuously
+- a service restart causes repeated runaway motion
+- battery or wiring smells hot
 
-**Scan for Updates:**
-[QR Code to: https://github.com/mohammednazmy/rovac/blob/main/docs/field_recovery_checklist.md]
-See `docs/QR_CODE_URL.txt` for link data.
+## QR Reference
 
-**Keep printed. Keep nearby.**
+Current URL:
+
+`https://github.com/mohammednazmy/rovac/blob/main/docs/troubleshooting/field_recovery_checklist.md`

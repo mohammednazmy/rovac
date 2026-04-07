@@ -5,9 +5,9 @@ ROVAC Edge Health Node — publishes comprehensive Pi edge health to ROS2.
 Publishes JSON to /rovac/edge/health (std_msgs/String) every 5 seconds:
   - System stats (CPU, memory, disk, temperature)
   - Systemd service status for all edge services
-  - Network reachability (ESP32 motor, Mac brain)
-  - USB device presence
-  - micro-ROS Agent process info
+  - Network reachability (Mac brain)
+  - USB device presence for core peripherals
+  - Transport process info for the motor driver (legacy field name: "agent")
 
 Runs on Raspberry Pi 5 (Ubuntu 24.04, ROS2 Jazzy).
 Does NOT depend on psutil — reads /proc and /sys directly.
@@ -31,13 +31,14 @@ from std_msgs.msg import String
 
 # Edge services to monitor
 SERVICES = [
-    'rovac-edge-uros-agent',
+    'rovac-edge-motor-driver',
     'rovac-edge-rplidar-c1',
     'rovac-edge-mux',
     'rovac-edge-tf',
     'rovac-edge-obstacle',
     'rovac-edge-supersensor',
     'rovac-edge-map-tf',
+    'rovac-edge-rosbridge',
     'rovac-edge-ps2-joy',
     'rovac-edge-ps2-mapper',
     'rovac-edge-health',
@@ -45,13 +46,14 @@ SERVICES = [
 
 # Network hosts to ping
 NETWORK_HOSTS = {
-    'esp32_motor': '192.168.1.221',
-    'mac_brain': '192.168.1.104',
+    'mac_brain': os.environ.get('ROVAC_REMOTE_IP', '192.168.1.89'),
 }
 
 # USB devices to check
 USB_DEVICES = {
     'esp32_motor': '/dev/esp32_motor',
+    'rplidar_c1': '/dev/rplidar_c1',
+    'super_sensor': '/dev/super_sensor',
 }
 
 PUBLISH_INTERVAL = 5.0
@@ -78,7 +80,7 @@ class EdgeHealthNode(Node):
             'services': self._get_services(),
             'network': self._get_network(),
             'usb': self._get_usb(),
-            'agent': self._get_agent_info(),
+            'agent': self._get_transport_info(),
         }
 
         msg = String()
@@ -284,14 +286,15 @@ class EdgeHealthNode(Node):
                 usb[name] = None
         return usb
 
-    # ── micro-ROS Agent Info ─────────────────────────────────────────────
+    # ── Transport process info ───────────────────────────────────────────
 
-    def _get_agent_info(self):
-        info = {'pid': None, 'rss_mb': None}
+    def _get_transport_info(self):
+        # Keep the "agent" JSON key for dashboard compatibility.
+        info = {'pid': None, 'rss_mb': None, 'service': 'rovac-edge-motor-driver'}
         try:
             result = subprocess.run(
                 ['systemctl', 'show', '-p', 'MainPID', '--value',
-                 'rovac-edge-uros-agent'],
+                 'rovac-edge-motor-driver'],
                 capture_output=True, text=True, timeout=2)
             pid_str = result.stdout.strip()
             if pid_str and pid_str != '0':
@@ -299,7 +302,7 @@ class EdgeHealthNode(Node):
                 info['pid'] = pid
                 info['rss_mb'] = self._get_process_rss_mb(pid)
         except Exception as e:
-            self.get_logger().debug(f'Agent info read failed: {e}')
+            self.get_logger().debug(f'Transport info read failed: {e}')
         return info
 
 

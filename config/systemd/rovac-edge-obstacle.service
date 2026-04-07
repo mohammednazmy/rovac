@@ -1,7 +1,7 @@
 [Unit]
 Description=ROVAC Obstacle Avoidance Node (Super Sensor integration)
 Wants=network-online.target rovac-edge-supersensor.service
-After=network-online.target rovac-edge-bst4wd.service rovac-edge-supersensor.service
+After=network-online.target rovac-edge-supersensor.service rovac-edge-mux.service
 PartOf=rovac-edge.target
 
 [Service]
