@@ -5,7 +5,7 @@
 ROVAC is a mobile robot (Yahboom G1 Tank) with a USB serial architecture:
 - **ESP32 Motor Controller** (on robot): USB serial COBS binary protocol — runs PID motor control, BNO055 IMU, publishes odom/tf/imu/diagnostics
 - **Raspberry Pi 5 (Edge)**: C++ motor driver node + sensor services at `192.168.1.200` (hostname: `rovac-pi`, user: `pi`)
-- **MacBook Pro (Brain)**: Nav2, SLAM, path planning, teleop at `192.168.1.104`
+- **MacBook Pro (Brain)**: Nav2, SLAM, path planning, teleop (DHCP IP, auto-detected from en0)
 
 Communication: ESP32 Motor ←USB COBS 460800 baud→ `rovac_motor_driver` C++ node on Pi ←CycloneDDS→ Mac. RPLIDAR C1 ←USB→ Pi (native ROS2 driver). Phone ←WebSocket→ rosbridge on Pi :9090 ←CycloneDDS→ Mac. All on `ROS_DOMAIN_ID=42`.
 
@@ -111,21 +111,21 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 ├── hardware/
 │   ├── esp32_motor_wireless/          # ACTIVE — USB serial motor firmware (ESP-IDF v5.2)
 │   ├── esp32_at8236_driver/           # Legacy Python USB serial driver (replaced by C++ node)
+│   ├── esp32_sensor_hub/              # ESP32 sensor hub (wiring docs)
+│   ├── as5600-magnetic-encoder/       # AS5600 encoder docs, test firmware, 3D mount
+│   ├── greartisan-zgb37rg-motor/      # Motor specs + AS5600 integration data
 │   ├── rplidar_c1/                    # RPLIDAR C1 docs + SDK reference
 │   ├── maker_esp32/                   # Board docs + wiring guide
 │   ├── super_sensor/                  # Edge ROS2 nodes (supersensor, obstacle)
-│   ├── health_monitor/                # Edge health monitor
 │   ├── stereo_cameras/                # Stereo camera calibration + depth
 │   ├── android_phone_sensors/          # Phone sensor Android app (rosbridge WebSocket)
-│   ├── webcam/                        # USB webcam publisher
-│   └── lidar_usb/                     # XV-11 LIDAR docs
+│   └── webcam/                        # USB webcam publisher
 ├── scripts/
 │   ├── keyboard_teleop.py             # Keyboard teleop (auto-SSHes to Pi)
-│   ├── standalone_control.sh          # Main bringup
-│   ├── install_pi_systemd.sh          # Pi systemd setup
-│   ├── mac_brain_launch.sh            # Mac Nav2/SLAM launcher
+│   ├── install_pi_systemd.sh          # Pi systemd setup (install/uninstall/status/restart)
+│   ├── mac_brain_launch.sh            # Mac brain launcher (slam, slam-ekf, nav, ekf, foxglove)
 │   ├── ps2_joy_mapper_node.py         # PS2 controller → /cmd_vel_joy
-│   ├── deploy_core_pi.sh             # Git sync to Pi
+│   ├── ekf_launch.py                  # EKF launch (used by mac_brain_launch.sh)
 │   └── edge/
 │       └── edge_health_node.py        # Pi health publisher to /rovac/edge/health
 ├── config/
@@ -137,16 +137,17 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 │   ├── nav2_params.yaml              # Navigation2 config
 │   └── systemd/                       # Pi edge unit files
 │       ├── rovac-edge.target          # Main orchestration target
-│       ├── rovac-edge-motor-driver.service  # C++ USB serial motor driver (ACTIVE)
+│       ├── rovac-edge-motor-driver.service  # C++ USB serial motor driver
+│       ├── rovac-edge-rplidar-c1.service    # RPLIDAR C1 driver (USB serial)
 │       ├── rovac-edge-mux.service           # cmd_vel priority mux
 │       ├── rovac-edge-tf.service            # robot_state_publisher
 │       ├── rovac-edge-map-tf.service        # map→odom static TF
-│       ├── rovac-edge-rplidar-c1.service    # RPLIDAR C1 driver (USB serial)
+│       ├── rovac-edge-health.service        # Edge health publisher
+│       ├── rovac-edge-rosbridge.service     # rosbridge WebSocket (port 9090)
 │       ├── rovac-edge-obstacle.service      # Obstacle avoidance
 │       ├── rovac-edge-supersensor.service   # HC-SR04 ultrasonic
 │       ├── rovac-edge-ps2-joy.service       # PS2 controller input
 │       ├── rovac-edge-ps2-mapper.service    # PS2 → velocity commands
-│       ├── rovac-edge-rosbridge.service     # rosbridge WebSocket (port 9090)
 │       ├── rovac-edge-ekf.service           # EKF (DISABLED — run from Mac)
 │       └── ...                              # stereo, webcam, phone services
 ├── ros2_ws/src/
@@ -163,8 +164,10 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 ├── foxglove_layouts/                  # Foxglove Studio layout configs
 ├── archive/                           # All legacy/deprecated code
 │   ├── legacy_hardware/               # L298N, Hiwonder, BST-4WD, esp32_lidar_wireless, etc.
-│   └── legacy_scripts/                # QoS relays, Agent watchdog, Lenovo setup, etc.
+│   ├── legacy_scripts/                # QoS relays, Agent watchdog, health_monitor, etc.
+│   └── legacy_launch/                 # Pre-systemd launch files (vorwerk_lidar era)
 └── docs/
+    ├── ros2_reference_card.md         # ROS2 command cheatsheet
     ├── architecture/
     └── guides/
 ```
