@@ -34,7 +34,13 @@ static speed_t baud_to_speed(int baud)
 
 bool SerialPort::open(const std::string& device, int baud_rate)
 {
-    close();
+    std::lock_guard<std::mutex> lock(fd_mutex_);
+
+    // Close existing fd if any
+    if (fd_ >= 0) {
+        ::close(fd_);
+        fd_ = -1;
+    }
 
     fd_ = ::open(device.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd_ < 0) return false;
@@ -87,8 +93,15 @@ bool SerialPort::open(const std::string& device, int baud_rate)
     return true;
 }
 
+bool SerialPort::is_open() const
+{
+    std::lock_guard<std::mutex> lock(fd_mutex_);
+    return fd_ >= 0;
+}
+
 void SerialPort::close()
 {
+    std::lock_guard<std::mutex> lock(fd_mutex_);
     if (fd_ >= 0) {
         ::close(fd_);
         fd_ = -1;
@@ -97,26 +110,48 @@ void SerialPort::close()
 
 ssize_t SerialPort::read(uint8_t* buf, size_t max_len, int timeout_ms)
 {
-    if (fd_ < 0) return -1;
+    int fd;
+    {
+        std::lock_guard<std::mutex> lock(fd_mutex_);
+        fd = fd_;
+    }
+    if (fd < 0) return -1;
 
     if (timeout_ms > 0) {
         fd_set fds;
         FD_ZERO(&fds);
-        FD_SET(fd_, &fds);
+        FD_SET(fd, &fds);
         struct timeval tv;
         tv.tv_sec = timeout_ms / 1000;
         tv.tv_usec = (timeout_ms % 1000) * 1000;
-        int ret = select(fd_ + 1, &fds, nullptr, nullptr, &tv);
+        int ret = select(fd + 1, &fds, nullptr, nullptr, &tv);
         if (ret <= 0) return ret;  /* 0 = timeout, -1 = error */
     }
 
-    return ::read(fd_, buf, max_len);
+    ssize_t n = ::read(fd, buf, max_len);
+    if (n < 0 && errno == EBADF) return -1;
+    return n;
 }
 
 ssize_t SerialPort::write(const uint8_t* buf, size_t len)
 {
-    if (fd_ < 0) return -1;
-    return ::write(fd_, buf, len);
+    int fd;
+    {
+        std::lock_guard<std::mutex> lock(fd_mutex_);
+        fd = fd_;
+    }
+    if (fd < 0) return -1;
+
+    size_t written = 0;
+    while (written < len) {
+        ssize_t n = ::write(fd, buf + written, len - written);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        written += static_cast<size_t>(n);
+    }
+    return static_cast<ssize_t>(written);
 }
 
 }  // namespace rovac

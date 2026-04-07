@@ -121,11 +121,10 @@ if [ "$ROVAC_OS" = "Darwin" ] && [ "${RMW_IMPLEMENTATION:-}" = "rmw_cyclonedds_c
             ssh -o ConnectTimeout=3 "pi@$ROVAC_EDGE_IP_DEFAULT" \
                 "sudo systemctl restart rovac-edge.target" 2>/dev/null &
             echo "  IP changed: ${_ROVAC_LAST_IP:-unknown} → $ROVAC_MAC_IP_DEFAULT (synced to Pi, restarting edge services)"
+            echo "$ROVAC_MAC_IP_DEFAULT" > "$_ROVAC_IP_STAMP"
         else
-            echo "  IP changed but Pi unreachable — update Pi config manually"
+            echo "  IP changed but Pi unreachable — update Pi config manually (will retry next source)"
         fi
-
-        echo "$ROVAC_MAC_IP_DEFAULT" > "$_ROVAC_IP_STAMP"
     fi
 fi
 

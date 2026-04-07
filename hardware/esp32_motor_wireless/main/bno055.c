@@ -288,13 +288,26 @@ static void cal_auto_save(void)
     ESP_LOGI(TAG, "All sensors calibrated (3/3/3/3) — saving to NVS...");
 
     /* Switch to CONFIG mode to read calibration registers */
-    bno_write_reg(REG_OPR_MODE, OPR_MODE_CONFIG);
+    esp_err_t rc = bno_write_reg(REG_OPR_MODE, OPR_MODE_CONFIG);
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to enter CONFIG mode for cal save: %s", esp_err_to_name(rc));
+        return;
+    }
     vTaskDelay(pdMS_TO_TICKS(30));
 
     cal_save_to_nvs();
 
     /* Switch back to NDOF mode */
-    bno_write_reg(REG_OPR_MODE, OPR_MODE_NDOF);
+    rc = bno_write_reg(REG_OPR_MODE, OPR_MODE_NDOF);
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "CRITICAL: Failed to return to NDOF mode after cal save: %s", esp_err_to_name(rc));
+        /* Retry once */
+        vTaskDelay(pdMS_TO_TICKS(50));
+        rc = bno_write_reg(REG_OPR_MODE, OPR_MODE_NDOF);
+        if (rc != ESP_OK) {
+            ESP_LOGE(TAG, "NDOF retry failed — IMU may be stuck in CONFIG mode");
+        }
+    }
     vTaskDelay(pdMS_TO_TICKS(30));
 
     s_cal_saved = true;

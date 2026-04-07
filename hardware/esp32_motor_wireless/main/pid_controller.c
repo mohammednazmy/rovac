@@ -13,6 +13,7 @@
 #include "pid_controller.h"
 
 #include <math.h>
+#include <stdbool.h>
 
 // ---- Helpers ----
 
@@ -44,7 +45,7 @@ void pid_init(wheel_pid_t *pid, float kp, float ki, float kd,
 
 float pid_update(wheel_pid_t *pid, float target_vel, float measured_vel, float dt)
 {
-    if (dt <= 0.0f) {
+    if (dt <= 0.0f || !isfinite(target_vel) || !isfinite(measured_vel)) {
         return pid->output;
     }
 

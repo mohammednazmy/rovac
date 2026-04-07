@@ -179,6 +179,8 @@ static void pid_task(void *arg)
             }
         } else {
             motor_driver_stop();
+            pid_reset(&s_pid_left);
+            pid_reset(&s_pid_right);
             debug_counter = 0;
         }
     }
@@ -263,8 +265,10 @@ void motor_control_cmd_vel(float linear_x, float angular_z)
     // counteract measured yaw rate to maintain heading
     if (fabsf(angular_z) < HEADING_CORRECTION_THRESH && fabsf(linear_x) > 0.02f) {
         float gyro_z = bno055_get_gyro_z();  // rad/s, 0 if IMU not ready
-        angular_z += -HEADING_CORRECTION_KP * gyro_z;
-        angular_z = clampf(angular_z, -MC_MAX_ANGULAR_SPEED, MC_MAX_ANGULAR_SPEED);
+        if (isfinite(gyro_z)) {
+            angular_z += -HEADING_CORRECTION_KP * gyro_z;
+            angular_z = clampf(angular_z, -MC_MAX_ANGULAR_SPEED, MC_MAX_ANGULAR_SPEED);
+        }
     }
 
     // Differential drive kinematics:
@@ -285,9 +289,8 @@ void motor_control_stop(void)
     s_pid_active   = false;
     xSemaphoreGive(s_target_lock);
 
-    // Reset PID state to avoid stale integral/derivative on next start
-    pid_reset(&s_pid_left);
-    pid_reset(&s_pid_right);
+    // PID state is reset by the PID task when it sees active=false,
+    // avoiding a cross-core data race with pid_update() on Core 1.
 
     // Immediately stop motors (don't wait for PID task cycle)
     motor_driver_stop();

@@ -107,7 +107,11 @@ restore_motor_tf() {
     fi
 }
 
+CLEANUP_DONE=false
 cleanup() {
+    if [ "$CLEANUP_DONE" = true ]; then return; fi
+    CLEANUP_DONE=true
+    trap '' SIGINT SIGTERM
     log_warn "Shutting down Mac brain nodes..."
     pkill -f "foxglove_bridge" 2>/dev/null || true
     pkill -f "phone_camera_bridge" 2>/dev/null || true
@@ -116,7 +120,6 @@ cleanup() {
     pkill -f "ekf_node" 2>/dev/null || true
     start_pi_map_tf
     restore_motor_tf
-    exit 0
 }
 
 # Start phone camera bridge (phone IMU/GPS use rosbridge on Pi :9090 — no Mac relay needed)
@@ -130,7 +133,7 @@ start_phone_relay() {
         log_info "Phone camera bridge already running"
     fi
 }
-trap cleanup SIGINT SIGTERM
+trap cleanup EXIT SIGINT SIGTERM
 
 # ── Pre-flight checks ──────────────────────────────────────────────
 log_info "Running pre-flight checks..."
@@ -330,4 +333,4 @@ echo -e "${CYAN}╚════════════════════�
 echo ""
 log_info "Press Ctrl+C to stop all nodes"
 
-wait
+wait || true

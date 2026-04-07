@@ -9,6 +9,7 @@
 #include <string>
 #include <cstdint>
 #include <cstddef>
+#include <mutex>
 
 namespace rovac {
 
@@ -22,7 +23,7 @@ public:
 
     bool open(const std::string& device, int baud_rate);
     void close();
-    bool is_open() const { return fd_ >= 0; }
+    bool is_open() const;
 
     /**
      * Read up to max_len bytes. Returns bytes read, 0 on timeout, -1 on error.
@@ -31,12 +32,13 @@ public:
     ssize_t read(uint8_t* buf, size_t max_len, int timeout_ms);
 
     /**
-     * Write bytes. Returns bytes written or -1 on error.
+     * Write all bytes. Returns total bytes written or -1 on error.
      */
     ssize_t write(const uint8_t* buf, size_t len);
 
 private:
     int fd_ = -1;
+    mutable std::mutex fd_mutex_;
 };
 
 }  // namespace rovac

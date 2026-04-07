@@ -55,10 +55,10 @@ private:
 
     // Connection state
     std::atomic<bool> connected_{false};
-    std::chrono::steady_clock::time_point last_rx_time_;
+    std::atomic<int64_t> last_rx_time_ns_{0};
     rclcpp::TimerBase::SharedPtr reconnect_timer_;
     int serial_rx_timeout_s_;
-    uint32_t reconnect_count_{0};
+    std::atomic<uint32_t> reconnect_count_{0};
 
     // Callbacks
     void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);

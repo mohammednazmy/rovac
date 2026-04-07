@@ -68,7 +68,8 @@ void MotorDriverNode::try_connect()
     if (serial_.is_open()) return;
 
     if (serial_.open(serial_port_, baud_rate_)) {
-        last_rx_time_ = std::chrono::steady_clock::now();
+        auto now_ns = std::chrono::steady_clock::now().time_since_epoch().count();
+        last_rx_time_ns_.store(now_ns, std::memory_order_release);
         RCLCPP_INFO(get_logger(), "Serial port opened: %s @ %d baud",
                      serial_port_.c_str(), baud_rate_);
     }
@@ -82,7 +83,7 @@ void MotorDriverNode::reconnect_callback()
         if (serial_.is_open()) {
             reconnect_count_++;
             RCLCPP_INFO(get_logger(), "Reconnected to %s (reconnect #%u)",
-                        serial_port_.c_str(), reconnect_count_);
+                        serial_port_.c_str(), reconnect_count_.load());
         }
         return;
     }
@@ -90,8 +91,10 @@ void MotorDriverNode::reconnect_callback()
     // Serial health monitor: if port is open but no valid frames received
     // for serial_rx_timeout seconds, close and reopen the port.
     // This handles stale file descriptors after USB re-enumeration.
-    auto elapsed = std::chrono::steady_clock::now() - last_rx_time_;
-    if (elapsed > std::chrono::seconds(serial_rx_timeout_s_)) {
+    auto now_ns = std::chrono::steady_clock::now().time_since_epoch().count();
+    auto last_ns = last_rx_time_ns_.load(std::memory_order_acquire);
+    auto elapsed_ns = now_ns - last_ns;
+    if (elapsed_ns > static_cast<int64_t>(serial_rx_timeout_s_) * 1'000'000'000LL) {
         RCLCPP_WARN(get_logger(),
             "No data from ESP32 for %d seconds — closing serial for reconnect",
             serial_rx_timeout_s_);
@@ -106,14 +109,18 @@ void MotorDriverNode::reconnect_callback()
 void MotorDriverNode::send_frame(uint8_t msg_type, const void* payload, size_t payload_len)
 {
     uint8_t raw[SERIAL_PROTOCOL_MAX_FRAME];
-    uint8_t encoded[SERIAL_PROTOCOL_MAX_FRAME];
+    uint8_t encoded[SERIAL_PROTOCOL_MAX_FRAME + 3];
 
     size_t raw_len = serial_protocol_build_frame(raw, msg_type, payload, payload_len);
     size_t enc_len = cobs_encode(raw, raw_len, encoded);
     encoded[enc_len] = 0x00;  // Frame delimiter
 
     std::lock_guard<std::mutex> lock(write_mutex_);
-    serial_.write(encoded, enc_len + 1);
+    ssize_t ret = serial_.write(encoded, enc_len + 1);
+    if (ret < 0) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                             "Serial write failed — link may be down");
+    }
 }
 
 void MotorDriverNode::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
@@ -194,7 +201,8 @@ void MotorDriverNode::process_frame(const uint8_t* data, size_t len)
         return;  // CRC mismatch
 
     // Mark connection alive
-    last_rx_time_ = std::chrono::steady_clock::now();
+    auto now_ns = std::chrono::steady_clock::now().time_since_epoch().count();
+    last_rx_time_ns_.store(now_ns, std::memory_order_release);
     if (!connected_) {
         connected_ = true;
         RCLCPP_INFO(get_logger(), "ESP32 connected (receiving data)");
@@ -348,7 +356,7 @@ void MotorDriverNode::handle_diag(const diag_payload_t& diag)
     status.values.push_back(kv("imu_cal_accel", std::to_string(diag.imu_cal_accel)));
     status.values.push_back(kv("imu_cal_mag", std::to_string(diag.imu_cal_mag)));
     status.values.push_back(kv("transport", "usb_serial"));
-    status.values.push_back(kv("reconnects", std::to_string(reconnect_count_)));
+    status.values.push_back(kv("reconnects", std::to_string(reconnect_count_.load())));
 
     msg.status.push_back(status);
     diag_pub_->publish(msg);
