@@ -19,7 +19,7 @@ log_error() { echo -e "${RED}[MAC-BRAIN]${NC} $1"; }
 PI_HOST="${ROVAC_EDGE_IP:-192.168.1.200}"
 PI_USER="pi"
 STOPPED_MAP_TF=false
-STOPPED_TF_RELAY=false
+DISABLED_MOTOR_TF=false
 
 # Activate conda ROS environment
 eval "$(/opt/homebrew/bin/conda shell.bash hook)"
@@ -50,14 +50,16 @@ usage() {
     echo "Usage: $0 [mode] [map_file]"
     echo "Modes:"
     echo "  slam      - Run SLAM toolbox for mapping (default)"
+    echo "  slam-ekf  - Run SLAM + EKF (best map quality — gyro-fused odometry)"
     echo "  nav       - Run navigation with existing map"
     echo "  foxglove  - Run only Foxglove bridge for visualization"
-    echo "  ekf       - Run EKF sensor fusion (wheel odom + phone IMU)"
+    echo "  ekf       - Run EKF sensor fusion (wheel odom + BNO055 IMU)"
     echo "  ekf-gps   - Run EKF + GPS navigation (outdoor waypoint following)"
     echo "  all       - Run SLAM + Nav2 + Foxglove"
     echo ""
     echo "Examples:"
-    echo "  $0 slam                     # Start SLAM mapping"
+    echo "  $0 slam-ekf                 # Best quality SLAM mapping"
+    echo "  $0 slam                     # SLAM without EKF (faster startup)"
     echo "  $0 nav ~/maps/house.yaml    # Navigate with saved map"
     echo "  $0 foxglove                 # Just visualization"
 }
@@ -81,22 +83,27 @@ start_pi_map_tf() {
     fi
 }
 
-# Stop the TF relay on Pi (conflicts with EKF's own odom→base_link TF)
-stop_pi_tf_relay() {
-    if ssh -o ConnectTimeout=3 "$PI_USER@$PI_HOST" \
-        'sudo systemctl is-active --quiet rovac-edge-tf-relay 2>/dev/null'; then
-        log_info "Stopping Pi TF relay (EKF will provide its own reliable odom->base_link TF)..."
-        ssh "$PI_USER@$PI_HOST" 'sudo systemctl stop rovac-edge-tf-relay'
-        STOPPED_TF_RELAY=true
-    fi
+# Disable motor driver's odom→base_link TF (EKF will publish its own)
+disable_motor_tf() {
+    log_info "Disabling motor driver TF (EKF will publish odom->base_link)..."
+    ssh -o ConnectTimeout=3 "$PI_USER@$PI_HOST" \
+        "source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && \
+         export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && \
+         export CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml && \
+         ros2 param set /motor_driver_node publish_tf false" 2>/dev/null && \
+        DISABLED_MOTOR_TF=true || \
+        log_warn "Could not set publish_tf — motor driver may not be running"
 }
 
-# Re-enable TF relay on Pi when EKF exits
-start_pi_tf_relay() {
-    if [ "$STOPPED_TF_RELAY" = true ]; then
-        log_info "Re-enabling Pi TF relay..."
+# Re-enable motor driver's TF on exit
+restore_motor_tf() {
+    if [ "$DISABLED_MOTOR_TF" = true ]; then
+        log_info "Re-enabling motor driver TF publishing..."
         ssh -o ConnectTimeout=3 "$PI_USER@$PI_HOST" \
-            'sudo systemctl start rovac-edge-tf-relay' 2>/dev/null || true
+            "source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && \
+             export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && \
+             export CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml && \
+             ros2 param set /motor_driver_node publish_tf true" 2>/dev/null || true
     fi
 }
 
@@ -108,7 +115,7 @@ cleanup() {
     pkill -f "nav2" 2>/dev/null || true
     pkill -f "ekf_node" 2>/dev/null || true
     start_pi_map_tf
-    start_pi_tf_relay
+    restore_motor_tf
     exit 0
 }
 
@@ -207,7 +214,7 @@ case "$MODE" in
         ;;
 
     ekf)
-        stop_pi_tf_relay
+        disable_motor_tf
 
         log_info "Starting EKF sensor fusion (wheel odom + BNO055 IMU)..."
         log_info "BNO055 onboard IMU provides gyro-fused heading correction"
@@ -221,7 +228,7 @@ case "$MODE" in
         ;;
 
     ekf-gps)
-        stop_pi_tf_relay
+        disable_motor_tf
 
         log_info "Starting EKF + GPS navigation stack..."
         log_info "BNO055 IMU heading + phone GPS fix (go outdoors)"
@@ -237,6 +244,27 @@ case "$MODE" in
         log_info "GPS navigation ready. To send waypoints:"
         log_info "  python3 scripts/gps_waypoint_nav.py <lat> <lon>"
         log_info "  python3 scripts/gps_waypoint_nav.py config/example_waypoints.yaml"
+        ;;
+
+    slam-ekf)
+        stop_pi_map_tf
+        disable_motor_tf
+
+        log_info "Starting EKF sensor fusion (wheel odom + BNO055 IMU)..."
+        ros2 launch $HOME/robots/rovac/scripts/ekf_launch.py &
+        EKF_PID=$!
+        sleep 2  # Let EKF start publishing TF before SLAM needs it
+
+        log_info "Starting SLAM Toolbox (Online Async mode)..."
+        ros2 launch slam_toolbox online_async_launch.py \
+            slam_params_file:=$HOME/robots/rovac/config/slam_params.yaml \
+            use_sim_time:=false &
+        SLAM_PID=$!
+
+        log_info "Starting Foxglove Bridge on port 8765..."
+        ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
+        start_phone_relay
+        FOX_PID=$!
         ;;
 
     foxglove)
@@ -290,7 +318,7 @@ echo -e "${CYAN}╔════════════════════�
 echo -e "${CYAN}║${NC}  Mode: $MODE"
 echo -e "${CYAN}║${NC}  Foxglove: ws://localhost:8765"
 echo -e "${CYAN}║${NC}  Open Foxglove Studio and connect to above URL"
-if [ "$MODE" = "slam" ] || [ "$MODE" = "all" ]; then
+if [ "$MODE" = "slam" ] || [ "$MODE" = "slam-ekf" ] || [ "$MODE" = "all" ]; then
 echo -e "${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  SLAM Tips:"
 echo -e "${CYAN}║${NC}    - /map topic appears after first scan match (~5s)"

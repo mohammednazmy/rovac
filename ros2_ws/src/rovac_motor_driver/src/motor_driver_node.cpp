@@ -23,6 +23,7 @@ MotorDriverNode::MotorDriverNode()
     base_frame_ = declare_parameter("base_frame", "base_link");
     imu_frame_ = declare_parameter("imu_frame", "imu_link");
     publish_tf_ = declare_parameter("publish_tf", true);
+    serial_rx_timeout_s_ = declare_parameter("serial_rx_timeout", 5);
 
     // Publishers — ALL reliable QoS (no relay scripts needed)
     auto reliable_qos = rclcpp::QoS(10).reliable();
@@ -67,6 +68,7 @@ void MotorDriverNode::try_connect()
     if (serial_.is_open()) return;
 
     if (serial_.open(serial_port_, baud_rate_)) {
+        last_rx_time_ = std::chrono::steady_clock::now();
         RCLCPP_INFO(get_logger(), "Serial port opened: %s @ %d baud",
                      serial_port_.c_str(), baud_rate_);
     }
@@ -78,17 +80,24 @@ void MotorDriverNode::reconnect_callback()
     if (!serial_.is_open()) {
         try_connect();
         if (serial_.is_open()) {
-            RCLCPP_INFO(get_logger(), "Reconnected to %s", serial_port_.c_str());
+            reconnect_count_++;
+            RCLCPP_INFO(get_logger(), "Reconnected to %s (reconnect #%u)",
+                        serial_port_.c_str(), reconnect_count_);
         }
+        return;
     }
 
-    // Check for stale connection (no data for 5 seconds)
-    if (connected_) {
-        auto elapsed = std::chrono::steady_clock::now() - last_rx_time_;
-        if (elapsed > std::chrono::seconds(5)) {
-            connected_ = false;
-            RCLCPP_WARN(get_logger(), "No data from ESP32 for 5 seconds");
-        }
+    // Serial health monitor: if port is open but no valid frames received
+    // for serial_rx_timeout seconds, close and reopen the port.
+    // This handles stale file descriptors after USB re-enumeration.
+    auto elapsed = std::chrono::steady_clock::now() - last_rx_time_;
+    if (elapsed > std::chrono::seconds(serial_rx_timeout_s_)) {
+        RCLCPP_WARN(get_logger(),
+            "No data from ESP32 for %d seconds — closing serial for reconnect",
+            serial_rx_timeout_s_);
+        serial_.close();
+        connected_ = false;
+        // Next timer tick (2s) will call try_connect() via the !is_open() branch
     }
 }
 
@@ -339,6 +348,7 @@ void MotorDriverNode::handle_diag(const diag_payload_t& diag)
     status.values.push_back(kv("imu_cal_accel", std::to_string(diag.imu_cal_accel)));
     status.values.push_back(kv("imu_cal_mag", std::to_string(diag.imu_cal_mag)));
     status.values.push_back(kv("transport", "usb_serial"));
+    status.values.push_back(kv("reconnects", std::to_string(reconnect_count_)));
 
     msg.status.push_back(status);
     diag_pub_->publish(msg);

@@ -1,7 +1,7 @@
 [Unit]
 Description=ROVAC Motor Driver (USB serial binary protocol to ESP32)
 After=network.target dev-esp32_motor.device
-BindsTo=dev-esp32_motor.device
+Requires=dev-esp32_motor.device
 PartOf=rovac-edge.target
 Before=rovac-edge-mux.service rovac-edge-obstacle.service
 

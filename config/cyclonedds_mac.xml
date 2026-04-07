@@ -5,7 +5,8 @@
       <Interfaces>
         <!-- Use en0 (WiFi) for home network communication.
              Multicast disabled — unicast peer discovery only. -->
-        <NetworkInterface address="192.168.1.104" priority="default" multicast="false"/>
+        <!-- Use interface name instead of address — resilient to DHCP IP changes -->
+        <NetworkInterface name="en0" priority="default" multicast="false"/>
       </Interfaces>
     </General>
     <Discovery>
@@ -15,8 +16,8 @@
       <SPDPInterval>1s</SPDPInterval>
       <LeaseDuration>5s</LeaseDuration>
       <Peers>
-        <!-- Local Mac participants -->
-        <Peer address="192.168.1.104"/>
+        <!-- Local Mac participants (auto-resolved via en0 interface binding) -->
+        <Peer address="192.168.1.89"/>
         <!-- Raspberry Pi edge (on robot) -->
         <Peer address="192.168.1.200"/>
       </Peers>

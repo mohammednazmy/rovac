@@ -45,7 +45,8 @@ source config/ros2_env.sh
 # Keyboard teleop (auto-SSHes to Pi for lowest latency)
 python3 scripts/keyboard_teleop.py
 
-# SLAM mapping / Nav2 / Foxglove (Mac)
+# SLAM mapping (Mac) — slam-ekf recommended for best map quality
+./scripts/mac_brain_launch.sh slam-ekf
 ./scripts/mac_brain_launch.sh slam
 ./scripts/mac_brain_launch.sh nav ~/maps/house.yaml
 ./scripts/mac_brain_launch.sh foxglove
@@ -175,6 +176,7 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 conda activate ros_jazzy
 
 # Source ROS2 environment (sets DDS config, domain ID, peer IPs)
+# Auto-detects Mac IP from en0 and syncs to Pi's CycloneDDS config if changed
 source ~/robots/rovac/config/ros2_env.sh
 
 # IMPORTANT: Use --no-daemon on macOS — the ROS2 daemon hangs with CycloneDDS
@@ -207,7 +209,7 @@ ssh pi@192.168.1.200 'esptool.py --chip esp32 --port /dev/esp32_motor --baud 460
 
 **Shared protocol:** `common/serial_protocol.h` defines message types, packed structs, and CRC-16 used by both ESP32 firmware and Pi C++ driver.
 
-**Pi C++ driver:** `ros2_ws/src/rovac_motor_driver/` — `ament_cmake` package. Build on Pi: `cd ros2_ws && colcon build --packages-select rovac_motor_driver`
+**Pi C++ driver:** `ros2_ws/src/rovac_motor_driver/` — `ament_cmake` package. Build on Pi: `cd ros2_ws && colcon build --packages-select rovac_motor_driver`. Features serial health monitoring: auto-reconnects within 7s if USB re-enumerates (configurable via `serial_rx_timeout` param, default 5s).
 
 ## Troubleshooting
 
@@ -233,7 +235,7 @@ ssh pi@192.168.1.200 'esptool.py --chip esp32 --port /dev/esp32_motor --baud 460
 3. Verify odom is flowing: `ros2 topic hz /odom`
 
 ### TF jumping / position oscillation in Foxglove
-When running EKF, ensure `motor_driver_node` has `publish_tf: false` (default). Only the EKF should publish odom→base_link TF. Two TF publishers on the same link = jumping. Fix: `ros2 param set /motor_driver_node publish_tf false`
+When running EKF, `mac_brain_launch.sh` automatically sets `publish_tf: false` on the motor driver (only EKF should publish odom→base_link TF). On exit, it restores `publish_tf: true`. Default is `true` (motor driver publishes TF when EKF is not running).
 
 ### PS2 controller not working
 ```bash

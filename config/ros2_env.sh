@@ -3,11 +3,21 @@
 # Source this file before running ROS2 commands.
 # Edge computer: Raspberry Pi 5 at 192.168.1.200
 
-set -u
+# NOTE: Do NOT use "set -u" here. This script is sourced (not executed),
+# so shell options leak into the caller's interactive shell and break
+# other sourced scripts (e.g., ROS2 setup.bash references $AMENT_TRACE_SETUP_FILES
+# which is unset). The ${VAR:-default} syntax used throughout already handles
+# unset variables safely.
 
 ROVAC_DOMAIN_ID_DEFAULT=42
-ROVAC_MAC_IP_DEFAULT=192.168.1.104
 ROVAC_EDGE_IP_DEFAULT=192.168.1.200
+
+# Auto-detect Mac IP from en0 (resilient to DHCP changes)
+if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+    ROVAC_MAC_IP_DEFAULT=$(ipconfig getifaddr en0 2>/dev/null || echo "192.168.1.89")
+else
+    ROVAC_MAC_IP_DEFAULT=192.168.1.89
+fi
 
 # Optional selector: set ROVAC_DDS=fastdds|cyclonedds to switch RMW automatically.
 case "${ROVAC_DDS:-}" in
@@ -79,6 +89,44 @@ elif [ "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" = "rmw_cyclonedds_cpp" ]; the
 else
     unset FASTRTPS_DEFAULT_PROFILES_FILE 2>/dev/null || true
     unset CYCLONEDDS_URI 2>/dev/null || true
+fi
+
+# ── Auto-sync Mac IP to CycloneDDS configs ────────────────
+# Updates both Mac self-peer and Pi Mac-peer when the Mac's DHCP IP changes.
+# Only runs on Mac, only when the IP actually changed.
+if [ "$ROVAC_OS" = "Darwin" ] && [ "${RMW_IMPLEMENTATION:-}" = "rmw_cyclonedds_cpp" ]; then
+    _ROVAC_IP_STAMP="$HOME/.rovac_mac_ip"
+    _ROVAC_LAST_IP=""
+    [ -f "$_ROVAC_IP_STAMP" ] && _ROVAC_LAST_IP=$(cat "$_ROVAC_IP_STAMP" 2>/dev/null)
+
+    if [ "$ROVAC_MAC_IP_DEFAULT" != "$_ROVAC_LAST_IP" ] && [ -n "$ROVAC_MAC_IP_DEFAULT" ]; then
+        # Update Mac CycloneDDS self-peer
+        _ROVAC_MAC_XML="$ROVAC_CONFIG_DIR/cyclonedds_mac.xml"
+        if [ -f "$_ROVAC_MAC_XML" ] && [ -n "$_ROVAC_LAST_IP" ]; then
+            sed -i '' "s|<Peer address=\"${_ROVAC_LAST_IP}\"/>|<Peer address=\"${ROVAC_MAC_IP_DEFAULT}\"/>|" "$_ROVAC_MAC_XML" 2>/dev/null
+        fi
+
+        # Sync to Pi: update Mac peer in Pi's CycloneDDS config + restart services
+        if ssh -o ConnectTimeout=2 -o BatchMode=yes "pi@$ROVAC_EDGE_IP_DEFAULT" true 2>/dev/null; then
+            _ROVAC_PI_XML="/home/pi/robots/rovac/config/cyclonedds_pi.xml"
+            if [ -n "$_ROVAC_LAST_IP" ]; then
+                ssh -o ConnectTimeout=3 "pi@$ROVAC_EDGE_IP_DEFAULT" \
+                    "sed -i 's|<Peer address=\"${_ROVAC_LAST_IP}\"/>|<Peer address=\"${ROVAC_MAC_IP_DEFAULT}\"/>|' $_ROVAC_PI_XML" 2>/dev/null
+            else
+                # First run or stamp cleared — replace any Mac peer (not the Pi self-peer)
+                ssh -o ConnectTimeout=3 "pi@$ROVAC_EDGE_IP_DEFAULT" \
+                    "sed -i '/<\!-- Mac -->/{ n; s|<Peer address=\"[^\"]*\"/>|<Peer address=\"${ROVAC_MAC_IP_DEFAULT}\"/>| }' $_ROVAC_PI_XML" 2>/dev/null
+            fi
+            # Restart edge services to pick up new peer config
+            ssh -o ConnectTimeout=3 "pi@$ROVAC_EDGE_IP_DEFAULT" \
+                "sudo systemctl restart rovac-edge.target" 2>/dev/null &
+            echo "  IP changed: ${_ROVAC_LAST_IP:-unknown} → $ROVAC_MAC_IP_DEFAULT (synced to Pi, restarting edge services)"
+        else
+            echo "  IP changed but Pi unreachable — update Pi config manually"
+        fi
+
+        echo "$ROVAC_MAC_IP_DEFAULT" > "$_ROVAC_IP_STAMP"
+    fi
 fi
 
 echo "ROS2 Environment: DOMAIN=$ROS_DOMAIN_ID, RMW=${RMW_IMPLEMENTATION:-unset}, LOCAL_IP=$ROVAC_LOCAL_IP, REMOTE_IP=$ROVAC_REMOTE_IP"

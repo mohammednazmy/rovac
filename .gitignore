@@ -107,3 +107,29 @@ config/fastdds_agent.xml
 # Large vendor SDK/docs (reference only, not needed for build)
 hardware/rplidar_c1/rplidar_sdk/
 hardware/yahboom-at8236-motor-driver/2-Channel-Motor-Driver-Module/
+
+# === Disabled micro-ROS component (602MB, replaced by USB serial COBS) ===
+hardware/esp32_motor_wireless/components/
+
+# === Claude conversation transcripts ===
+2026-*.txt
+**/2026-*-hey-claude-*.txt
+
+# === TF debug output (generated) ===
+frames_*.gv
+frames_*.pdf
+
+# === Personal reference files ===
+CMD_reference.rtf
+
+# === 3D print archives, photos, and unrelated prints ===
+3D-prints/old/
+3D-prints/EPOXY MIXING TRAY/
+3D-prints/**/*.jpeg
+3D-prints/**/*.png
+3D-prints/**/*.jpg
+3D-prints/**/model_a/
+3D-prints/**/model_b/
+
+# === Runtime IP stamp ===
+.rovac_mac_ip

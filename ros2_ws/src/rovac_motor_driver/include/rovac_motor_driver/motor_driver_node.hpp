@@ -57,6 +57,8 @@ private:
     std::atomic<bool> connected_{false};
     std::chrono::steady_clock::time_point last_rx_time_;
     rclcpp::TimerBase::SharedPtr reconnect_timer_;
+    int serial_rx_timeout_s_;
+    uint32_t reconnect_count_{0};
 
     // Callbacks
     void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);

@@ -5,4 +5,4 @@ motor_driver_node:
     odom_frame: "odom"
     base_frame: "base_link"
     imu_frame: "imu_link"
-    publish_tf: false
+    publish_tf: true

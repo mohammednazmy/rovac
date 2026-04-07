@@ -390,14 +390,29 @@ def run_teleop(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10
 
     print("Publishing to /cmd_vel_teleop (via mux)")
     print("Connecting to ROS2 topics...")
+
+    # Wait for the mux to discover our publisher (DDS discovery).
+    # Without this, the first 1-3 seconds of key presses are lost.
+    print("  Waiting for mux subscriber...", end="", flush=True)
     deadline = time.time() + 8.0
-    while node.odom_count == 0 and time.time() < deadline:
-        rclpy.spin_once(node, timeout_sec=0.5)
-    if node.odom_count > 0:
-        print(f"Odom connected ({node.odom_count} msgs). Launching teleop...")
+    while node.cmd_pub.get_subscription_count() == 0 and time.time() < deadline:
+        rclpy.spin_once(node, timeout_sec=0.2)
+    if node.cmd_pub.get_subscription_count() > 0:
+        print(f" connected ({node.cmd_pub.get_subscription_count()} sub)")
     else:
-        print("WARNING: No odom received yet — teleop will start anyway.")
-        print("         (odom may connect after a few seconds)")
+        print(" WARNING: mux not found (commands may not reach motors)")
+
+    # Wait for odom feedback from motor driver
+    print("  Waiting for odom...", end="", flush=True)
+    deadline = time.time() + 5.0
+    while node.odom_count == 0 and time.time() < deadline:
+        rclpy.spin_once(node, timeout_sec=0.3)
+    if node.odom_count > 0:
+        print(f" connected ({node.odom_count} msgs)")
+    else:
+        print(" WARNING: no odom yet (may connect shortly)")
+
+    print("Teleop ready!")
 
     sys.stdout.flush()
     sys.stderr.flush()
