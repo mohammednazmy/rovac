@@ -192,12 +192,19 @@ source ~/esp/esp-idf-v5.2/export.sh
 ## ESP32 Motor Firmware Development
 
 ```bash
-# Build (in ESP-IDF shell, NOT conda)
+# Option A: Build + flash directly on Pi (preferred — ESP-IDF installed on Pi)
+ssh pi@192.168.1.200
+sudo systemctl stop rovac-edge-motor-driver
 source ~/esp/esp-idf-v5.2/export.sh
 cd ~/robots/rovac/hardware/esp32_motor_wireless
 idf.py build
+idf.py -p /dev/esp32_motor flash
+sudo systemctl start rovac-edge-motor-driver
 
-# Flash via Pi (ESP32 connected to Pi USB)
+# Option B: Build on Mac, flash via Pi
+source ~/esp/esp-idf-v5.2/export.sh  # NOT in conda shell
+cd ~/robots/rovac/hardware/esp32_motor_wireless
+idf.py build
 scp build/bootloader/bootloader.bin build/partition_table/partition-table.bin build/esp32_motor_wireless.bin pi@192.168.1.200:/tmp/
 ssh pi@192.168.1.200 'esptool.py --chip esp32 --port /dev/esp32_motor --baud 460800 write_flash 0x1000 /tmp/bootloader.bin 0x8000 /tmp/partition-table.bin 0x10000 /tmp/esp32_motor_wireless.bin'
 ```
