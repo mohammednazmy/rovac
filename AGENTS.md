@@ -1,259 +1,171 @@
-# ROVAC Project Instructions
+# ROVAC Project Instructions for AI Agents
 
-## CRITICAL: Use ONLY the information in this file. DO NOT make up commands, file paths, or topics that are not explicitly listed here. If you're unsure, say "I don't have that information" rather than guessing.
+> For comprehensive details, see `CLAUDE.md`. This file provides the essential context any AI coding agent needs to work on this project.
 
 ## Overview
 
-ROVAC is a Raspberry Pi 5-based mobile robot (Yahboom G1 Tank) with a split-brain architecture:
-- **Pi 5 (Edge)**: Sensors, motors, MCP server at `192.168.1.200` (hostname: `rovac-pi`, user: `pi`)
-- **MacBook Pro (Brain)**: Nav2, SLAM, path planning at `192.168.1.104`
+ROVAC is a mobile robot (Yahboom G1 Tank) with a USB serial architecture:
+- **ESP32 Motor Controller** (on robot): USB serial COBS binary protocol — PID motor control, BNO055 IMU, odom/tf/imu/diagnostics
+- **Raspberry Pi 5 (Edge)**: C++ motor driver node + sensor services at `192.168.1.200`
+- **MacBook Pro (Brain)**: Nav2, SLAM, EKF, Foxglove, teleop (DHCP IP, auto-detected)
 
-**Monorepo**: `github.com/mohammednazmy/rovac` (private). Both Mac and Pi code live in one repo, cloned to:
+Communication: ESP32 ←USB COBS 460800 baud→ `rovac_motor_driver` C++ node on Pi ←CycloneDDS→ Mac. RPLIDAR C1 ←USB→ Pi. Phone ←WebSocket→ rosbridge on Pi :9090. All on `ROS_DOMAIN_ID=42`.
+
+**This is ROS2 Jazzy, NOT ROS1.** Use `ros2` commands, never `roslaunch`/`roscore`/`rostopic`.
+
+## Monorepo
+
+`github.com/mohammednazmy/rovac` (private). Both machines clone the same repo:
 - **Mac**: `~/robots/rovac/`
 - **Pi**: `/home/pi/robots/rovac/`
-
-Communication via **ROS2 Jazzy** (NOT ROS1) over CycloneDDS (unicast, `ROS_DOMAIN_ID=42`).
-
-## IMPORTANT: This is ROS2, NOT ROS1
-- Use `ros2` commands, NOT `roslaunch`, `roscore`, `rostopic`
-- There is NO `roslaunch` - use scripts in `~/robots/rovac/scripts/`
-- All commands run from Mac at `~/robots/rovac/`
-
-## Git Workflow (REQUIRED for all agents)
-
-```bash
-# BEFORE starting any work — always pull latest
-cd ~/robots/rovac
-git pull origin main
-
-# AFTER completing work — commit and push
-git add <changed-files>
-git commit -m "descriptive message"
-git push origin main
-
-# On Pi — pull to deploy changes
-ssh pi 'cd /home/pi/robots/rovac && git pull origin main'
-```
-
-**Rules:**
-- Always `git pull` before making changes to avoid conflicts
-- Always `git push` after completing work so Pi can pull
-- Use specific file paths in `git add` — never `git add .` or `git add -A`
-- Pi edge code lives in `hardware/`, `config/systemd/`, `scripts/edge/`, `super_sensor/`, `robot_mcp_server/`
-- Mac brain code lives in `scripts/`, `config/`, `ros2_ws/`
 
 ## Quick Reference
 
 | Resource | Value |
 |----------|-------|
-| Git Repo | `github.com/mohammednazmy/rovac` (private) |
-| Mac Path | `~/robots/rovac/` |
-| Pi Path | `/home/pi/robots/rovac/` |
-| Pi SSH | `ssh pi` (alias for `pi@192.168.1.200`) |
-| Pi MCP Server | `http://192.168.1.200:8000` |
+| Pi SSH | `ssh pi@192.168.1.200` |
+| ESP32 Motor USB | `/dev/esp32_motor` on Pi (CH340, 460800 baud) |
+| RPLIDAR C1 USB | `/dev/rplidar_c1` on Pi (CP2102N) |
+| Serial Protocol | COBS-framed binary (`common/serial_protocol.h`) |
 | Foxglove | `ws://localhost:8765` |
 | ROS_DOMAIN_ID | 42 |
-| DDS | CycloneDDS (unicast) |
+| DDS | CycloneDDS (unicast, auto-synced peer IPs) |
 
-## Quick Start Commands (ALL RUN FROM MAC)
+## Quick Start
 
 ```bash
-# Setup (one-time)
-cd ~/robots/rovac
-./scripts/install_mac_autostart.sh install   # macOS launchd: joy_node + joy_mapper
-./scripts/install_pi_systemd.sh install      # Pi systemd: motors + sensors + mux + lidar
+# Pi edge services start automatically via systemd on boot
+# Verify:
+ssh pi@192.168.1.200 'sudo systemctl status rovac-edge.target'
 
-# Daily bringup (from Mac ~/robots/rovac)
+# Mac: source ROS2 environment (auto-detects IP, syncs to Pi if changed)
 source config/ros2_env.sh
-./scripts/standalone_control.sh start
 
-# SLAM / Navigation / Visualization (from Mac)
-./scripts/mac_brain_launch.sh slam
-./scripts/mac_brain_launch.sh nav ~/maps/house.yaml
+# SLAM mapping (slam-ekf recommended for best quality)
+./scripts/mac_brain_launch.sh slam-ekf
+
+# Keyboard teleop (auto-SSHes to Pi)
+python3 scripts/keyboard_teleop.py
+
+# Foxglove visualization
 ./scripts/mac_brain_launch.sh foxglove
-
-# Check Pi edge status
-ssh pi 'sudo systemctl status rovac-edge.target'
 ```
-
-## Available Scripts (~/robots/rovac/scripts/)
-
-- `standalone_control.sh` - Main bringup (Pi edge + controllers)
-- `install_mac_autostart.sh` - macOS launchd controller autostart
-- `rovac_controller_supervisor.sh` - (launchd) keeps joy stack alive
-- `install_pi_systemd.sh` - Pi systemd edge autostart
-- `mac_brain_launch.sh` - Mac Nav2/SLAM/Foxglove launcher
-- `joy_mapper_node.py` - Nintendo Pro Controller -> topics
 
 ## Key ROS2 Topics
 
-### From Pi (Sensors)
-| Topic | Type | Description |
-|-------|------|-------------|
-| `/scan` | LaserScan | XV11 LIDAR (360 ranges, ~2.8 Hz) |
-| `/sensors/ultrasonic/range` | Range | HC-SR04 distance |
-| `/imu/data` | Imu | QMI8658 IMU (accel + gyro, 6-axis, ~72 Hz) — no magnetometer |
-| `/odom` | Odometry | Dead-reckoning from commanded speeds + IMU gyro Z (20 Hz) |
-| `/battery_voltage` | Float32 | Battery voltage (V) |
-| `/diagnostics` | DiagnosticArray | Board health diagnostics (1 Hz) |
-| `/phone/camera/image_raw` | Image | Phone camera (640x480 BGR8) |
-| `/cmd_vel_joy` | Twist | Joystick velocity commands |
+### Motor (from ESP32 via USB serial driver on Pi)
+| Topic | Type | QoS | Description |
+|-------|------|-----|-------------|
+| `/odom` | Odometry | reliable | Dead-reckoning from encoder ticks (20 Hz) |
+| `/tf` | TFMessage | reliable | odom → base_link (20 Hz, auto-disabled when EKF runs) |
+| `/imu/data` | Imu | reliable | BNO055 9-axis NDOF fusion (20 Hz) |
+| `/diagnostics` | DiagnosticArray | reliable | ESP32 health, PID status, IMU cal, reconnect count (1 Hz) |
+| `/cmd_vel` | Twist | reliable | Motor commands (via mux, never publish directly) |
 
-### From Mac (Navigation)
-| Topic | Type | Description |
-|-------|------|-------------|
-| `/map` | OccupancyGrid | SLAM-generated map |
-| `/cmd_vel` | Twist | Motor commands to robot |
-| `/plan` | Path | Navigation path |
-
-## MCP Server Tools (35+)
-
-### Movement
-`move_forward`, `move_backward`, `turn_left`, `turn_right`, `stop`, `turn_around`, `drive_circle`, `drive_square`, `lawn_mower`
+### Velocity Mux (priority order)
+| Topic | Priority | Timeout | Source |
+|-------|----------|---------|--------|
+| `/cmd_vel_teleop` | 1 (highest) | 0.5s | Keyboard teleop |
+| `/cmd_vel_joy` | 2 | 1.0s | PS2 joystick |
+| `/cmd_vel_obstacle` | 3 | 0.5s | Obstacle avoidance |
+| `/cmd_vel_smoothed` | 4 (lowest) | 1.0s | Nav2 autonomous |
 
 ### Sensors
-`get_distance`, `check_obstacles`, `get_position`, `scan_surroundings`, `get_lidar_summary`, `get_camera_image`
-
-### Camera/Servo
-`look_left`, `look_right`, `look_center`, `look_at_angle`, `sweep_scan`
-
-### Navigation
-`go_to_position`, `go_to_named_location`, `save_current_location`, `return_home`, `explore_and_map`, `save_map`, `load_map`
+| Topic | Type | Description |
+|-------|------|-------------|
+| `/scan` | LaserScan | RPLIDAR C1 DTOF (~500 pts, ~10 Hz) |
+| `/phone/imu` | Imu | Phone IMU (50Hz) via rosbridge :9090 |
+| `/phone/gps/fix` | NavSatFix | Phone GPS (1Hz) via rosbridge :9090 |
 
 ## Hardware
 
 | Component | Details |
 |-----------|---------|
-| Motor/IMU Board | Hiwonder ROS Robot Controller V1.2 (STM32F407VET6, USB serial `/dev/hiwonder_board`, CH9102, baud 1000000) |
-| Computer | Raspberry Pi 5 (8GB), Ubuntu 24.04, hostname `rovac-pi` |
-| Motors | 4x 520 DC Gear Motors with Hall Encoders (12V) |
-| IMU | QMI8658 6-axis (accel + gyro only, NO magnetometer) on Hiwonder board |
-| LIDAR | XV11 (Neato) via ESP32 bridge, USB `/dev/esp32_lidar` (currently disconnected) |
-| Camera | Samsung Galaxy A16 via ADB + scrcpy |
-| Ultrasonic | 4x HC-SR04 (Super Sensor module, Arduino Nano) |
-| Webcam | NexiGo N930E USB `/dev/webcam` |
-| Power Input | 6-12V DC (board supplies 5V/5A to Pi via USB-C) |
+| Motor Controller | NULLLAB Maker-ESP32 (ESP32-WROOM-32E, CH340, 4x TB67H450FNG). USB serial COBS at 460800 baud. |
+| Motors | 2x JGB37-520R60-12 (12V, 60:1 gear, Hall encoders, 2640 ticks/rev) |
+| IMU | Adafruit BNO055 (9-axis NDOF fusion) on ESP32 I2C. Calibration persists via NVS. |
+| LIDAR | RPLIDAR C1 DTOF (16m range, ~10Hz). USB on Pi. Driver: patched `rplidar_ros`. |
+| Computer | Raspberry Pi 5 (8GB RAM), Ubuntu 24.04 |
+| Power | 12V DC barrel jack. **Motor power switch must be ON.** Battery must be >8V. |
 
-## Project Structure (Monorepo)
-
-Both Mac and Pi share the same repo. On Pi it is cloned to `/home/pi/robots/rovac/`.
+## Project Structure
 
 ```
-~/robots/rovac/                         # github.com/mohammednazmy/rovac
-├── scripts/
-│   ├── standalone_control.sh           # Main bringup (Pi edge + controllers)
-│   ├── install_mac_autostart.sh        # macOS launchd controller autostart
-│   ├── install_pi_systemd.sh           # Pi systemd edge autostart
-│   ├── mac_brain_launch.sh             # Mac Nav2/SLAM/Foxglove launcher
-│   ├── joy_mapper_node.py              # Nintendo Pro Controller -> topics
-│   └── edge/                           # Pi-side edge launch scripts
-├── config/
-│   ├── ros2_env.sh                     # ROS2 environment setup
-│   ├── cyclonedds_mac.xml              # Mac DDS config
-│   ├── cyclonedds_pi.xml               # Pi DDS config
-│   ├── systemd/                        # Pi unit files (rovac-edge.*)
-│   ├── slam_params.yaml                # SLAM toolbox config
-│   └── nav2_params.yaml                # Navigation2 config
+~/robots/rovac/
+├── common/                            # Shared COBS protocol (ESP32 + Pi C++ driver)
 ├── hardware/
-│   ├── hiwonder-ros-controller/        # Motor/IMU board driver (Pi)
-│   ├── stereo_cameras/                 # Stereo vision (Pi)
-│   ├── phone_cameras/                  # Phone camera streaming (Pi)
-│   ├── phone_sensors/                  # Phone IMU/GPS (Pi)
-│   └── ...                             # Other hardware modules
-├── robot_mcp_server/
-│   └── mcp_server.py                   # 35+ tool MCP server (Pi)
-├── super_sensor/                       # Arduino Nano HC-SR04 firmware + ROS2 node
-├── ros2_ws/                            # ROS2 workspace (build artifacts gitignored)
-├── maps/                               # Saved maps (generated files gitignored)
-├── docs/
-│   └── ARCHITECTURE_VERIFIED.md
-└── archive/                            # Legacy/experimental code
+│   ├── esp32_motor_wireless/          # ESP32 firmware (ESP-IDF v5.2)
+│   ├── as5600-magnetic-encoder/       # AS5600 encoder docs + test firmware
+│   ├── greartisan-zgb37rg-motor/      # Motor specs
+│   ├── super_sensor/                  # HC-SR04 + obstacle avoidance nodes
+│   └── android_phone_sensors/         # Phone sensor app (rosbridge WebSocket)
+├── scripts/
+│   ├── keyboard_teleop.py             # Keyboard teleop (auto-SSHes to Pi)
+│   ├── mac_brain_launch.sh            # Mac brain (slam, slam-ekf, nav, ekf, foxglove)
+│   ├── ekf_launch.py                  # EKF launch file
+│   ├── install_pi_systemd.sh          # Pi systemd setup
+│   └── edge/                          # Pi-side scripts
+├── config/
+│   ├── ros2_env.sh                    # ROS2 env + DDS IP auto-sync
+│   ├── cyclonedds_mac.xml             # Mac DDS (uses interface name, not hardcoded IP)
+│   ├── cyclonedds_pi.xml              # Pi DDS (Mac peer auto-synced)
+│   ├── ekf_params.yaml                # EKF: wheel odom + BNO055 gyro fusion
+│   ├── slam_params.yaml               # SLAM Toolbox config
+│   └── systemd/                       # Pi edge service units
+├── ros2_ws/src/
+│   ├── rovac_motor_driver/            # C++ USB serial motor driver (ament_cmake)
+│   ├── tank_description/              # URDF, cmd_vel_mux.py
+│   └── rplidar_ros/                   # RPLIDAR C1 driver (on Pi only)
+├── tools/                             # Motor characterization, PID tuning
+├── archive/                           # All legacy code (L298N, Hiwonder, QoS relays, etc.)
+└── docs/                              # Architecture docs, ROS2 reference card
 ```
 
-## Environment Setup
+## ESP32 Firmware Development
 
 ```bash
-# Mac: Activate conda environment
-conda activate ros_jazzy
-
-# IMPORTANT: Use --no-daemon on macOS — the ROS2 daemon hangs with CycloneDDS
-# Verify ROS2 topics (wait 3s for DDS discovery)
-ros2 topic list --no-daemon
-
-# Check node connectivity
-ros2 node list --no-daemon
+# Build + flash directly on Pi (ESP-IDF v5.2 installed on Pi)
+ssh pi@192.168.1.200
+sudo systemctl stop rovac-edge-motor-driver
+source ~/esp/esp-idf-v5.2/export.sh
+cd ~/robots/rovac/hardware/esp32_motor_wireless
+idf.py build && idf.py -p /dev/esp32_motor flash
+sudo systemctl start rovac-edge-motor-driver
 ```
 
-## Troubleshooting
+Key firmware files: `main/serial_transport.c` (COBS protocol), `main/motor_control.c` (PID + gyro correction), `main/odometry.c` (arc integration), `main/bno055.c` (IMU driver + NVS cal).
 
-### No topics visible
-1. Check `ROS_DOMAIN_ID=42` is set
-2. Verify CycloneDDS config: `echo $CYCLONEDDS_URI`
-3. Verify Mac IP `192.168.1.104` on `en0`
-4. Wait 3-5 seconds for DDS discovery
+## Motor Driver (Pi C++ Node)
 
-### Can't connect to Pi
+`ros2_ws/src/rovac_motor_driver/` — bridges ESP32 USB serial to ROS2.
+
+Key features:
+- **Serial health monitor**: auto-reconnects within 7s if USB re-enumerates (`serial_rx_timeout` param, default 5s)
+- **Thread-safe**: mutex-protected serial port, atomic state variables
+- **`publish_tf` param**: `true` by default, auto-set to `false` by `mac_brain_launch.sh` when EKF runs
+
+Build on Pi: `cd ros2_ws && colcon build --packages-select rovac_motor_driver`
+
+## Git Workflow
+
 ```bash
-ping 192.168.1.200
-ssh pi
+# Always pull before working
+cd ~/robots/rovac && git pull origin main
+
+# After changes — use specific file paths, never git add -A
+git add <files> && git commit -m "message" && git push origin main
+
+# Sync Pi
+ssh pi@192.168.1.200 'cd ~/robots/rovac && git pull origin main'
 ```
 
-### LIDAR not working
-```bash
-# On Pi, check serial port
-ssh pi 'ls -la /dev/esp32_lidar'
-ssh pi 'sudo systemctl status rovac-edge-lidar.service'
-ssh pi 'sudo systemctl restart rovac-edge-lidar.service'
-```
+## Critical Rules
 
-## OpenCode Agents
-
-### Primary Agents (Tab to switch)
-
-| Agent | Description |
-|-------|-------------|
-| rovac | ROVAC robot project specialist with full ROS2 context |
-| web | Web dashboard development specialist for Flask/FastAPI |
-
-### Subagents (invoke with @agent-name)
-
-#### Robot Development
-| Subagent | Use For |
-|----------|---------|
-| @nav2 | Navigation2, path planning, costmaps |
-| @slam | SLAM toolbox, mapping, localization |
-| @tf | Transform tree, coordinate frames |
-| @motors | Hiwonder ROS Controller V1.2 motor/IMU |
-| @lidar | XV11 LIDAR via ESP32 bridge |
-| @imu | QMI8658 6-axis IMU (accel + gyro, no magnetometer) |
-| @pi-ssh | Remote SSH operations on Pi |
-
-#### Web Development
-| Subagent | Use For |
-|----------|---------|
-| @frontend | HTML/CSS/JS, UI components, styling |
-| @backend | Flask routes, FastAPI endpoints |
-| @playwright | E2E testing, browser automation |
-| @ux | Usability, accessibility (a11y) |
-| @api-design | REST API design, documentation |
-
-## OpenCode Commands
-
-### Robot Commands
-| Command | Description |
-|---------|-------------|
-| /start | Start full robot system |
-| /stop | Stop robot system |
-| /slam | Start SLAM mapping |
-| /nav | Start navigation with map |
-| /check | Full system health check |
-| /drive | Send drive commands |
-
-### Web Development Commands
-| Command | Description |
-|---------|-------------|
-| /dev-server | Start Flask + MCP servers |
-| /test-web | Run Playwright E2E tests |
-| /validate-ui | Check accessibility and usability |
-| /api-docs | View API documentation |
-| /web-component | Create new UI component |
+1. **Never publish directly to `/cmd_vel`** — always use mux input topics
+2. **Never run two EKF instances** — causes 40-degree yaw oscillation
+3. **Never source ESP-IDF and conda ros_jazzy in the same shell**
+4. **Use `--no-daemon` for `ros2 topic list`** on macOS (daemon hangs with CycloneDDS)
+5. **`ros2 topic hz` does NOT accept `--no-daemon`** on Mac — use without it
+6. **CH340 DTR resets ESP32** — motor driver service handles this via `stty -hupcl`
+7. **Motor power switch must be ON** and battery >8V for motors to work
+8. **systemd uses `Requires=` (not `BindsTo=`)** for USB devices — allows auto-restart after USB glitches
