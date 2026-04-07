@@ -1,34 +1,29 @@
 [Unit]
 Description=ROVAC Edge Stack (Pi 5 Sensors and Motors)
-Documentation=https://github.com/rovac-robot
+Documentation=https://github.com/mohammednazmy/rovac
 After=network-online.target
 Wants=network-online.target
 
-# micro-ROS Agent (bridges wireless ESP32 motor to ROS2 DDS)
-Wants=rovac-edge-uros-agent.service
-Wants=rovac-edge-uros-agent-watchdog.timer
+# Motor driver (USB serial COBS binary protocol to ESP32)
+Wants=rovac-edge-motor-driver.service
 
-# RPLIDAR C1 (USB serial, native ROS2 driver — NOT via micro-ROS Agent)
+# RPLIDAR C1 (USB serial, native ROS2 driver)
 Wants=rovac-edge-rplidar-c1.service
 
 # Core services
-Wants=rovac-edge-supersensor.service
 Wants=rovac-edge-mux.service
 Wants=rovac-edge-tf.service
-Wants=rovac-edge-obstacle.service
 Wants=rovac-edge-map-tf.service
-Wants=rovac-edge-stereo-depth.service
-Wants=rovac-edge-stereo-obstacle.service
+Wants=rovac-edge-obstacle.service
+Wants=rovac-edge-supersensor.service
+Wants=rovac-edge-health.service
+
+# rosbridge WebSocket (phone sensors via port 9090)
+Wants=rovac-edge-rosbridge.service
 
 # PS2 wireless controller (joy_node + mapper on Pi)
 Wants=rovac-edge-ps2-joy.service
 Wants=rovac-edge-ps2-mapper.service
-
-# Phone sensors (optional - starts if phone connected)
-Wants=rovac-edge-phone-sensors.service
-
-# Camera (optional)
-Wants=rovac-camera.service
 
 [Install]
 WantedBy=multi-user.target

@@ -72,16 +72,41 @@ install_units() {
   remote_sudo_install "/etc/udev/rules.d/99-rovac-esp32.rules" "$ROVAC_DIR/config/udev/99-rovac-esp32.rules"
   ssh "$PI_HOST" "sudo udevadm control --reload-rules && sudo udevadm trigger" || true
 
+  # Remove dead services from previous installations (WiFi micro-ROS era)
+  echo "Cleaning up legacy services..."
+  ssh "$PI_HOST" "
+    sudo systemctl disable --now rovac-edge-uros-agent.service rovac-edge-uros-agent-watchdog.service rovac-edge-uros-agent-watchdog.timer rovac-edge-odom-relay.service rovac-edge-imu-relay.service rovac-edge-tf-relay.service rovac-edge-esp32.service 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/rovac-edge-uros-agent.service /etc/systemd/system/rovac-edge-uros-agent-watchdog.service /etc/systemd/system/rovac-edge-uros-agent-watchdog.timer /etc/systemd/system/rovac-edge-odom-relay.service /etc/systemd/system/rovac-edge-imu-relay.service /etc/systemd/system/rovac-edge-tf-relay.service /etc/systemd/system/rovac-edge-esp32.service
+  " || true
+
+  # Target
   remote_sudo_install "/etc/systemd/system/rovac-edge.target" "$UNIT_DIR/rovac-edge.target"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-uros-agent.service" "$UNIT_DIR/rovac-edge-uros-agent.service"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-uros-agent-watchdog.service" "$UNIT_DIR/rovac-edge-uros-agent-watchdog.service"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-uros-agent-watchdog.timer" "$UNIT_DIR/rovac-edge-uros-agent-watchdog.timer"
+
+  # Motor driver (USB serial COBS binary protocol to ESP32)
+  remote_sudo_install "/etc/systemd/system/rovac-edge-motor-driver.service" "$UNIT_DIR/rovac-edge-motor-driver.service"
+
+  # RPLIDAR C1 (USB serial, native ROS2 driver)
+  remote_sudo_install "/etc/systemd/system/rovac-edge-rplidar-c1.service" "$UNIT_DIR/rovac-edge-rplidar-c1.service"
+
+  # Core services
   remote_sudo_install "/etc/systemd/system/rovac-edge-mux.service" "$UNIT_DIR/rovac-edge-mux.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-tf.service" "$UNIT_DIR/rovac-edge-tf.service"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-rplidar-c1.service" "$UNIT_DIR/rovac-edge-rplidar-c1.service"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-supersensor.service" "$UNIT_DIR/rovac-edge-supersensor.service"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-obstacle.service" "$UNIT_DIR/rovac-edge-obstacle.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-map-tf.service" "$UNIT_DIR/rovac-edge-map-tf.service"
+  remote_sudo_install "/etc/systemd/system/rovac-edge-obstacle.service" "$UNIT_DIR/rovac-edge-obstacle.service"
+  remote_sudo_install "/etc/systemd/system/rovac-edge-supersensor.service" "$UNIT_DIR/rovac-edge-supersensor.service"
+  remote_sudo_install "/etc/systemd/system/rovac-edge-health.service" "$UNIT_DIR/rovac-edge-health.service"
+
+  # rosbridge WebSocket (phone sensors via port 9090)
+  remote_sudo_install "/etc/systemd/system/rovac-edge-rosbridge.service" "$UNIT_DIR/rovac-edge-rosbridge.service"
+
+  # PS2 wireless controller
+  remote_sudo_install "/etc/systemd/system/rovac-edge-ps2-joy.service" "$UNIT_DIR/rovac-edge-ps2-joy.service"
+  remote_sudo_install "/etc/systemd/system/rovac-edge-ps2-mapper.service" "$UNIT_DIR/rovac-edge-ps2-mapper.service"
+
+  # EKF sensor fusion (disabled by default — run from Mac)
+  remote_sudo_install "/etc/systemd/system/rovac-edge-ekf.service" "$UNIT_DIR/rovac-edge-ekf.service"
+
+  # Optional peripherals
   remote_sudo_install "/etc/systemd/system/rovac-edge-stereo-depth.service" "$UNIT_DIR/rovac-edge-stereo-depth.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-stereo-obstacle.service" "$UNIT_DIR/rovac-edge-stereo-obstacle.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-stereo.target" "$UNIT_DIR/rovac-edge-stereo.target"
@@ -89,31 +114,13 @@ install_units() {
   remote_sudo_install "/etc/systemd/system/rovac-phone-cameras.service" "$UNIT_DIR/rovac-phone-cameras.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-webcam.service" "$UNIT_DIR/rovac-edge-webcam.service"
   remote_sudo_install "/etc/systemd/system/rovac-camera.service" "$UNIT_DIR/rovac-camera.service"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-ps2-joy.service" "$UNIT_DIR/rovac-edge-ps2-joy.service"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-ps2-mapper.service" "$UNIT_DIR/rovac-edge-ps2-mapper.service"
-
-  # QoS relays (best_effort→reliable for robot_localization)
-  remote_sudo_install "/etc/systemd/system/rovac-edge-odom-relay.service" "$UNIT_DIR/rovac-edge-odom-relay.service"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-imu-relay.service" "$UNIT_DIR/rovac-edge-imu-relay.service"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-tf-relay.service" "$UNIT_DIR/rovac-edge-tf-relay.service"
-
-  # rosbridge (phone sensors WebSocket)
-  remote_sudo_install "/etc/systemd/system/rovac-edge-rosbridge.service" "$UNIT_DIR/rovac-edge-rosbridge.service"
-
-  # EKF sensor fusion
-  remote_sudo_install "/etc/systemd/system/rovac-edge-ekf.service" "$UNIT_DIR/rovac-edge-ekf.service"
 
   ssh "$PI_HOST" "sudo systemctl daemon-reload"
 
   # Stop any ad-hoc instances to avoid duplicates (safe if already stopped).
   ssh "$PI_HOST" "
     sudo systemctl stop rovac-edge.target 2>/dev/null || true
-    sudo systemctl stop rovac-edge-uros-agent.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-rplidar-c1.service rovac-edge-supersensor.service rovac-edge-obstacle.service rovac-camera.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service 2>/dev/null || true
-    pkill -f 'micro_ros_agent' 2>/dev/null || true
     pkill -f 'cmd_vel_mux\\.py' 2>/dev/null || true
-    pkill -f 'lidar_wireless_monitor\\.py' 2>/dev/null || true
-    pkill -f 'scrcpy --video-source=camera' 2>/dev/null || true
-    pkill -f 'phone_camera_publisher\\.py' 2>/dev/null || true
   " || true
 
   ssh "$PI_HOST" "sudo systemctl enable --now rovac-edge.target"
@@ -128,7 +135,7 @@ show_status() {
     systemctl is-enabled rovac-edge.target 2>/dev/null || true
     systemctl is-active rovac-edge.target 2>/dev/null || true
     echo
-    systemctl --no-pager -l status rovac-edge.target rovac-edge-uros-agent.service rovac-edge-uros-agent-watchdog.timer rovac-edge-rplidar-c1.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-supersensor.service rovac-edge-obstacle.service rovac-edge-map-tf.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service || true
+    systemctl --no-pager -l status rovac-edge.target rovac-edge-motor-driver.service rovac-edge-rplidar-c1.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-map-tf.service rovac-edge-supersensor.service rovac-edge-obstacle.service rovac-edge-rosbridge.service rovac-edge-health.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service || true
   "
 }
 
@@ -140,26 +147,13 @@ uninstall_units() {
   echo "Disabling and removing units from $PI_HOST..."
   ssh "$PI_HOST" "
     sudo systemctl disable --now rovac-edge.target 2>/dev/null || true
-    sudo systemctl disable --now rovac-edge-uros-agent.service rovac-edge-uros-agent-watchdog.timer rovac-edge-mux.service rovac-edge-tf.service rovac-edge-rplidar-c1.service rovac-edge-supersensor.service rovac-edge-obstacle.service rovac-edge-map-tf.service rovac-edge-stereo-depth.service rovac-edge-stereo-obstacle.service rovac-edge-phone-sensors.service rovac-phone-cameras.service rovac-camera.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/rovac-edge.target
-    sudo rm -f /etc/systemd/system/rovac-edge-uros-agent.service
-    sudo rm -f /etc/systemd/system/rovac-edge-uros-agent-watchdog.service
-    sudo rm -f /etc/systemd/system/rovac-edge-uros-agent-watchdog.timer
-    sudo rm -f /etc/udev/rules.d/99-rovac-esp32.rules
-    sudo rm -f /etc/systemd/system/rovac-edge-mux.service
-    sudo rm -f /etc/systemd/system/rovac-edge-tf.service
-    sudo rm -f /etc/systemd/system/rovac-edge-rplidar-c1.service
-    sudo rm -f /etc/systemd/system/rovac-edge-supersensor.service
-    sudo rm -f /etc/systemd/system/rovac-edge-obstacle.service
-    sudo rm -f /etc/systemd/system/rovac-edge-map-tf.service
-    sudo rm -f /etc/systemd/system/rovac-edge-stereo-depth.service
-    sudo rm -f /etc/systemd/system/rovac-edge-stereo-obstacle.service
-    sudo rm -f /etc/systemd/system/rovac-edge-stereo.target
-    sudo rm -f /etc/systemd/system/rovac-edge-phone-sensors.service
-    sudo rm -f /etc/systemd/system/rovac-phone-cameras.service
+    sudo rm -f /etc/systemd/system/rovac-edge*.service
+    sudo rm -f /etc/systemd/system/rovac-edge*.target
+    sudo rm -f /etc/systemd/system/rovac-edge*.timer
     sudo rm -f /etc/systemd/system/rovac-camera.service
-    sudo rm -f /etc/systemd/system/rovac-edge-ps2-joy.service
-    sudo rm -f /etc/systemd/system/rovac-edge-ps2-mapper.service
+    sudo rm -f /etc/systemd/system/rovac-phone-cameras.service
+    sudo rm -f /etc/udev/rules.d/99-rovac-esp32.rules
+    sudo rm -f /etc/udev/rules.d/99-rovac-usb.rules
     sudo systemctl daemon-reload
   "
 }
