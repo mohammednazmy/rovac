@@ -55,6 +55,11 @@ hardware/esp32_gateway/
 *.tflite
 *.pb
 
+# === AI Tool Configs (contain MCP server env vars / API keys) ===
+.codex/
+opencode.json
+**/opencode.json
+
 # === IDE / Editor / Tool Caches ===
 .opencode/
 .ruff_cache/
