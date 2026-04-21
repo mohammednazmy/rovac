@@ -18,6 +18,7 @@
 
 #include "motor_control.h"
 #include "motor_driver.h"
+#include "motor_params.h"
 #include "odometry.h"
 #include "bno055.h"
 #include "led_status.h"
@@ -226,6 +227,62 @@ static void process_frame(const uint8_t *frame, size_t frame_len)
     case MSG_CMD_RESET_ODOM:
         odometry_reset();
         ESP_LOGI(TAG, "Odometry reset to zero");
+        break;
+
+    case MSG_CMD_PWM_RAW:
+        if (payload_len == sizeof(cmd_pwm_raw_payload_t)) {
+            const cmd_pwm_raw_payload_t *cmd =
+                (const cmd_pwm_raw_payload_t *)payload;
+            motor_control_set_raw_pwm(cmd->left_pwm, cmd->right_pwm);
+        }
+        break;
+
+    case MSG_CMD_SET_PARAM:
+        if (payload_len == sizeof(cmd_set_param_payload_t)) {
+            const cmd_set_param_payload_t *cmd =
+                (const cmd_set_param_payload_t *)payload;
+            esp_err_t err = motor_params_set_by_id(cmd->param_id, cmd->value);
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "SET_PARAM id=%u value=%.4f rejected: %s",
+                         (unsigned)cmd->param_id, (double)cmd->value,
+                         esp_err_to_name(err));
+            }
+        }
+        break;
+
+    case MSG_CMD_GET_PARAM:
+        if (payload_len == sizeof(cmd_get_param_payload_t)) {
+            const cmd_get_param_payload_t *cmd =
+                (const cmd_get_param_payload_t *)payload;
+            float value = 0.0f;
+            uint8_t src = PARAM_SRC_DEFAULT;
+            esp_err_t err = motor_params_get_by_id(cmd->param_id, &value, &src);
+            if (err == ESP_OK) {
+                param_value_payload_t resp = {
+                    .param_id = cmd->param_id,
+                    .value    = value,
+                    .source   = src,
+                };
+                send_frame(MSG_PARAM_VALUE, &resp, sizeof(resp));
+            }
+        }
+        break;
+
+    case MSG_CMD_SAVE_NVS:
+        if (motor_params_save_nvs() == ESP_OK) {
+            ESP_LOGI(TAG, "Motor params saved to NVS");
+        }
+        break;
+
+    case MSG_CMD_LOAD_NVS:
+        if (motor_params_load_nvs() == ESP_OK) {
+            ESP_LOGI(TAG, "Motor params reloaded from NVS");
+        }
+        break;
+
+    case MSG_CMD_RESET_PARAMS:
+        motor_params_reset_to_defaults();
+        ESP_LOGW(TAG, "Motor params reset to firmware defaults (NVS untouched)");
         break;
 
     default:

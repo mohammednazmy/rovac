@@ -31,6 +31,15 @@ void motor_control_cmd_vel(float linear_x, float angular_z);
 // Stop motors and reset PID
 void motor_control_stop(void);
 
+// Enter RAW PWM mode — bypasses PID, writes motor PWM directly.
+// Used for characterization (PWM sweeps) only. Any subsequent cmd_vel
+// call leaves raw mode and returns to PID control.
+// Raw mode respects the same watchdog timeout as cmd_vel.
+void motor_control_set_raw_pwm(int16_t left_pwm, int16_t right_pwm);
+
+// True if motor control is currently in raw PWM (bypass) mode.
+bool motor_control_is_raw_mode(void);
+
 // Check cmd_vel timeout. Call at ~10Hz from watchdog timer.
 void motor_control_watchdog(void);
 

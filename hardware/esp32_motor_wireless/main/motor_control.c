@@ -28,6 +28,7 @@
 #include "pid_controller.h"
 #include "odometry.h"
 #include "bno055.h"
+#include "motor_params.h"
 
 #include <math.h>
 #include <string.h>
@@ -44,18 +45,9 @@ static const char *TAG = "motor_ctrl";
 #define M_PI 3.14159265358979323846f
 #endif
 
-// ---- PID parameters (tuned for 50Hz loop on TB67H450FNG) ----
-// Ki/Kd scaled down from Python driver's ~10Hz values:
-//   Ki: 300 → 60 (5x reduction for 5x faster loop)
-//   Kd: 10 → 3 (less derivative kick at high rate)
-//   Kp: 40 → 25 (reduce oscillation, FF does most work)
-#define PID_KP       25.0f
-#define PID_KI       60.0f
-#define PID_KD        3.0f
-#define PID_FF_SCALE 200.0f
-#define PID_FF_OFFSET_LEFT  136.0f
-#define PID_FF_OFFSET_RIGHT 132.0f
-#define PID_MAX_OUTPUT      255.0f
+/* All PID/FF tunables now live in motor_params — firmware defaults are
+ * declared in motor_params.c (s_defaults). Runtime changes arrive via
+ * MSG_CMD_SET_PARAM and persist to NVS via MSG_CMD_SAVE_NVS. */
 
 // ---- Wheel geometry (from odometry.h) ----
 // WHEEL_SEPARATION = 0.155m, WHEEL_RADIUS = 0.032m, TICKS_PER_REV = 2640
@@ -75,11 +67,21 @@ static wheel_pid_t s_pid_left;
 static wheel_pid_t s_pid_right;
 
 // ---- Target state (set by cmd_vel, read by PID task) ----
+// s_target_lock protects: s_target_left, s_target_right, s_pid_active,
+//                         s_raw_pwm_active, s_raw_pwm_left, s_raw_pwm_right,
+//                         s_last_cmd_time_us
 static SemaphoreHandle_t s_target_lock = NULL;
 static float s_target_left  = 0.0f;  // Target wheel velocity (m/s)
 static float s_target_right = 0.0f;
 static bool  s_pid_active   = false;  // True when targets are non-zero
-static int64_t s_last_cmd_time_us = 0; // Last cmd_vel timestamp
+static int64_t s_last_cmd_time_us = 0; // Last cmd_vel / raw PWM timestamp
+
+// ---- Raw PWM mode (characterization bypass) ----
+// When s_raw_pwm_active, PID task ignores targets and writes s_raw_pwm_*
+// directly to the motor driver. Any subsequent cmd_vel clears the flag.
+static bool  s_raw_pwm_active = false;
+static int16_t s_raw_pwm_left  = 0;
+static int16_t s_raw_pwm_right = 0;
 
 // ---- Measured state (set by PID task, read by odom publisher) ----
 static SemaphoreHandle_t s_meas_lock = NULL;
@@ -151,20 +153,55 @@ static void pid_task(void *arg)
         // ---- Step 3: Update odometry ----
         odometry_update(left_delta, right_delta, dt);
 
-        // ---- Step 4: Run PID (if active) ----
+        // ---- Step 4: Snapshot target state and mode ----
         xSemaphoreTake(s_target_lock, portMAX_DELAY);
-        bool active = s_pid_active;
-        float tgt_left  = s_target_left;
-        float tgt_right = s_target_right;
+        bool raw_mode     = s_raw_pwm_active;
+        int16_t raw_left  = s_raw_pwm_left;
+        int16_t raw_right = s_raw_pwm_right;
+        bool active       = s_pid_active;
+        float tgt_left    = s_target_left;
+        float tgt_right   = s_target_right;
         xSemaphoreGive(s_target_lock);
 
-        if (active) {
+        if (raw_mode) {
+            // Characterization bypass: write PWM directly, keep PID state
+            // clean so a later cmd_vel starts from a known zero integral.
+            pid_reset(&s_pid_left);
+            pid_reset(&s_pid_right);
+            motor_driver_set(raw_left, raw_right);
+            if (++debug_counter % PID_DEBUG_INTERVAL == 0) {
+                ESP_LOGI(TAG, "RAW pwm=%d/%d meas=%.3f/%.3f enc=%ld/%ld",
+                         raw_left, raw_right, v_left_meas, v_right_meas,
+                         (long)left_delta, (long)right_delta);
+            }
+        } else if (active) {
+            // Pull latest tunable params each cycle — cheap snapshot under mutex.
+            motor_params_t p;
+            motor_params_get(&p);
+
+            // Update PID gains + max output from runtime params
+            s_pid_left.kp  = p.kp;  s_pid_right.kp  = p.kp;
+            s_pid_left.ki  = p.ki;  s_pid_right.ki  = p.ki;
+            s_pid_left.kd  = p.kd;  s_pid_right.kd  = p.kd;
+            s_pid_left.ff_scale  = p.ff_scale;  s_pid_right.ff_scale  = p.ff_scale;
+            s_pid_left.max_output = p.max_output;
+            s_pid_right.max_output = p.max_output;
+            s_pid_left.max_integral_pwm  = p.max_integral_pwm;
+            s_pid_right.max_integral_pwm = p.max_integral_pwm;
+
+            // Per-direction ff_offset — pick the right quadrant for each wheel.
+            // Phase 2 will split fwd/rev meaningfully; today the defaults are equal.
+            s_pid_left.ff_offset  = (tgt_left  >= 0.0f)
+                                    ? p.ff_offset_left_fwd  : p.ff_offset_left_rev;
+            s_pid_right.ff_offset = (tgt_right >= 0.0f)
+                                    ? p.ff_offset_right_fwd : p.ff_offset_right_rev;
+
             float pwm_left  = pid_update(&s_pid_left,  tgt_left,  v_left_meas,  dt);
             float pwm_right = pid_update(&s_pid_right, tgt_right, v_right_meas, dt);
 
             // Convert float PWM to int16, rounding
-            int16_t cmd_left  = (int16_t)clampf(roundf(pwm_left),  -255.0f, 255.0f);
-            int16_t cmd_right = (int16_t)clampf(roundf(pwm_right), -255.0f, 255.0f);
+            int16_t cmd_left  = (int16_t)clampf(roundf(pwm_left),  -p.max_output, p.max_output);
+            int16_t cmd_right = (int16_t)clampf(roundf(pwm_right), -p.max_output, p.max_output);
 
             motor_driver_set(cmd_left, cmd_right);
 
@@ -198,16 +235,24 @@ esp_err_t motor_control_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    // Initialize PID controllers with calibrated parameters
-    pid_init(&s_pid_left,  PID_KP, PID_KI, PID_KD,
-             PID_FF_SCALE, PID_FF_OFFSET_LEFT, PID_MAX_OUTPUT);
-    pid_init(&s_pid_right, PID_KP, PID_KI, PID_KD,
-             PID_FF_SCALE, PID_FF_OFFSET_RIGHT, PID_MAX_OUTPUT);
+    // Seed PID structs with current runtime params. The pid_task will keep
+    // these in sync every cycle, so this is just the boot-time snapshot.
+    motor_params_t p;
+    motor_params_get(&p);
+    pid_init(&s_pid_left,  p.kp, p.ki, p.kd,
+             p.ff_scale, p.ff_offset_left_fwd,
+             p.max_output, p.max_integral_pwm);
+    pid_init(&s_pid_right, p.kp, p.ki, p.kd,
+             p.ff_scale, p.ff_offset_right_fwd,
+             p.max_output, p.max_integral_pwm);
 
     // Initialize targets
     s_target_left  = 0.0f;
     s_target_right = 0.0f;
     s_pid_active   = false;
+    s_raw_pwm_active = false;
+    s_raw_pwm_left = 0;
+    s_raw_pwm_right = 0;
     s_last_cmd_time_us = esp_timer_get_time();
 
     // Start PID task pinned to Core 1
@@ -226,9 +271,10 @@ esp_err_t motor_control_init(void)
     }
 
     ESP_LOGI(TAG, "Motor control initialized: PID@%dHz on Core 1, "
-             "kp=%.0f ki=%.0f kd=%.0f ff_scale=%.0f ff_off=%.0f/%.0f",
-             MC_PID_RATE_HZ, PID_KP, PID_KI, PID_KD, PID_FF_SCALE,
-             PID_FF_OFFSET_LEFT, PID_FF_OFFSET_RIGHT);
+             "kp=%.0f ki=%.0f kd=%.0f ff_scale=%.0f ff_off_l=%.0f ff_off_r=%.0f max_i=%.0f",
+             MC_PID_RATE_HZ, (double)p.kp, (double)p.ki, (double)p.kd,
+             (double)p.ff_scale, (double)p.ff_offset_left_fwd,
+             (double)p.ff_offset_right_fwd, (double)p.max_integral_pwm);
     return ESP_OK;
 }
 
@@ -238,8 +284,35 @@ void motor_control_set_target(float v_left, float v_right)
     s_target_left  = v_left;
     s_target_right = v_right;
     s_pid_active   = true;
+    /* Any velocity command exits raw PWM bypass mode */
+    s_raw_pwm_active = false;
     s_last_cmd_time_us = esp_timer_get_time();
     xSemaphoreGive(s_target_lock);
+}
+
+void motor_control_set_raw_pwm(int16_t left_pwm, int16_t right_pwm)
+{
+    /* Clamp defensively — driver clamps too, but be explicit. */
+    if (left_pwm  >  255) left_pwm  =  255;
+    if (left_pwm  < -255) left_pwm  = -255;
+    if (right_pwm >  255) right_pwm =  255;
+    if (right_pwm < -255) right_pwm = -255;
+
+    xSemaphoreTake(s_target_lock, portMAX_DELAY);
+    s_raw_pwm_left   = left_pwm;
+    s_raw_pwm_right  = right_pwm;
+    s_raw_pwm_active = true;
+    s_pid_active     = false;   /* PID off while raw mode is engaged */
+    s_last_cmd_time_us = esp_timer_get_time();
+    xSemaphoreGive(s_target_lock);
+}
+
+bool motor_control_is_raw_mode(void)
+{
+    xSemaphoreTake(s_target_lock, portMAX_DELAY);
+    bool r = s_raw_pwm_active;
+    xSemaphoreGive(s_target_lock);
+    return r;
 }
 
 // ---- Gyro-assisted heading correction ----
@@ -284,9 +357,12 @@ void motor_control_cmd_vel(float linear_x, float angular_z)
 void motor_control_stop(void)
 {
     xSemaphoreTake(s_target_lock, portMAX_DELAY);
-    s_target_left  = 0.0f;
-    s_target_right = 0.0f;
-    s_pid_active   = false;
+    s_target_left    = 0.0f;
+    s_target_right   = 0.0f;
+    s_pid_active     = false;
+    s_raw_pwm_active = false;
+    s_raw_pwm_left   = 0;
+    s_raw_pwm_right  = 0;
     xSemaphoreGive(s_target_lock);
 
     // PID state is reset by the PID task when it sees active=false,
@@ -299,7 +375,8 @@ void motor_control_stop(void)
 void motor_control_watchdog(void)
 {
     xSemaphoreTake(s_target_lock, portMAX_DELAY);
-    bool active = s_pid_active;
+    bool active = s_pid_active || s_raw_pwm_active;
+    bool raw    = s_raw_pwm_active;
     int64_t last_cmd = s_last_cmd_time_us;
     xSemaphoreGive(s_target_lock);
 
@@ -311,7 +388,8 @@ void motor_control_watchdog(void)
     int64_t elapsed_ms = (now_us - last_cmd) / 1000;
 
     if (elapsed_ms > MC_CMD_VEL_TIMEOUT_MS) {
-        ESP_LOGW(TAG, "cmd_vel timeout (%" PRId64 " ms > %d ms) — stopping motors",
+        ESP_LOGW(TAG, "%s timeout (%" PRId64 " ms > %d ms) — stopping motors",
+                 raw ? "raw-pwm" : "cmd_vel",
                  elapsed_ms, MC_CMD_VEL_TIMEOUT_MS);
         motor_control_stop();
     }
@@ -320,7 +398,7 @@ void motor_control_watchdog(void)
 bool motor_control_is_active(void)
 {
     xSemaphoreTake(s_target_lock, portMAX_DELAY);
-    bool active = s_pid_active;
+    bool active = s_pid_active || s_raw_pwm_active;
     xSemaphoreGive(s_target_lock);
     return active;
 }

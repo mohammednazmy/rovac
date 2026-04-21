@@ -31,6 +31,7 @@
 #include "motor_driver.h"
 #include "encoder_reader.h"
 #include "odometry.h"
+#include "motor_params.h"
 #include "motor_control.h"
 #include "serial_transport.h"
 #include "oled_status.h"
@@ -85,6 +86,11 @@ void app_main(void)
     // Step 1: NVS + config
     ESP_LOGI(TAG, "Loading configuration from NVS...");
     ESP_ERROR_CHECK(nvs_config_init(&g_config));
+
+    // Step 1b: Motor tunable params (NVS-backed, overlays firmware defaults)
+    // Must come before motor_control_init — PID gets seeded from these.
+    ESP_LOGI(TAG, "Loading motor tunable params...");
+    ESP_ERROR_CHECK(motor_params_init());
 
     // Step 2: LED status indicator
     ESP_LOGI(TAG, "Initializing LED...");

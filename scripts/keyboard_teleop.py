@@ -286,8 +286,14 @@ def run_teleop(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10
                     elif key == 3:  # CTRL-C
                         break
 
-                # Ramp angular velocity — gentle on first tap, full on sustained hold
-                if moved and self.angular_z != 0.0:
+                # Ramp angular velocity — gentle on first tap, full on sustained hold.
+                # EXCEPTION: turn-in-place (linear_x ≈ 0) skips the ramp. Static friction
+                # at the commanded wheel velocities sits right at the stiction break-out
+                # point; nerfing the first tap to 25% of commanded angular means the
+                # motors don't move at all under load. Arc turns (linear ≠ 0) still
+                # ramp because the motors are already spinning.
+                is_turn_in_place = abs(self.linear_x) < 1e-3
+                if moved and self.angular_z != 0.0 and not is_turn_in_place:
                     ramp = max(ANGULAR_RAMP_MIN,
                                min(1.0, repeat_count / ANGULAR_RAMP_REPEATS))
                     self.angular_z *= ramp

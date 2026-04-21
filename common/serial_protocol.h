@@ -25,7 +25,7 @@ extern "C" {
 
 /* ── Protocol constants ─────────────────────────────────── */
 
-#define SERIAL_PROTOCOL_VERSION     1
+#define SERIAL_PROTOCOL_VERSION     2
 #define SERIAL_PROTOCOL_BAUD        460800
 #define SERIAL_PROTOCOL_MAX_FRAME   256   /* Max COBS-encoded frame size */
 
@@ -35,11 +35,22 @@ extern "C" {
 #define MSG_CMD_VEL         0x01    /* Velocity command */
 #define MSG_CMD_ESTOP       0x02    /* Emergency stop (brake) */
 #define MSG_CMD_RESET_ODOM  0x03    /* Reset odometry to zero */
+#define MSG_CMD_PWM_RAW     0x04    /* Direct PWM (bypass PID) — characterization */
+#define MSG_CMD_SET_PARAM   0x05    /* Set a runtime tunable param */
+#define MSG_CMD_SAVE_NVS    0x06    /* Persist current params to NVS */
+#define MSG_CMD_LOAD_NVS    0x07    /* Load params from NVS into runtime */
+#define MSG_CMD_RESET_PARAMS 0x08   /* Reset runtime params to firmware defaults */
+#define MSG_CMD_GET_PARAM   0x09    /* Request current value of a param */
 
-/* ESP32 → Pi data (0x10–0x1F) */
+/* ESP32 → Pi data (0x10–0x1F) — Motor Controller */
 #define MSG_ODOM            0x10    /* Odometry (20 Hz) */
 #define MSG_IMU             0x11    /* IMU data (20 Hz) */
 #define MSG_DIAG            0x12    /* Diagnostics (1 Hz) */
+#define MSG_PARAM_VALUE     0x13    /* Response to GET_PARAM */
+
+/* ESP32 → Pi data (0x20–0x2F) — Sensor Hub */
+#define MSG_SENSOR_DATA     0x20    /* Ultrasonic + cliff readings (10 Hz) */
+#define MSG_SENSOR_DIAG     0x21    /* Sensor hub diagnostics (1 Hz) */
 
 /* ESP32 → Pi debug (0xF0+) */
 #define MSG_LOG             0xF0    /* Log string (null-terminated) */
@@ -85,6 +96,85 @@ typedef struct __attribute__((packed)) {
     int8_t   imu_cal_mag;
 } diag_payload_t;
 /* Size: 22 bytes */
+
+/* ── Characterization / tuning payloads ────────────────── */
+
+/* MSG_CMD_PWM_RAW — direct motor PWM control, bypassing PID.
+ * Stays active until a new MSG_CMD_VEL / MSG_CMD_ESTOP / watchdog timeout. */
+typedef struct __attribute__((packed)) {
+    int16_t left_pwm;        /* -255..+255 (sign = direction, 0 = coast) */
+    int16_t right_pwm;       /* -255..+255 */
+} cmd_pwm_raw_payload_t;
+/* Size: 4 bytes */
+
+/* MSG_CMD_SET_PARAM — set a single runtime tunable parameter in RAM.
+ * Not persisted until MSG_CMD_SAVE_NVS is sent. */
+typedef struct __attribute__((packed)) {
+    uint8_t  param_id;       /* see PARAM_* defines below */
+    float    value;
+} cmd_set_param_payload_t;
+/* Size: 5 bytes */
+
+/* MSG_CMD_GET_PARAM — request the current runtime value of a param. */
+typedef struct __attribute__((packed)) {
+    uint8_t  param_id;
+} cmd_get_param_payload_t;
+/* Size: 1 byte */
+
+/* MSG_PARAM_VALUE — reply to GET_PARAM, or broadcast after SET_PARAM ack. */
+#define PARAM_SRC_DEFAULT   0    /* value is a compile-time firmware default */
+#define PARAM_SRC_RUNTIME   1    /* value was set at runtime (not yet saved) */
+#define PARAM_SRC_NVS       2    /* value was loaded from NVS on boot */
+typedef struct __attribute__((packed)) {
+    uint8_t  param_id;
+    float    value;
+    uint8_t  source;         /* PARAM_SRC_* above */
+} param_value_payload_t;
+/* Size: 6 bytes */
+
+/* ── Tunable parameter IDs ──────────────────────────────── */
+/* IDs are 1-based; 0 is reserved for "invalid". Keep this list stable
+ * across firmware versions — NVS storage is keyed on these IDs. */
+
+#define PARAM_KP                    0x01  /* PID proportional gain */
+#define PARAM_KI                    0x02  /* PID integral gain */
+#define PARAM_KD                    0x03  /* PID derivative gain */
+#define PARAM_FF_SCALE              0x04  /* PWM per (m/s) — linear region slope */
+#define PARAM_FF_OFFSET_LEFT_FWD    0x05  /* PWM stiction offset, left motor forward */
+#define PARAM_FF_OFFSET_LEFT_REV    0x06  /* PWM stiction offset, left motor reverse */
+#define PARAM_FF_OFFSET_RIGHT_FWD   0x07  /* PWM stiction offset, right motor forward */
+#define PARAM_FF_OFFSET_RIGHT_REV   0x08  /* PWM stiction offset, right motor reverse */
+#define PARAM_MAX_INTEGRAL_PWM      0x09  /* Cap on I-term PWM contribution */
+#define PARAM_MAX_OUTPUT            0x0A  /* Max PID output magnitude (normally 255) */
+#define PARAM_KICKSTART_PWM         0x0B  /* PWM applied during kickstart pulse */
+#define PARAM_KICKSTART_MS          0x0C  /* Kickstart pulse duration (ms) */
+#define PARAM_TURN_KP_BOOST         0x0D  /* kp multiplier during turn-in-place */
+#define PARAM_STALL_FF_BOOST        0x0E  /* Extra PWM on FF when stall detected */
+#define PARAM_GYRO_YAW_KP           0x0F  /* Outer-loop gyro yaw-rate gain */
+
+#define PARAM_ID_MAX                0x0F  /* Highest valid param ID */
+
+/* ── Sensor Hub payload structs ─────────────────────────── */
+
+typedef struct __attribute__((packed)) {
+    uint64_t timestamp_us;  /* ESP32 microseconds since boot */
+    float us_front_m;       /* meters, -1.0 = no reading */
+    float us_rear_m;
+    float us_left_m;
+    float us_right_m;
+    float cliff_front_m;    /* meters, -1.0 = no reading */
+    float cliff_rear_m;
+    uint8_t cliff_detected; /* 1 = cliff detected on any sensor */
+} sensor_data_payload_t;
+/* Size: 33 bytes */
+
+typedef struct __attribute__((packed)) {
+    uint32_t heap_free;     /* bytes */
+    uint32_t read_count;    /* total sensor read cycles since boot */
+    uint8_t  us_ok;         /* bitmask: bit 0=front, 1=rear, 2=left, 3=right */
+    uint8_t  cliff_ok;      /* bitmask: bit 0=front, 1=rear */
+} sensor_diag_payload_t;
+/* Size: 10 bytes */
 
 /* ── CRC-16/CCITT ───────────────────────────────────────── */
 

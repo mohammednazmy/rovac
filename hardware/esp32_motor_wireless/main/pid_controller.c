@@ -27,14 +27,16 @@ static inline float clampf(float val, float lo, float hi)
 // ---- Public API ----
 
 void pid_init(wheel_pid_t *pid, float kp, float ki, float kd,
-              float ff_scale, float ff_offset, float max_output)
+              float ff_scale, float ff_offset,
+              float max_output, float max_integral_pwm)
 {
-    pid->kp         = kp;
-    pid->ki         = ki;
-    pid->kd         = kd;
-    pid->ff_scale   = ff_scale;
-    pid->ff_offset  = ff_offset;
-    pid->max_output = max_output;
+    pid->kp                = kp;
+    pid->ki                = ki;
+    pid->kd                = kd;
+    pid->ff_scale          = ff_scale;
+    pid->ff_offset         = ff_offset;
+    pid->max_output        = max_output;
+    pid->max_integral_pwm  = max_integral_pwm;
 
     pid->integral       = 0.0f;
     pid->prev_error     = 0.0f;
@@ -80,8 +82,9 @@ float pid_update(wheel_pid_t *pid, float target_vel, float measured_vel, float d
         // Large transient — decay integral to prevent stale buildup
         pid->integral *= 0.95f;
     }
-    // Cap integral at ±50 duty worth
-    float max_integral = 50.0f / fmaxf(pid->ki, 1.0f);
+    // Cap integral so its PWM contribution stays within ±max_integral_pwm.
+    // I-term = ki * integral, so integral-space cap = max_integral_pwm / ki.
+    float max_integral = pid->max_integral_pwm / fmaxf(pid->ki, 1.0f);
     pid->integral = clampf(pid->integral, -max_integral, max_integral);
     float i_term = pid->ki * pid->integral;
 
