@@ -273,15 +273,32 @@ static void pid_task(void *arg)
                 s_pid_left.max_integral_pwm  = p.max_integral_pwm;
                 s_pid_right.max_integral_pwm = p.max_integral_pwm;
 
-                // Per-wheel stall watchdog: if a commanded wheel has not
-                // produced encoder ticks for STALL_TIMEOUT_US, temporarily
-                // add stall_ff_boost to its feed-forward offset. Released
+                // Per-wheel stall watchdog: if a commanded wheel is clearly
+                // not moving (|meas| < STALL_MEAS_EPS) despite being
+                // commanded meaningfully (|tgt| > STALL_TGT_MIN) for
+                // STALL_TIMEOUT_US without ticks, temporarily add
+                // stall_ff_boost to its feed-forward offset. Released
                 // automatically once the wheel starts moving.
+                //
+                // The STALL_TGT_MIN gate matters at low target velocities:
+                // right above stiction, encoder ticks are sparse (1-2 per
+                // 20ms cycle) and can have 100+ms gaps normally. Without
+                // the gate + |meas| check we false-trigger, blasting 100+
+                // PWM of boost at a target that only needs 12 PWM above
+                // stiction — catastrophic overshoot.
+                //
                 // Disabled by default (stall_ff_boost == 0); Phase 3 tunes.
-                #define STALL_TIMEOUT_US 150000  /* 150 ms */
-                bool stall_left  = (fabsf(tgt_left)  > 0.01f) &&
+                #define STALL_TIMEOUT_US   150000  /* 150 ms */
+                #define STALL_TGT_MIN      0.08f   /* m/s — below this we
+                                                      don't assume stall */
+                #define STALL_MEAS_EPS     0.015f  /* m/s — measured velocity
+                                                      below this counts as
+                                                      "not actually moving" */
+                bool stall_left  = (fabsf(tgt_left)  > STALL_TGT_MIN) &&
+                                   (fabsf(v_left_meas)  < STALL_MEAS_EPS) &&
                                    (now_us - s_last_left_tick_us)  > STALL_TIMEOUT_US;
-                bool stall_right = (fabsf(tgt_right) > 0.01f) &&
+                bool stall_right = (fabsf(tgt_right) > STALL_TGT_MIN) &&
+                                   (fabsf(v_right_meas) < STALL_MEAS_EPS) &&
                                    (now_us - s_last_right_tick_us) > STALL_TIMEOUT_US;
 
                 float ff_off_l = (tgt_left  >= 0.0f) ? p.ff_offset_left_fwd  : p.ff_offset_left_rev;
