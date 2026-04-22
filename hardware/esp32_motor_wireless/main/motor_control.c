@@ -92,6 +92,17 @@ static int16_t s_kickstart_right_pwm = 0;
 static int64_t s_last_left_tick_us  = 0;      // per-wheel stall detection
 static int64_t s_last_right_tick_us = 0;
 
+// ---- Gyro-assisted angular outer loop state (Phase 4) ----
+// The cmd_vel callback on Core 0 stores the commanded (post-heading-correction)
+// angular velocity here. The PID task on Core 1 reads it each cycle and, when
+// gyro_yaw_kp > 0 and the robot is commanded to turn, biases the per-wheel
+// targets to close a feedback loop on BNO055-measured yaw rate.
+// float32 stores are atomic on ESP32 at 4-byte alignment — no lock needed.
+static volatile float s_current_angular_z_cmd = 0.0f;
+// Threshold below which we do NOT engage the outer loop (straight-line drive
+// uses the existing HEADING_CORRECTION_KP path in motor_control_cmd_vel).
+#define GYRO_LOOP_MIN_ANG 0.10f  // rad/s
+
 // ---- Measured state (set by PID task, read by odom publisher) ----
 static SemaphoreHandle_t s_meas_lock = NULL;
 static float s_meas_left  = 0.0f;  // Measured wheel velocity (m/s)
@@ -222,6 +233,32 @@ static void pid_task(void *arg)
                              (int)((s_kickstart_end_us - now_us) / 1000));
                 }
             } else {
+                // ── Phase 4 outer loop: close angular-rate feedback on gyro ──
+                // When commanded to turn meaningfully and the feature is enabled,
+                // measure true yaw rate via BNO055 and bias per-wheel targets so
+                // the outer loop drives measured angular velocity toward the
+                // commanded value. Compensates for tread slip — encoder-derived
+                // angular overestimates ground rotation when treads scrub.
+                // Disabled by default (gyro_yaw_kp == 0); Phase 3 tunes.
+                float ang_cmd = s_current_angular_z_cmd;
+                bool  gyro_loop = (p.gyro_yaw_kp > 0.0f) &&
+                                  (fabsf(ang_cmd) > GYRO_LOOP_MIN_ANG);
+                if (gyro_loop) {
+                    float gyro_z = bno055_get_gyro_z();
+                    if (isfinite(gyro_z)) {
+                        float ang_err = ang_cmd - gyro_z;
+                        // Clamp error so one bad gyro reading can't snap the
+                        // wheel targets beyond the machine's velocity limits.
+                        ang_err = clampf(ang_err,
+                                         -MC_MAX_ANGULAR_SPEED,
+                                         MC_MAX_ANGULAR_SPEED);
+                        float delta = p.gyro_yaw_kp * ang_err *
+                                      (WHEEL_SEPARATION / 2.0f);
+                        tgt_left  -= delta;
+                        tgt_right += delta;
+                    }
+                }
+
                 // Turn-in-place detection: targets have opposite sign (one
                 // wheel forward, one reverse) → boost kp for snappier rotation.
                 // Disabled by default (turn_kp_boost == 1.0); Phase 3 tunes.
@@ -414,6 +451,10 @@ void motor_control_cmd_vel(float linear_x, float angular_z)
     float v_left  = linear_x - angular_z * half_sep;
     float v_right = linear_x + angular_z * half_sep;
 
+    // Stash commanded angular for the PID task's gyro outer loop (Phase 4).
+    // Aligned float store is atomic on ESP32 — no lock required.
+    s_current_angular_z_cmd = angular_z;
+
     motor_control_set_target(v_left, v_right);
 }
 
@@ -427,6 +468,10 @@ void motor_control_stop(void)
     s_raw_pwm_left   = 0;
     s_raw_pwm_right  = 0;
     xSemaphoreGive(s_target_lock);
+
+    // Clear Phase 4 outer-loop target so a stale angular doesn't leak
+    // into the next command.
+    s_current_angular_z_cmd = 0.0f;
 
     // PID state is reset by the PID task when it sees active=false,
     // avoiding a cross-core data race with pid_update() on Core 1.

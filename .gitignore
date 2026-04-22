@@ -57,6 +57,7 @@ hardware/esp32_gateway/
 
 # === AI Tool Configs (contain MCP server env vars / API keys) ===
 .codex/
+.claude/
 opencode.json
 **/opencode.json
 
