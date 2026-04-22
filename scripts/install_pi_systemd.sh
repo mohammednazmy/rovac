@@ -42,12 +42,21 @@ remote_install_if_missing() {
 }
 
 check_hardware_notes() {
-  # Verify ESP32 motor controller is detected
   ssh "$PI_HOST" "
     if [ -e /dev/esp32_motor ]; then
       echo '  [+] ESP32 motor controller detected at /dev/esp32_motor'
     else
       echo '  [!] No ESP32 motor controller detected (no /dev/esp32_motor — check USB + udev rules)'
+    fi
+    if [ -e /dev/esp32_sensor ]; then
+      echo '  [+] ESP32 sensor hub detected at /dev/esp32_sensor'
+    else
+      echo '  [!] No ESP32 sensor hub detected (no /dev/esp32_sensor — check USB + udev rules)'
+    fi
+    if [ -e /dev/rplidar_c1 ]; then
+      echo '  [+] RPLIDAR C1 detected at /dev/rplidar_c1'
+    else
+      echo '  [!] No RPLIDAR C1 detected (no /dev/rplidar_c1 — check USB + udev rules)'
     fi
   " 2>/dev/null || true
 }
@@ -84,6 +93,9 @@ install_units() {
 
   # Motor driver (USB serial COBS binary protocol to ESP32)
   remote_sudo_install "/etc/systemd/system/rovac-edge-motor-driver.service" "$UNIT_DIR/rovac-edge-motor-driver.service"
+
+  # Sensor hub (USB serial COBS binary — 4x ultrasonic + 2x cliff)
+  remote_sudo_install "/etc/systemd/system/rovac-edge-sensor-hub.service" "$UNIT_DIR/rovac-edge-sensor-hub.service"
 
   # RPLIDAR C1 (USB serial, native ROS2 driver)
   remote_sudo_install "/etc/systemd/system/rovac-edge-rplidar-c1.service" "$UNIT_DIR/rovac-edge-rplidar-c1.service"
@@ -135,7 +147,7 @@ show_status() {
     systemctl is-enabled rovac-edge.target 2>/dev/null || true
     systemctl is-active rovac-edge.target 2>/dev/null || true
     echo
-    systemctl --no-pager -l status rovac-edge.target rovac-edge-motor-driver.service rovac-edge-rplidar-c1.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-map-tf.service rovac-edge-supersensor.service rovac-edge-obstacle.service rovac-edge-rosbridge.service rovac-edge-health.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service || true
+    systemctl --no-pager -l status rovac-edge.target rovac-edge-motor-driver.service rovac-edge-sensor-hub.service rovac-edge-rplidar-c1.service rovac-edge-mux.service rovac-edge-tf.service rovac-edge-map-tf.service rovac-edge-obstacle.service rovac-edge-health.service rovac-edge-ps2-joy.service rovac-edge-ps2-mapper.service || true
   "
 }
 

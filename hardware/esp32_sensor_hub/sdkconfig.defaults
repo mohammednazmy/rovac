@@ -1,0 +1,33 @@
+# ESP32-WROOM-32 (DevKitV1) — Sensor Hub defaults
+# Flash: 4MB DIO, No PSRAM, UART0 binary protocol (CP2102)
+
+# Target
+CONFIG_IDF_TARGET="esp32"
+
+# Flash
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+
+# No PSRAM on WROOM-32
+CONFIG_SPIRAM=n
+
+# FreeRTOS — 1000Hz tick for microsecond-precision timing
+CONFIG_FREERTOS_HZ=1000
+CONFIG_FREERTOS_UNICORE=n
+
+# Console via UART0 (bootloader only — firmware takes over for binary protocol)
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+# Log level — INFO (routed through MSG_LOG binary frames after serial init)
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL=3
+
+# Watchdog
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+
+# UART ISR in IRAM
+CONFIG_UART_ISR_IN_IRAM=y
+
+# Newlib — nano printf (saves flash)
+CONFIG_NEWLIB_NANO_FORMAT=y

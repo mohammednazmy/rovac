@@ -4,10 +4,11 @@
 
 ROVAC is a mobile robot (Yahboom G1 Tank) with a USB serial architecture:
 - **ESP32 Motor Controller** (on robot): USB serial COBS binary protocol — runs PID motor control, BNO055 IMU, publishes odom/tf/imu/diagnostics
-- **Raspberry Pi 5 (Edge)**: C++ motor driver node + sensor services at `192.168.1.200` (hostname: `rovac-pi`, user: `pi`)
+- **ESP32 Sensor Hub** (on robot): USB serial COBS binary protocol — 4x HC-SR04 ultrasonic + 2x Sharp IR cliff sensors, publishes range/cliff/diagnostics
+- **Raspberry Pi 5 (Edge)**: C++ motor driver node + C++ sensor driver node + sensor services at `192.168.1.200` (hostname: `rovac-pi`, user: `pi`)
 - **MacBook Pro (Brain)**: Nav2, SLAM, path planning, teleop (DHCP IP, auto-detected from en0)
 
-Communication: ESP32 Motor ←USB COBS 460800 baud→ `rovac_motor_driver` C++ node on Pi ←CycloneDDS→ Mac. RPLIDAR C1 ←USB→ Pi (native ROS2 driver). Phone ←WebSocket→ rosbridge on Pi :9090 ←CycloneDDS→ Mac. All on `ROS_DOMAIN_ID=42`.
+Communication: ESP32 Motor ←USB COBS 460800→ `rovac_motor_driver` on Pi. ESP32 Sensor Hub ←USB COBS 460800→ `rovac_sensor_driver` on Pi. RPLIDAR C1 ←USB→ Pi. All Pi nodes ←CycloneDDS→ Mac. All on `ROS_DOMAIN_ID=42`.
 
 Both machines clone the same monorepo: `github.com/mohammednazmy/rovac`
 - **Mac path**: `~/robots/rovac/`
@@ -20,9 +21,9 @@ Both machines clone the same monorepo: `github.com/mohammednazmy/rovac`
 | GitHub Repo | `git@github.com:mohammednazmy/rovac.git` |
 | Edge SSH | `ssh pi@192.168.1.200` |
 | ESP32 Motor USB | `/dev/esp32_motor` on Pi (CH340, 460800 baud) |
-| RPLIDAR C1 USB | `/dev/rplidar_c1` on Pi |
+| ESP32 Sensor Hub USB | `/dev/esp32_sensor` on Pi (CP2102, 460800 baud) |
+| RPLIDAR C1 USB | `/dev/rplidar_c1` on Pi (CP2102N) |
 | Serial Protocol | COBS-framed binary (`common/serial_protocol.h`) |
-| rosbridge WebSocket | Pi port 9090 (phone sensors) |
 | Foxglove | `ws://localhost:8765` |
 | ROS_DOMAIN_ID | 42 |
 | DDS | CycloneDDS (unicast) |
@@ -52,7 +53,7 @@ python3 scripts/keyboard_teleop.py
 ./scripts/mac_brain_launch.sh foxglove
 
 # Edge status
-ssh pi@192.168.1.200 'sudo systemctl status rovac-edge-motor-driver rovac-edge-rplidar-c1 rovac-edge-mux'
+ssh pi@192.168.1.200 'sudo systemctl status rovac-edge-motor-driver rovac-edge-sensor-hub rovac-edge-rplidar-c1 rovac-edge-mux'
 ```
 
 ## Key ROS2 Topics
@@ -76,14 +77,22 @@ ssh pi@192.168.1.200 'sudo systemctl status rovac-edge-motor-driver rovac-edge-r
 
 ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes directly to `/cmd_vel`.
 
-### Sensors
+### Sensor Hub (from ESP32 Sensor Hub via USB serial driver on Pi)
+| Topic | Type | QoS | Description |
+|-------|------|-----|-------------|
+| `/sensors/ultrasonic/front` | Range | reliable | HC-SR04 front obstacle (10 Hz) |
+| `/sensors/ultrasonic/rear` | Range | reliable | HC-SR04 rear obstacle (10 Hz) |
+| `/sensors/ultrasonic/left` | Range | reliable | HC-SR04 left obstacle (10 Hz) |
+| `/sensors/ultrasonic/right` | Range | reliable | HC-SR04 right obstacle (10 Hz) |
+| `/sensors/cliff/front` | Range | reliable | Sharp IR front cliff distance (10 Hz) |
+| `/sensors/cliff/rear` | Range | reliable | Sharp IR rear cliff distance (10 Hz) |
+| `/sensors/cliff/detected` | Bool | reliable | Cliff detected on any sensor (10 Hz) |
+| `/obstacle/points` | PointCloud2 | reliable | Ultrasonic readings as 3D points for Nav2 costmap (10 Hz) |
+
+### Other Sensors
 | Topic | Type | Description |
 |-------|------|-------------|
 | `/scan` | LaserScan | RPLIDAR C1 DTOF (~500 pts, ~10 Hz) via USB on Pi |
-| `/sensors/ultrasonic/range` | Range | HC-SR04 distance |
-| `/phone/imu` | Imu | Phone IMU (50Hz) via rosbridge WebSocket :9090 |
-| `/phone/gps/fix` | NavSatFix | Phone GPS (1Hz) via rosbridge WebSocket :9090 |
-| `/phone/camera/image_raw/compressed` | CompressedImage | Phone camera (~2FPS JPEG) via rosbridge WebSocket :9090 |
 
 ## Hardware
 
@@ -93,11 +102,8 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 | Motors | 2x JGB37-520R60-12 (12V, 60:1 gear, Hall encoders, 2640 ticks/rev). Max: 0.57 m/s linear, 6.5 rad/s angular. |
 | IMU | Adafruit BNO055 (9-axis NDOF fusion) on ESP32 I2C bus. Mounted face-down, front edge toward LIDAR. |
 | LIDAR | RPLIDAR C1 DTOF (16m range, ~10Hz, 5KHz). USB via CP2102N → `/dev/rplidar_c1`. Driver: `rplidar_ros` (official Slamtec, ros2 branch, SDK patched) in `ros2_ws/src/rplidar_ros/`. |
-| Computer | Raspberry Pi 5 (8GB RAM, 117GB SD), Ubuntu 24.04, hostname `rovac-pi`. Runs C++ motor driver node. |
-| Ultrasonic | 4x HC-SR04 (Super Sensor module, Arduino Nano) |
-| Stereo Cameras | 2x USB cameras (102.67mm baseline, StereoSGBM depth) |
-| Phone Sensors | Samsung Galaxy A16 (IMU/GPS/Camera) via rosbridge WebSocket on Pi :9090. App: `hardware/android_phone_sensors/` |
-| Webcam | NexiGo N930E USB `/dev/webcam` |
+| Sensor Hub | ESP32-DevKitV1 (WROOM-32, CP2102). 4x HC-SR04 ultrasonic (front/rear/left/right) + 2x Sharp GP2Y0A51SK0F IR cliff (front/rear). USB serial firmware: `hardware/esp32_sensor_hub/`. COBS binary at 460800 baud. 10Hz sensor data. |
+| Computer | Raspberry Pi 5 (8GB RAM, 117GB SD), Ubuntu 24.04, hostname `rovac-pi`. Runs C++ motor + sensor driver nodes. |
 | Power | 12V DC barrel jack. **Motor power switch must be ON.** |
 
 ## Project Structure
@@ -111,19 +117,20 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 ├── hardware/
 │   ├── esp32_motor_wireless/          # ACTIVE — USB serial motor firmware (ESP-IDF v5.2)
 │   ├── esp32_at8236_driver/           # Legacy Python USB serial driver (replaced by C++ node)
-│   ├── esp32_sensor_hub/              # ESP32 sensor hub (wiring docs)
+│   ├── esp32_sensor_hub/              # ACTIVE — USB serial sensor hub firmware (ESP-IDF v5.2)
+│   ├── hc-sr04-ultrasonic/            # HC-SR04 ultrasonic sensor docs
+│   ├── sharp-gp2y0a51sk0f-ir-distance/ # Sharp IR cliff sensor docs + datasheet
 │   ├── as5600-magnetic-encoder/       # AS5600 encoder docs, test firmware, 3D mount
 │   ├── greartisan-zgb37rg-motor/      # Motor specs + AS5600 integration data
 │   ├── rplidar_c1/                    # RPLIDAR C1 docs + SDK reference
 │   ├── maker_esp32/                   # Board docs + wiring guide
-│   ├── super_sensor/                  # Edge ROS2 nodes (supersensor, obstacle)
-│   ├── stereo_cameras/                # Stereo camera calibration + depth
-│   ├── android_phone_sensors/          # Phone sensor Android app (rosbridge WebSocket)
-│   └── webcam/                        # USB webcam publisher
+│   ├── super_sensor/                  # LEGACY — replaced by esp32_sensor_hub
+│   ├── android_phone_sensors/          # RETIRED — BNO055 replaces phone IMU, no GPS needed
 ├── scripts/
 │   ├── keyboard_teleop.py             # Keyboard teleop (auto-SSHes to Pi)
 │   ├── install_pi_systemd.sh          # Pi systemd setup (install/uninstall/status/restart)
 │   ├── mac_brain_launch.sh            # Mac brain launcher (slam, slam-ekf, nav, ekf, foxglove)
+│   ├── obstacle_avoidance_node.py     # Obstacle avoidance (sensor hub ultrasonic + cliff)
 │   ├── ps2_joy_mapper_node.py         # PS2 controller → /cmd_vel_joy
 │   ├── ekf_launch.py                  # EKF launch (used by mac_brain_launch.sh)
 │   └── edge/
@@ -138,20 +145,20 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 │   └── systemd/                       # Pi edge unit files
 │       ├── rovac-edge.target          # Main orchestration target
 │       ├── rovac-edge-motor-driver.service  # C++ USB serial motor driver
+│       ├── rovac-edge-sensor-hub.service    # C++ USB serial sensor hub driver
 │       ├── rovac-edge-rplidar-c1.service    # RPLIDAR C1 driver (USB serial)
 │       ├── rovac-edge-mux.service           # cmd_vel priority mux
 │       ├── rovac-edge-tf.service            # robot_state_publisher
 │       ├── rovac-edge-map-tf.service        # map→odom static TF
 │       ├── rovac-edge-health.service        # Edge health publisher
-│       ├── rovac-edge-rosbridge.service     # rosbridge WebSocket (port 9090)
-│       ├── rovac-edge-obstacle.service      # Obstacle avoidance
-│       ├── rovac-edge-supersensor.service   # HC-SR04 ultrasonic
+│       ├── rovac-edge-obstacle.service      # Obstacle avoidance (sensor hub)
 │       ├── rovac-edge-ps2-joy.service       # PS2 controller input
 │       ├── rovac-edge-ps2-mapper.service    # PS2 → velocity commands
 │       ├── rovac-edge-ekf.service           # EKF (DISABLED — run from Mac)
-│       └── ...                              # stereo, webcam, phone services
+│       └── ...                              # stereo, webcam services
 ├── ros2_ws/src/
 │   ├── rovac_motor_driver/            # C++ USB serial motor driver (ament_cmake)
+│   ├── rovac_sensor_driver/           # C++ USB serial sensor hub driver (ament_cmake)
 │   ├── tank_description/              # URDF, cmd_vel_mux.py
 │   ├── rplidar_ros/                   # RPLIDAR C1 ROS2 driver (official Slamtec, SDK patched)
 │   └── rf2o_laser_odometry/           # Laser-based odometry
@@ -220,6 +227,29 @@ ssh pi@192.168.1.200 'esptool.py --chip esp32 --port /dev/esp32_motor --baud 460
 **Shared protocol:** `common/serial_protocol.h` defines message types, packed structs, and CRC-16 used by both ESP32 firmware and Pi C++ driver.
 
 **Pi C++ driver:** `ros2_ws/src/rovac_motor_driver/` — `ament_cmake` package. Build on Pi: `cd ros2_ws && colcon build --packages-select rovac_motor_driver`. Features serial health monitoring: auto-reconnects within 7s if USB re-enumerates (configurable via `serial_rx_timeout` param, default 5s).
+
+## ESP32 Sensor Hub Firmware Development
+
+```bash
+# Build + flash on Pi (ESP-IDF v5.2 — use -b 115200 for CP2102 flash speed)
+ssh pi@192.168.1.200
+sudo systemctl stop rovac-edge-sensor-hub
+source ~/esp/esp-idf-v5.2/export.sh
+cd ~/robots/rovac/hardware/esp32_sensor_hub
+idf.py build
+idf.py -p /dev/esp32_sensor -b 115200 flash
+sudo systemctl start rovac-edge-sensor-hub
+```
+
+**Key firmware files:**
+- `main/ultrasonic.c` — HC-SR04 sequential trigger/echo measurement (GPIO)
+- `main/cliff_sensor.c` — Sharp GP2Y0A51SK0F ADC reading (ADC1 oneshot)
+- `main/sensor_serial.c` — UART0 COBS binary protocol, TX timers (sensor data/diag), RX task
+- `main/main.c` — Boot diagnostics (before/after ADC init comparison)
+
+**Shared protocol:** Same `common/serial_protocol.h` as motor controller. Sensor hub uses message types `MSG_SENSOR_DATA` (0x20, 10Hz) and `MSG_SENSOR_DIAG` (0x21, 1Hz).
+
+**Pi C++ driver:** `ros2_ws/src/rovac_sensor_driver/` — `ament_cmake` package. Build on Pi: `cd ros2_ws && colcon build --packages-select rovac_sensor_driver`. Same serial health monitoring pattern as motor driver.
 
 ## Troubleshooting
 

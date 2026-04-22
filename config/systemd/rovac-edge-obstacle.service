@@ -1,19 +1,22 @@
 [Unit]
-Description=ROVAC Obstacle Avoidance Node (Super Sensor integration)
-Wants=network-online.target rovac-edge-supersensor.service
-After=network-online.target rovac-edge-supersensor.service rovac-edge-mux.service
+Description=ROVAC Obstacle Avoidance Node (sensor hub ultrasonic + cliff integration)
+Wants=network-online.target rovac-edge-sensor-hub.service
+After=network-online.target rovac-edge-sensor-hub.service rovac-edge-mux.service
 PartOf=rovac-edge.target
 
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/robots/rovac/hardware/super_sensor
+WorkingDirectory=/home/pi/robots/rovac
 Environment=ROS_DOMAIN_ID=42
 Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
-ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; [ -f /home/pi/robots/rovac/ros2_ws/install/setup.bash ] && source /home/pi/robots/rovac/ros2_ws/install/setup.bash; [ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh; exec python3 /home/pi/robots/rovac/hardware/super_sensor/obstacle_avoidance_node.py'
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && source /home/pi/robots/rovac/ros2_ws/install/setup.bash && exec python3 /home/pi/robots/rovac/scripts/obstacle_avoidance_node.py'
 Restart=always
 RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rovac-obstacle
 
 [Install]
 WantedBy=rovac-edge.target

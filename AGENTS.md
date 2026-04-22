@@ -6,10 +6,11 @@
 
 ROVAC is a mobile robot (Yahboom G1 Tank) with a USB serial architecture:
 - **ESP32 Motor Controller** (on robot): USB serial COBS binary protocol — PID motor control, BNO055 IMU, odom/tf/imu/diagnostics
-- **Raspberry Pi 5 (Edge)**: C++ motor driver node + sensor services at `192.168.1.200`
+- **ESP32 Sensor Hub** (on robot): USB serial COBS binary protocol — 4x HC-SR04 ultrasonic + 2x Sharp IR cliff sensors, range/cliff/diagnostics
+- **Raspberry Pi 5 (Edge)**: C++ motor + sensor driver nodes + LIDAR at `192.168.1.200`
 - **MacBook Pro (Brain)**: Nav2, SLAM, EKF, Foxglove, teleop (DHCP IP, auto-detected)
 
-Communication: ESP32 ←USB COBS 460800 baud→ `rovac_motor_driver` C++ node on Pi ←CycloneDDS→ Mac. RPLIDAR C1 ←USB→ Pi. Phone ←WebSocket→ rosbridge on Pi :9090. All on `ROS_DOMAIN_ID=42`.
+Communication: ESP32 Motor ←USB COBS 460800→ `rovac_motor_driver` on Pi. ESP32 Sensor Hub ←USB COBS 460800→ `rovac_sensor_driver` on Pi. RPLIDAR C1 ←USB→ Pi. All Pi nodes ←CycloneDDS→ Mac. All on `ROS_DOMAIN_ID=42`.
 
 **This is ROS2 Jazzy, NOT ROS1.** Use `ros2` commands, never `roslaunch`/`roscore`/`rostopic`.
 
@@ -25,6 +26,7 @@ Communication: ESP32 ←USB COBS 460800 baud→ `rovac_motor_driver` C++ node on
 |----------|-------|
 | Pi SSH | `ssh pi@192.168.1.200` |
 | ESP32 Motor USB | `/dev/esp32_motor` on Pi (CH340, 460800 baud) |
+| ESP32 Sensor Hub USB | `/dev/esp32_sensor` on Pi (CP2102, 460800 baud) |
 | RPLIDAR C1 USB | `/dev/rplidar_c1` on Pi (CP2102N) |
 | Serial Protocol | COBS-framed binary (`common/serial_protocol.h`) |
 | Foxglove | `ws://localhost:8765` |
@@ -70,12 +72,18 @@ python3 scripts/keyboard_teleop.py
 | `/cmd_vel_obstacle` | 3 | 0.5s | Obstacle avoidance |
 | `/cmd_vel_smoothed` | 4 (lowest) | 1.0s | Nav2 autonomous |
 
-### Sensors
+### Sensor Hub (from ESP32 via USB serial driver on Pi)
+| Topic | Type | Description |
+|-------|------|-------------|
+| `/sensors/ultrasonic/{front,rear,left,right}` | Range | HC-SR04 obstacle distance (10 Hz each) |
+| `/sensors/cliff/{front,rear}` | Range | Sharp IR cliff distance (10 Hz each) |
+| `/sensors/cliff/detected` | Bool | Cliff detected on any sensor (10 Hz) |
+| `/obstacle/points` | PointCloud2 | Ultrasonic points for Nav2 costmap (10 Hz) |
+
+### Other Sensors
 | Topic | Type | Description |
 |-------|------|-------------|
 | `/scan` | LaserScan | RPLIDAR C1 DTOF (~500 pts, ~10 Hz) |
-| `/phone/imu` | Imu | Phone IMU (50Hz) via rosbridge :9090 |
-| `/phone/gps/fix` | NavSatFix | Phone GPS (1Hz) via rosbridge :9090 |
 
 ## Hardware
 
@@ -84,6 +92,7 @@ python3 scripts/keyboard_teleop.py
 | Motor Controller | NULLLAB Maker-ESP32 (ESP32-WROOM-32E, CH340, 4x TB67H450FNG). USB serial COBS at 460800 baud. |
 | Motors | 2x JGB37-520R60-12 (12V, 60:1 gear, Hall encoders, 2640 ticks/rev) |
 | IMU | Adafruit BNO055 (9-axis NDOF fusion) on ESP32 I2C. Calibration persists via NVS. |
+| Sensor Hub | ESP32-DevKitV1 (WROOM-32, CP2102). 4x HC-SR04 ultrasonic + 2x Sharp IR cliff. USB COBS at 460800 baud. |
 | LIDAR | RPLIDAR C1 DTOF (16m range, ~10Hz). USB on Pi. Driver: patched `rplidar_ros`. |
 | Computer | Raspberry Pi 5 (8GB RAM), Ubuntu 24.04 |
 | Power | 12V DC barrel jack. **Motor power switch must be ON.** Battery must be >8V. |
@@ -94,13 +103,13 @@ python3 scripts/keyboard_teleop.py
 ~/robots/rovac/
 ├── common/                            # Shared COBS protocol (ESP32 + Pi C++ driver)
 ├── hardware/
-│   ├── esp32_motor_wireless/          # ESP32 firmware (ESP-IDF v5.2)
+│   ├── esp32_motor_wireless/          # ESP32 motor firmware (ESP-IDF v5.2)
+│   ├── esp32_sensor_hub/              # ESP32 sensor hub firmware (ESP-IDF v5.2)
 │   ├── as5600-magnetic-encoder/       # AS5600 encoder docs + test firmware
 │   ├── greartisan-zgb37rg-motor/      # Motor specs
-│   ├── super_sensor/                  # HC-SR04 + obstacle avoidance nodes
-│   └── android_phone_sensors/         # Phone sensor app (rosbridge WebSocket)
 ├── scripts/
 │   ├── keyboard_teleop.py             # Keyboard teleop (auto-SSHes to Pi)
+│   ├── obstacle_avoidance_node.py     # Obstacle avoidance (sensor hub)
 │   ├── mac_brain_launch.sh            # Mac brain (slam, slam-ekf, nav, ekf, foxglove)
 │   ├── ekf_launch.py                  # EKF launch file
 │   ├── install_pi_systemd.sh          # Pi systemd setup
@@ -114,6 +123,7 @@ python3 scripts/keyboard_teleop.py
 │   └── systemd/                       # Pi edge service units
 ├── ros2_ws/src/
 │   ├── rovac_motor_driver/            # C++ USB serial motor driver (ament_cmake)
+│   ├── rovac_sensor_driver/           # C++ USB serial sensor hub driver (ament_cmake)
 │   ├── tank_description/              # URDF, cmd_vel_mux.py
 │   └── rplidar_ros/                   # RPLIDAR C1 driver (on Pi only)
 ├── tools/                             # Motor characterization, PID tuning

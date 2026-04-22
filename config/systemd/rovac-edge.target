@@ -7,6 +7,9 @@ Wants=network-online.target
 # Motor driver (USB serial COBS binary protocol to ESP32)
 Wants=rovac-edge-motor-driver.service
 
+# Sensor hub (USB serial COBS binary — 4x ultrasonic + 2x cliff)
+Wants=rovac-edge-sensor-hub.service
+
 # RPLIDAR C1 (USB serial, native ROS2 driver)
 Wants=rovac-edge-rplidar-c1.service
 
@@ -15,11 +18,7 @@ Wants=rovac-edge-mux.service
 Wants=rovac-edge-tf.service
 Wants=rovac-edge-map-tf.service
 Wants=rovac-edge-obstacle.service
-Wants=rovac-edge-supersensor.service
 Wants=rovac-edge-health.service
-
-# rosbridge WebSocket (phone sensors via port 9090)
-Wants=rovac-edge-rosbridge.service
 
 # PS2 wireless controller (joy_node + mapper on Pi)
 Wants=rovac-edge-ps2-joy.service

@@ -1,0 +1,26 @@
+[Unit]
+Description=ROVAC Sensor Hub (USB serial binary protocol to ESP32 — 4x HC-SR04 + 2x Sharp IR cliff)
+After=network.target dev-esp32_sensor.device
+Requires=dev-esp32_sensor.device
+PartOf=rovac-edge.target
+Before=rovac-edge-obstacle.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
+ExecStartPre=/bin/stty -F /dev/esp32_sensor 460800 -hupcl
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && source /home/pi/robots/rovac/ros2_ws/install/setup.bash && exec ros2 run rovac_sensor_driver sensor_driver_node --ros-args --params-file /home/pi/robots/rovac/ros2_ws/src/rovac_sensor_driver/config/sensor_driver.yaml'
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rovac-sensor-hub
+MemoryMax=128M
+CPUQuota=20%
+
+[Install]
+WantedBy=rovac-edge.target
