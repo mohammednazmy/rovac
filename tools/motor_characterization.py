@@ -74,8 +74,8 @@ MSG_PARAM_VALUE       = 0x13
 MSG_LOG               = 0xF0
 
 # Wheel geometry — used to decompose /odom linear+angular → per-wheel velocity.
-# Must match odometry.h WHEEL_SEPARATION.
-WHEEL_SEPARATION      = 0.155    # meters
+# Must match odometry.h WHEEL_SEPARATION. Physically measured 2026-04-22.
+WHEEL_SEPARATION      = 0.2005   # meters (track centerline to centerline)
 
 
 # ────────────────────────────────────────────────────────────────────────

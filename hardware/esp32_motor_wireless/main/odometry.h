@@ -12,7 +12,10 @@
 #include <stdbool.h>
 
 // Hardware constants — JGB37-520R60-12 with AT8236 bridge
-#define WHEEL_SEPARATION   0.155f   // meters (track width)
+// WHEEL_SEPARATION: center-of-left-track to center-of-right-track, physically
+// measured on the G1 tank chassis (2026-04-22). Was 0.155 pre-measurement —
+// corrected to match reality.
+#define WHEEL_SEPARATION   0.2005f  // meters (track centerline to centerline)
 #define WHEEL_RADIUS       0.032f   // meters
 #define TICKS_PER_REV      2640     // 11 PPR × 4 (quadrature) × 60:1 gear
 #define MAX_TICK_DELTA     2000     // Outlier rejection threshold

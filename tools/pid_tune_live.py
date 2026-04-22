@@ -187,7 +187,7 @@ class Telemetry:
 
 
 class SerialIO(threading.Thread):
-    def __init__(self, port: str, wheel_sep: float = 0.155):
+    def __init__(self, port: str, wheel_sep: float = 0.2005):
         super().__init__(daemon=True)
         self._ser = serial.Serial(port, SERIAL_BAUD, timeout=0.05)
         time.sleep(0.3)
@@ -562,8 +562,8 @@ def main():
     ap = argparse.ArgumentParser(description="Live PID tuning TUI")
     ap.add_argument("--port", default="/dev/esp32_motor",
                     help="Serial port (default: /dev/esp32_motor)")
-    ap.add_argument("--wheel-sep", type=float, default=0.155,
-                    help="Wheel separation m (default: 0.155)")
+    ap.add_argument("--wheel-sep", type=float, default=0.2005,
+                    help="Wheel separation m (default: 0.2005 — G1 tank centerline)")
     args = ap.parse_args()
 
     try:
