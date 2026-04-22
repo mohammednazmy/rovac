@@ -50,7 +50,8 @@ static const char *TAG = "motor_ctrl";
  * MSG_CMD_SET_PARAM and persist to NVS via MSG_CMD_SAVE_NVS. */
 
 // ---- Wheel geometry (from odometry.h) ----
-// WHEEL_SEPARATION = 0.155m, WHEEL_RADIUS = 0.032m, TICKS_PER_REV = 2640
+// WHEEL_SEPARATION = 0.2005m, WHEEL_RADIUS = 0.0222m, TICKS_PER_REV = 2640
+// (both physically measured 2026-04-22 — see odometry.h for methodology)
 static const float METERS_PER_TICK = (2.0f * M_PI * WHEEL_RADIUS) / TICKS_PER_REV;
 
 // ---- Velocity decay timeout ----
@@ -244,7 +245,13 @@ static void pid_task(void *arg)
                 bool  gyro_loop = (p.gyro_yaw_kp > 0.0f) &&
                                   (fabsf(ang_cmd) > GYRO_LOOP_MIN_ANG);
                 if (gyro_loop) {
-                    float gyro_z = bno055_get_gyro_z();
+                    // BNO055 is mounted face-down on this robot (URDF rpy=3.14159 0 0).
+                    // Raw chip gyro_z is opposite sign from ROS/base_link convention.
+                    // Negate here so gyro_z aligns with ang_cmd's sign convention
+                    // (positive = CCW / left turn). External ROS consumers get the
+                    // corrected frame via URDF TF on the IMU message; firmware-internal
+                    // uses need their own negation.
+                    float gyro_z = -bno055_get_gyro_z();
                     if (isfinite(gyro_z)) {
                         float ang_err = ang_cmd - gyro_z;
                         // Clamp error so one bad gyro reading can't snap the
@@ -473,9 +480,15 @@ void motor_control_cmd_vel(float linear_x, float angular_z)
     }
 
     // Gyro heading correction: when driving "straight" (angular ≈ 0),
-    // counteract measured yaw rate to maintain heading
+    // counteract measured yaw rate to maintain heading.
+    //
+    // SIGN CRITICAL: BNO055 is mounted face-down (URDF rpy=3.14159 0 0),
+    // so raw chip gyro_z is the OPPOSITE sign of ROS/base_link convention.
+    // We negate at the read site so angular_z and gyro_z live in the same
+    // (base_link) frame here. Without this negation, this correction becomes
+    // a positive-feedback loop that amplifies drift instead of cancelling it.
     if (fabsf(angular_z) < HEADING_CORRECTION_THRESH && fabsf(linear_x) > 0.02f) {
-        float gyro_z = bno055_get_gyro_z();  // rad/s, 0 if IMU not ready
+        float gyro_z = -bno055_get_gyro_z();  // rad/s in base_link frame, 0 if IMU not ready
         if (isfinite(gyro_z)) {
             angular_z += -HEADING_CORRECTION_KP * gyro_z;
             angular_z = clampf(angular_z, -MC_MAX_ANGULAR_SPEED, MC_MAX_ANGULAR_SPEED);

@@ -16,7 +16,16 @@
 // measured on the G1 tank chassis (2026-04-22). Was 0.155 pre-measurement —
 // corrected to match reality.
 #define WHEEL_SEPARATION   0.2005f  // meters (track centerline to centerline)
-#define WHEEL_RADIUS       0.032f   // meters
+
+// WHEEL_RADIUS: effective rolling radius of the drive sprocket under load.
+// Physically measured 2026-04-22 by marking a point on the tread and
+// pushing the robot until the mark returned to the same floor contact
+// point (one full tread loop = 0.5588 m). The tread loop equals N=4
+// sprocket revolutions, so one sprocket revolution = 0.5588/4 = 0.1397 m
+// of travel; radius = 0.1397/(2π) = 0.02224 m. Previous value (0.032)
+// was never measured and caused odometry to over-report distance by 1.42×
+// (verified via tools/odom_accuracy_test.py on 2026-04-22).
+#define WHEEL_RADIUS       0.0222f  // meters (effective rolling radius)
 #define TICKS_PER_REV      2640     // 11 PPR × 4 (quadrature) × 60:1 gear
 #define MAX_TICK_DELTA     2000     // Outlier rejection threshold
 

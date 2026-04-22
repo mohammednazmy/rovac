@@ -19,7 +19,14 @@ assumes the Phase 0-4 tooling in the repo.
 Robot configuration at calibration time:
 - **Weight**: 5.2 kg (chassis + vacuum; no secondary battery mounted)
 - **Wheel separation**: 0.2005 m (track centerline to centerline, physically measured)
-- **Wheel radius**: 0.032 m (rolling radius, matches JGB37-520R60 spec)
+- **Wheel radius**: 0.0222 m (effective rolling radius of drive sprocket,
+  physically measured 2026-04-22 via tread-loop method — tape on tread,
+  push until mark returns to same floor contact = 0.5588 m for one full
+  tread loop = 4 sprocket revolutions → 0.5588/4/(2π) = 0.0222 m. See
+  `hardware/esp32_motor_wireless/main/odometry.h` for the full constant
+  derivation. Previous 0.032 m value was never physically measured and
+  caused `/odom` to over-report linear distance by 1.42× (verified via
+  `tools/odom_accuracy_test.py`).
 - **Power**: 12 V DC 5 A switching adapter (wall, not final battery)
 
 Tuned values stored in NVS:
@@ -291,6 +298,38 @@ This is expected on tread drives — encoder-derived angular overestimates
 actual body rotation because the treads scrub (slip sideways) during
 turn-in-place. Use `/imu/data` (gyro z-axis) for true body rotation, or
 the forthcoming IMU-aware step response tool.
+
+### "Robot drifts left or right when commanded to drive straight"
+
+**Symptom**: holding forward (or reverse) on teleop for > 0.5 m, robot
+curves off course. Direction is random between runs. Releasing and
+re-pressing the teleop button resets the drift — if you drive in short
+sub-0.5 m bursts, the drift never appears.
+
+**Root cause (fixed 2026-04-22)**: firmware sign bug in the heading-
+correction code. The BNO055 IMU is mounted **face-down** on this robot
+(URDF handles the orientation for downstream consumers via
+`rpy=3.14159 0 0`), so the raw chip `gyro_z` register value is the
+OPPOSITE sign of ROS/base_link convention. The firmware used the raw
+value directly in `HEADING_CORRECTION`, which turned the intended
+drift-cancelling feedback into a positive-feedback loop that amplified
+drift exponentially until the command was released.
+
+The burst-vs-sustained symptom is the tell: releasing the button lets
+the integrated feedback decay to zero, so the loop has to restart from
+scratch on the next press, never reaching visible amplitude before the
+press ends.
+
+**Fix**: `motor_control.c` now negates `bno055_get_gyro_z()` at both
+internal call sites (`HEADING_CORRECTION` straight-line path AND the
+Phase 4 gyro outer loop). Downstream ROS consumers of `/imu/data` were
+always correct — only firmware-internal use needed the negation.
+
+If this symptom ever reappears, grep firmware for `bno055_get_gyro_z(`
+— every internal call site must apply the negation. Raw values may be
+appropriate for other uses (e.g., logging IMU-native sensor data) but
+*never* for a correction that compares against commanded body-frame
+angular velocity.
 
 ### "Motors suddenly stopped responding after aggressive tuning"
 
