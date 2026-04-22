@@ -72,23 +72,31 @@ controller_server:
       xy_goal_tolerance: 0.25
       yaw_goal_tolerance: 0.25
     
-    # DWB parameters
+    # DWB parameters — updated 2026-04-22 to match Phase 3.3 bench-measured
+    # loaded dynamics (5.2 kg chassis, wall-adapter power).
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: True
       min_vel_x: 0.0
       min_vel_y: 0.0
-      max_vel_x: 0.22
+      # Loaded max at PWM 255 ≈ 0.30 m/s. At 0.30 m/s the linear FF undershoots
+      # by 15% so reliable sustained max is ~0.25 m/s. Leaves headroom.
+      max_vel_x: 0.25
       max_vel_y: 0.0
-      max_vel_theta: 1.0
+      # Encoder-derived angular saturates ~3.0 rad/s; body rotation slower
+      # due to scrub. 2.0 rad/s is the sweet spot for responsive turning
+      # without riding saturation.
+      max_vel_theta: 2.0
       min_speed_xy: 0.0
-      max_speed_xy: 0.22
+      max_speed_xy: 0.25
       min_speed_theta: 0.0
-      # Add high acceleration limits to ensure the robot can actually move
-      acc_lim_x: 2.5
+      # Measured linear accel from 0 → 0.15 m/s rise time ≈ 0.4s gives
+      # effective accel ~0.375 m/s². Cap planner at a realistic 1.0 m/s²
+      # so generated trajectories are actually achievable.
+      acc_lim_x: 1.0
       acc_lim_y: 0.0
       acc_lim_theta: 3.2
-      decel_lim_x: -2.5
+      decel_lim_x: -1.0
       decel_lim_y: 0.0
       decel_lim_theta: -3.2
       vx_samples: 20
@@ -219,7 +227,7 @@ recoveries_server:
     transform_timeout: 0.1
     use_sim_time: false
     simulate_ahead_time: 2.0
-    max_rotational_vel: 1.0
+    max_rotational_vel: 2.0      # matches FollowPath.max_vel_theta
     min_rotational_vel: 0.4
     rotational_acc_lim: 3.2
 
@@ -229,10 +237,11 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.22, 0.0, 1.0]      # [x, y, theta] - matches controller limits
-    min_velocity: [-0.22, 0.0, -1.0]
-    max_accel: [2.5, 0.0, 3.2]
-    max_decel: [-2.5, 0.0, -3.2]
+    # Mirrors FollowPath limits (Phase 3.3 measured loaded dynamics, 2026-04-22)
+    max_velocity: [0.25, 0.0, 2.0]      # [x, y, theta]
+    min_velocity: [-0.25, 0.0, -2.0]
+    max_accel: [1.0, 0.0, 3.2]          # measured linear accel ~0.4 m/s²; cap planner at 1.0
+    max_decel: [-1.0, 0.0, -3.2]
     odom_topic: "odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
