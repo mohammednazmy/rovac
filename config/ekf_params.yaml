@@ -21,19 +21,30 @@
     world_frame: odom         # EKF operates in odom frame
 
     # ── Input 0: Wheel odometry (from ESP32 via USB serial driver) ──
-    # Provides: x/y position, linear velocity. Yaw channels DISABLED —
-    # tread scrub on this tank makes wheel-derived yaw unreliable (trial
-    # 2026-04-22: 18° false yaw during a visually-straight 1m drive; also
-    # produces a radial "starburst" smear in SLAM map during rotations).
-    # All yaw information comes from the BNO055 IMU in absolute mode
-    # (see imu0 block below — this change must be made together with
-    # imu0_differential: false + imu0_relative: true, otherwise IMU yaw
-    # drifts unbounded without an anchor).
+    # Provides: linear body-frame velocity (vx) only.
+    # Absolute pose (x/y) and yaw channels are ALL disabled.
+    #
+    # Rationale (2026-04-22 bag analysis, slam_diag_180613):
+    #   - /odom yaw overstates rotation by +94% during turn-in-place (tread
+    #     scrub: 175° claimed for 90° physical rotation). Already rejected.
+    #   - /odom x/y is computed via arc-integration in odometry.c using the
+    #     SAME scrub-polluted yaw. Even though we reject the yaw channel,
+    #     the x/y measurement carries the yaw error baked in — visible in
+    #     the bag as a 0.56m arc during a test where the robot drove
+    #     ~0.5m forward then rotated in place.
+    #   - EKF with odom x/y absolute (low cov 0.01) was being yanked around
+    #     by this scrub-polluted position measurement, oscillating x/y even
+    #     while yaw tracked IMU correctly. This is what produced the smeared
+    #     SLAM map — scans placed at correct orientation but wrong position.
+    #
+    # Fix: keep only vx (twist.linear.x = (v_left+v_right)/2, a pure body-
+    # frame speed with no yaw dependency). EKF integrates vx forward along
+    # ITS OWN yaw (which comes from IMU) to produce a clean x/y estimate.
     # Pi motor driver publishes /odom with reliable QoS directly (no relay needed)
     odom0: /odom
-    odom0_config: [true,  true,  false,   # x, y, z position
+    odom0_config: [false, false, false,   # x, y, z position — DISABLED (yaw-polluted)
                    false, false, false,   # roll, pitch, yaw — DISABLED (scrub)
-                   true,  false, false,   # vx, vy, vz
+                   true,  false, false,   # vx — KEEP (pure body-frame linear velocity)
                    false, false, false,   # vroll, vpitch, vyaw — DISABLED (scrub)
                    false, false, false]   # ax, ay, az
     odom0_queue_size: 10
