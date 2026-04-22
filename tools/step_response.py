@@ -47,6 +47,7 @@ SERIAL_BAUD     = 460800
 MSG_CMD_VEL     = 0x01
 MSG_CMD_ESTOP   = 0x02
 MSG_ODOM        = 0x10
+MSG_IMU         = 0x11
 
 WHEEL_SEPARATION = 0.2005   # meters
 
@@ -100,13 +101,18 @@ def parse_frame(decoded: bytes):
 
 
 _ODOM_STRUCT = struct.Struct("<Q7f")
+# imu_payload_t from serial_protocol.h:
+#   uint64_t timestamp_us + 4x float quat + 3x float gyro + 3x float accel = 48 bytes
+_IMU_STRUCT = struct.Struct("<Q10f")
 
 
 @dataclass
 class Sample:
     t_mono: float
-    v_linear: float
-    v_angular: float
+    v_linear: float     # from ODOM, encoder-derived
+    v_angular: float    # from ODOM, encoder-derived
+    gyro_z: float = 0.0  # from IMU, true body rotation rate (rad/s)
+    gyro_fresh: bool = False  # True if gyro was updated in this cycle
 
 
 class StepRunner:
@@ -115,6 +121,8 @@ class StepRunner:
         time.sleep(0.3)
         self._ser.reset_input_buffer()
         self._q: queue.Queue = queue.Queue()
+        self._latest_gyro_z = 0.0   # updated asynchronously by IMU messages
+        self._gyro_fresh = False    # set by IMU handler, cleared by ODOM handler
         self._running = True
         self._t = threading.Thread(target=self._reader, daemon=True)
         self._t.start()
@@ -144,9 +152,31 @@ class StepRunner:
                             buf.clear(); continue
                         buf.clear()
                         p = parse_frame(decoded)
-                        if p and p[0] == MSG_ODOM and len(p[1]) == _ODOM_STRUCT.size:
-                            _ts, _x, _y, _yaw, vl, va, _cx, _cy = _ODOM_STRUCT.unpack(p[1])
-                            self._q.put(Sample(time.monotonic(), vl, va))
+                        if p is None:
+                            continue
+                        msg_type, payload = p
+                        if msg_type == MSG_ODOM and len(payload) == _ODOM_STRUCT.size:
+                            _ts, _x, _y, _yaw, vl, va, _cx, _cy = _ODOM_STRUCT.unpack(payload)
+                            # Pair the freshest IMU gyro_z with this odom sample.
+                            gyro_z = self._latest_gyro_z
+                            fresh  = self._gyro_fresh
+                            self._gyro_fresh = False
+                            self._q.put(Sample(time.monotonic(), vl, va,
+                                               gyro_z=gyro_z, gyro_fresh=fresh))
+                        elif msg_type == MSG_IMU and len(payload) == _IMU_STRUCT.size:
+                            unpacked = _IMU_STRUCT.unpack(payload)
+                            # layout: ts_us, qw, qx, qy, qz, gx, gy, gz, ax, ay, az
+                            _ts = unpacked[0]
+                            _gx = unpacked[5]
+                            _gy = unpacked[6]
+                            gz_raw = unpacked[7]
+                            # BNO055 is mounted face-down (URDF: rpy 3.14159 0 0
+                            # around X). In the IMU's native frame +Z is DOWN,
+                            # so positive commanded angular (ROS +Z = up, CCW)
+                            # shows up as NEGATIVE gyro_z. Negate to put it in
+                            # base_link / commanded convention.
+                            self._latest_gyro_z = -gz_raw
+                            self._gyro_fresh = True
                 else:
                     buf.append(b)
 
@@ -197,9 +227,14 @@ class StepRunner:
 # ────────────────────────────────────────────────────────────────────────
 
 def compute_metrics(samples: list[Sample], target: float, is_angular: bool,
-                    step_duration: float) -> dict:
-    # Pick the value of interest
-    def val(s): return s.v_angular if is_angular else s.v_linear
+                    step_duration: float, use_gyro: bool = False) -> dict:
+    # Pick the value of interest. For angular tests with use_gyro=True, we
+    # measure against the BNO055 z-axis — the true body rotation rate, not
+    # the encoder-derived (scrub-inflated) v_angular.
+    if is_angular and use_gyro:
+        def val(s): return s.gyro_z
+    else:
+        def val(s): return s.v_angular if is_angular else s.v_linear
     sign = 1.0 if target >= 0 else -1.0
     abs_tgt = abs(target)
 
@@ -260,12 +295,14 @@ def compute_metrics(samples: list[Sample], target: float, is_angular: bool,
     }
 
 
-def save_csv(samples: list[Sample], path: Path, target: float, is_angular: bool):
+def save_csv(samples: list[Sample], path: Path, target: float, is_angular: bool,
+             step_duration: float):
     with open(path, "w") as f:
-        f.write("t_s,v_linear_mps,v_angular_radps,target\n")
+        f.write("t_s,v_linear_mps,v_angular_radps,gyro_z_radps,target\n")
         for s in samples:
-            tgt = target if (0.0 <= s.t_mono <= 2.0) else 0.0
-            f.write(f"{s.t_mono:.4f},{s.v_linear:.5f},{s.v_angular:.5f},{tgt:.5f}\n")
+            tgt = target if (0.0 <= s.t_mono <= step_duration) else 0.0
+            f.write(f"{s.t_mono:.4f},{s.v_linear:.5f},{s.v_angular:.5f},"
+                    f"{s.gyro_z:.5f},{tgt:.5f}\n")
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -323,26 +360,52 @@ def main():
     if not samples:
         sys.exit("No odom samples — is the ESP32 responsive?")
 
-    save_csv(samples, out_csv, target, is_angular)
+    save_csv(samples, out_csv, target, is_angular, args.duration)
 
-    m = compute_metrics(samples, target, is_angular, args.duration)
-    print("Metrics:")
-    if "error" in m:
-        print(f"  error: {m['error']}")
-        return
-    print(f"  n_samples               {m['n_samples']}")
-    print(f"  target                  {m['target']:.4f} {units}")
-    print(f"  peak value              {m['peak_value']:.4f} {units}")
-    print(f"  rise_time_90            "
-          + (f"{m['rise_time_90']:.3f} s" if m['rise_time_90'] is not None
-             else "did not reach 90% of target"))
-    print(f"  overshoot               {m['overshoot_pct']:.1f} %")
-    print(f"  settling_time_5pct      "
-          + (f"{m['settling_time_5pct']:.3f} s" if m['settling_time_5pct'] is not None
-             else "never settled"))
-    print(f"  steady_state_error      {m['steady_state_error']:.4f} {units}  "
-          f"({100.0*m['steady_state_error']/m['target']:+.1f}% of target)")
-    print(f"  smoothness (stddev)     {m['smoothness_stddev']:.4f} {units}")
+    def _print_metrics(tag: str, m: dict):
+        print(f"Metrics ({tag}):")
+        if "error" in m:
+            print(f"  error: {m['error']}")
+            return
+        print(f"  n_samples               {m['n_samples']}")
+        print(f"  target                  {m['target']:.4f} {units}")
+        print(f"  peak value              {m['peak_value']:.4f} {units}")
+        print(f"  rise_time_90            "
+              + (f"{m['rise_time_90']:.3f} s" if m['rise_time_90'] is not None
+                 else "did not reach 90% of target"))
+        print(f"  overshoot               {m['overshoot_pct']:.1f} %")
+        print(f"  settling_time_5pct      "
+              + (f"{m['settling_time_5pct']:.3f} s" if m['settling_time_5pct'] is not None
+                 else "never settled"))
+        print(f"  steady_state_error      {m['steady_state_error']:.4f} {units}  "
+              f"({100.0*m['steady_state_error']/m['target']:+.1f}% of target)")
+        print(f"  smoothness (stddev)     {m['smoothness_stddev']:.4f} {units}")
+
+    # Primary metric: encoder-derived velocity (linear and angular).
+    m_enc = compute_metrics(samples, target, is_angular, args.duration)
+    _print_metrics("encoder-derived" if is_angular else "linear", m_enc)
+
+    # For angular tests, ALSO compute metrics against the gyro. This is the
+    # truth: encoder-derived v_angular double-counts track scrub, gyro sees
+    # actual body rotation.
+    if is_angular:
+        # Sanity — did we actually receive IMU samples?
+        fresh_count = sum(1 for s in samples if s.gyro_fresh)
+        if fresh_count == 0:
+            print("\nWARNING: no IMU samples received — gyro metrics unavailable.")
+        else:
+            print()
+            m_gyro = compute_metrics(samples, target, is_angular, args.duration,
+                                     use_gyro=True)
+            _print_metrics("GYRO (true body rotation)", m_gyro)
+            # Summarize the encoder-vs-gyro delta — this is the scrub signature.
+            if (m_enc.get("peak_value") is not None and
+                m_gyro.get("peak_value") is not None and
+                abs(m_gyro["peak_value"]) > 0.01):
+                scrub_pct = (abs(m_enc["peak_value"]) -
+                             abs(m_gyro["peak_value"])) / abs(m_gyro["peak_value"]) * 100.0
+                print(f"\nScrub signature: encoder peak overstates gyro peak by "
+                      f"{scrub_pct:+.1f}% — track slip during rotation.")
 
 
 if __name__ == "__main__":

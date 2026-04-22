@@ -40,7 +40,7 @@ Tuned values stored in NVS:
 | `kickstart_pwm` / `_ms` | 0 / 0  | Disabled — not needed                           |
 | `turn_kp_boost`         | 1.0    | Disabled — no turn-specific kp boost            |
 | `gyro_yaw_kp`           | 0      | Disabled — requires IMU-aware tuning tool       |
-| `yaw_rate_ff`           | 0      | Extra FF PWM per rad/s during turn-in-place (see caution below) |
+| `yaw_rate_ff`           | 10     | Extra FF PWM per rad/s during turn-in-place — tuned with `step_response.py` IMU-aware (B2) |
 | `brake_on_stop`         | 0      | 0 = coast (default), 1 = active brake on stop   |
 
 Read the current NVS state on the robot:
@@ -250,9 +250,12 @@ because the true motor curve is mildly nonlinear. Fix with a piecewise
 FF (B3 in the improvement plan) when needed.
 
 \** Angular metrics are encoder-derived and subject to tread-scrub
-artifact during turn-in-place. Real body rotation (as measured by the
-BNO055 gyro) approximately matches commanded rate. A future IMU-aware
-tool (B2) will replace these baselines with gyro-based truth.
+artifact during turn-in-place. The IMU-aware step_response.py (B2 —
+2026-04-22) now reports both encoder-derived AND gyro-based metrics.
+At 2.0 rad/s commanded with the current NVS tuning, true body rotation
+peaks at ~1.83 rad/s (91% of commanded) and settles at ~1.16 rad/s
+(58% of commanded). Encoder-derived figures overstate body rotation
+by +90-140% due to track scrub.
 
 ---
 
@@ -301,18 +304,39 @@ Fix: unplug the 12V adapter from the wall for 10 seconds, then reconnect. OCP se
 
 Prevention: keep `yaw_rate_ff × max_angular_target` below ~75 PWM of FF bias. With current tuning, `yaw_rate_ff = 15` paired with max teleop angular 6.5 rad/s gives 97 PWM — still risky. `yaw_rate_ff = 10` is the safer ceiling while using the 5A adapter. When the final secondary battery is installed (rated for 15-30A surge), this limit relaxes significantly.
 
-### Yaw-rate FF tuning observations (2026-04-22 bench)
+### Yaw-rate FF + IMU-aware tuning observations (2026-04-22 bench)
 
-Measured step response at 2.0 rad/s commanded angular:
+Initial encoder-based measurements were misleading. After `step_response.py`
+was extended to also read `/imu/data` (gyro z-axis), the TRUE body rotation
+rate became visible, revealing a ~142% scrub artifact in encoder-derived
+angular velocity during turn-in-place.
 
-| `yaw_rate_ff` | Rise 90% | Overshoot | SS error |
-|---------------|----------|-----------|----------|
-| 0             | 0.66 s   | 80 %      | -71 %    |
-| 10            | 0.30 s   | 78 %      | -63 %    |
-| 20            | 0.30 s   | 61 %      | -12 %    |
-| 30            | *OCP latch — motor rail lost* |
+Commanded 2.0 rad/s angular, compared by measurement source:
 
-`yaw_rate_ff = 20` cut rise time in half and brought steady-state error within 15% of target. `yaw_rate_ff = 30` tripped the 12V adapter's OCP at 3.0 rad/s target. Recommended ceiling with 5A adapter: **15**. Leave at **0** until ready to tune.
+| `yaw_rate_ff` | ENC peak   | GYRO peak (truth) | GYRO SS err | Scrub |
+|---------------|-----------:|------------------:|------------:|------:|
+| 0             | 3.23 rad/s | **1.33 rad/s** (67% of cmd) | +84 % | +142 % |
+| 10            | 3.63 rad/s | **1.83 rad/s** (91% of cmd) | +42 % |  +98 % |
+| 15            | 3.82 rad/s | **2.01 rad/s** (100% of cmd peak!) | +42 % |  +90 % |
+| 20            | 3.51 rad/s | — (tested pre-IMU)           | — | — |
+| 30            | *OCP latch — motor rail lost* | | | |
+
+Key insights:
+- **Real body rotation caps near 1.5–2.0 rad/s** under load. Commanding
+  above that with the default tuning just wastes motor power as tread scrub
+  without producing faster rotation.
+- **Peak vs steady-state diverge**: `yaw_rate_ff=15` briefly hits commanded
+  at peak, but body settles ~58% of commanded during sustained turn. This
+  is physical — tread scrub reaches equilibrium.
+- **Encoder-derived "overshoot" is mostly scrub**, not real overshoot. A
+  60-80% encoder overshoot usually means the body is actually undershooting.
+
+**Current NVS**: `yaw_rate_ff = 10` — 91% of commanded at peak, no OCP risk.
+Pushing to 15 gives peak-hits-target but requires caution at high teleop
+rates (97 PWM of bias at 6.5 rad/s cmd → near saturation).
+
+With the final secondary battery (larger current budget), yaw_rate_ff can
+likely be raised to 20-25 safely.
 
 ### "NVS is corrupted / values loaded as default on every boot"
 
