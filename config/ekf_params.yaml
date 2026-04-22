@@ -21,13 +21,17 @@
     world_frame: odom         # EKF operates in odom frame
 
     # ── Input 0: Wheel odometry (from ESP32 via USB serial driver) ──
-    # Provides: x/y position, yaw, linear velocity, angular velocity
+    # Provides: x/y position, linear velocity. Yaw and yaw-rate DISABLED —
+    # wheel-derived yaw is unreliable on this tank drive because tread
+    # scrub produces differential encoder ticks without real body rotation
+    # (verified 2026-04-22: /odom yaw can drift 18°/m during a visually
+    # straight drive). All yaw information comes from the BNO055 IMU only.
     # Pi motor driver publishes /odom with reliable QoS directly (no relay needed)
     odom0: /odom
     odom0_config: [true,  true,  false,   # x, y, z position
-                   false, false, true,    # roll, pitch, yaw
+                   false, false, false,   # roll, pitch, yaw — DISABLED (scrub)
                    true,  false, false,   # vx, vy, vz
-                   false, false, true,    # vroll, vpitch, vyaw
+                   false, false, false,   # vroll, vpitch, vyaw — DISABLED (scrub)
                    false, false, false]   # ax, ay, az
     odom0_queue_size: 10
     odom0_differential: false   # Use absolute pose from wheel odom

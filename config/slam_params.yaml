@@ -60,7 +60,7 @@ slam_toolbox:
     scan_buffer_maximum_scan_distance: 10.0
     link_match_minimum_response_fine: 0.1
     link_scan_maximum_distance: 1.5
-    loop_search_maximum_distance: 3.0
+    loop_search_maximum_distance: 6.0
     link_scan_buffer_maximum_distance: 0.5
 
     # Serialization
