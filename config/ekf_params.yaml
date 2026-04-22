@@ -21,48 +21,59 @@
     world_frame: odom         # EKF operates in odom frame
 
     # ── Input 0: Wheel odometry (from ESP32 via USB serial driver) ──
-    # Provides: x/y position, yaw, linear velocity, angular velocity.
-    #
-    # NOTE ON YAW: tread scrub makes /odom yaw noisier than a diff-drive's
-    # (trial 2026-04-22: /odom yaw can drift 18° during a visually-straight
-    # 1m drive). It's tempting to disable this channel, BUT the current
-    # IMU config uses differential mode (imu0_differential: true) to avoid
-    # mag-north vs odom-yaw reference conflict, and that mode relies on
-    # /odom yaw as a low-pass anchor. Disabling yaw here without also
-    # switching to imu0_differential: false + imu0_relative: true caused
-    # IMU yaw to drift unbounded (2026-04-22 SLAM test 2 — scattered map).
-    # Keep both channels enabled; SLAM's scan-matching + loop closure
-    # absorbs the scrub residual.
+    # Provides: x/y position, linear velocity. Yaw channels DISABLED —
+    # tread scrub on this tank makes wheel-derived yaw unreliable (trial
+    # 2026-04-22: 18° false yaw during a visually-straight 1m drive; also
+    # produces a radial "starburst" smear in SLAM map during rotations).
+    # All yaw information comes from the BNO055 IMU in absolute mode
+    # (see imu0 block below — this change must be made together with
+    # imu0_differential: false + imu0_relative: true, otherwise IMU yaw
+    # drifts unbounded without an anchor).
     # Pi motor driver publishes /odom with reliable QoS directly (no relay needed)
     odom0: /odom
     odom0_config: [true,  true,  false,   # x, y, z position
-                   false, false, true,    # roll, pitch, yaw
+                   false, false, false,   # roll, pitch, yaw — DISABLED (scrub)
                    true,  false, false,   # vx, vy, vz
-                   false, false, true,    # vroll, vpitch, vyaw
+                   false, false, false,   # vroll, vpitch, vyaw — DISABLED (scrub)
                    false, false, false]   # ax, ay, az
     odom0_queue_size: 10
     odom0_differential: false   # Use absolute pose from wheel odom
     odom0_relative: false
 
     # ── Input 1: Onboard BNO055 IMU (from ESP32 via USB serial driver) ──
-    # Pi motor driver publishes /imu/data with reliable QoS directly (no relay needed)
+    # Pi motor driver publishes /imu/data with reliable QoS directly (no relay needed).
+    # frame_id is imu_link; URDF defines imu_link at rpy=(π, 0, 0) relative
+    # to base_link (face-down mount). robot_localization transforms the
+    # IMU orientation + angular_velocity through this TF automatically.
     #
-    # Orientation: fuse yaw (differential mode converts to rate, avoiding
-    # reference frame mismatch between mag-north heading and odom yaw).
+    # Orientation yaw: consumed as ABSOLUTE (differential: false) because
+    # BNO055 NDOF fusion (accel + gyro + mag) provides a globally-stable
+    # absolute yaw reference with no integration drift. The mag-north vs
+    # odom-start reference offset is resolved by imu0_relative: true —
+    # the first IMU sample becomes the yaw=0 reference for the filter.
     #
     # Angular velocity: fuse vyaw — BNO055 gyro is much lower noise than
     # wheel-derived angular velocity (0.014 deg/s/√Hz vs encoder aliasing).
     #
     # Acceleration: DISABLED — tank acceleration is low, noise floor dominates.
+    #
+    # WHY this setup (2026-04-22): previous config used imu0_differential:
+    # true, which differences orientation to rate. That worked while /odom
+    # yaw was also fused (acting as a low-pass anchor), but produced a
+    # scrubby starburst map pattern during turns because EKF's averaging
+    # let /odom's tread-scrub yaw-rate bleed into the pose estimate.
+    # Switching /odom yaw off and IMU to absolute-relative mode decouples
+    # body yaw from tread behavior entirely — the only yaw signal the
+    # filter sees is NDOF-fused, which is what we want for skid-steer.
     imu0: /imu/data
     imu0_config: [false, false, false,    # No position from IMU
-                  false, false, true,     # yaw only from orientation (2D mode)
+                  false, false, true,     # yaw from absolute orientation (2D mode)
                   false, false, false,    # No velocity from IMU
                   false, false, true,     # yaw rate from gyro (2D mode)
                   false, false, false]    # accel DISABLED
     imu0_queue_size: 10
-    imu0_differential: true      # Convert orientation to rate (avoids mag-north vs odom-yaw conflict)
-    imu0_relative: false
+    imu0_differential: false     # Absolute mode — consume NDOF yaw directly
+    imu0_relative: true          # First sample = yaw reference (aligns mag-north to odom start)
     imu0_remove_gravitational_acceleration: true
 
     # ── Process noise covariance (15x15 diagonal) ─────────
