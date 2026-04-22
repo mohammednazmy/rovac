@@ -83,6 +83,15 @@ static bool  s_raw_pwm_active = false;
 static int16_t s_raw_pwm_left  = 0;
 static int16_t s_raw_pwm_right = 0;
 
+// ---- Kickstart / stall watchdog state (PID task local) ----
+// These are touched only from pid_task on Core 1 — no lock needed.
+static bool    s_was_pid_active     = false;  // transition detector
+static int64_t s_kickstart_end_us   = 0;      // 0 = not in kickstart
+static int16_t s_kickstart_left_pwm = 0;
+static int16_t s_kickstart_right_pwm = 0;
+static int64_t s_last_left_tick_us  = 0;      // per-wheel stall detection
+static int64_t s_last_right_tick_us = 0;
+
 // ---- Measured state (set by PID task, read by odom publisher) ----
 static SemaphoreHandle_t s_meas_lock = NULL;
 static float s_meas_left  = 0.0f;  // Measured wheel velocity (m/s)
@@ -132,6 +141,12 @@ static void pid_task(void *arg)
         int32_t left_delta = 0, right_delta = 0;
         encoder_reader_get_and_reset_deltas(&left_delta, &right_delta);
 
+        // Per-wheel stall detector: remember the last time each wheel saw
+        // an encoder tick. Consulted by the active branch below to apply
+        // stall_ff_boost when commanded motion is not producing movement.
+        if (left_delta  != 0) s_last_left_tick_us  = now_us;
+        if (right_delta != 0) s_last_right_tick_us = now_us;
+
         // ---- Step 2: Compute per-wheel velocity (m/s) ----
         float v_left_meas  = ((float)left_delta  * METERS_PER_TICK) / dt;
         float v_right_meas = ((float)right_delta * METERS_PER_TICK) / dt;
@@ -169,6 +184,10 @@ static void pid_task(void *arg)
             pid_reset(&s_pid_left);
             pid_reset(&s_pid_right);
             motor_driver_set(raw_left, raw_right);
+            // Exiting raw mode into PID mode counts as an idle→active
+            // transition for kickstart purposes.
+            s_was_pid_active   = false;
+            s_kickstart_end_us = 0;
             if (++debug_counter % PID_DEBUG_INTERVAL == 0) {
                 ESP_LOGI(TAG, "RAW pwm=%d/%d meas=%.3f/%.3f enc=%ld/%ld",
                          raw_left, raw_right, v_left_meas, v_right_meas,
@@ -179,45 +198,89 @@ static void pid_task(void *arg)
             motor_params_t p;
             motor_params_get(&p);
 
-            // Update PID gains + max output from runtime params
-            s_pid_left.kp  = p.kp;  s_pid_right.kp  = p.kp;
-            s_pid_left.ki  = p.ki;  s_pid_right.ki  = p.ki;
-            s_pid_left.kd  = p.kd;  s_pid_right.kd  = p.kd;
-            s_pid_left.ff_scale  = p.ff_scale;  s_pid_right.ff_scale  = p.ff_scale;
-            s_pid_left.max_output = p.max_output;
-            s_pid_right.max_output = p.max_output;
-            s_pid_left.max_integral_pwm  = p.max_integral_pwm;
-            s_pid_right.max_integral_pwm = p.max_integral_pwm;
+            // Idle→active transition: arm kickstart pulse if configured.
+            // kickstart bypasses PID with a fixed-magnitude pulse for
+            // kickstart_ms to break stiction, then hands off to normal PID.
+            // Disabled by default (kickstart_pwm == 0); Phase 3 tunes.
+            if (!s_was_pid_active &&
+                p.kickstart_pwm > 0.0f && p.kickstart_ms > 0.0f) {
+                s_kickstart_end_us = now_us + (int64_t)(p.kickstart_ms * 1000.0f);
+                int16_t mag = (int16_t)clampf(p.kickstart_pwm, 0.0f, p.max_output);
+                s_kickstart_left_pwm  = (tgt_left  >= 0.0f) ? mag : (int16_t)-mag;
+                s_kickstart_right_pwm = (tgt_right >= 0.0f) ? mag : (int16_t)-mag;
+            }
+            s_was_pid_active = true;
 
-            // Per-direction ff_offset — pick the right quadrant for each wheel.
-            // Phase 2 will split fwd/rev meaningfully; today the defaults are equal.
-            s_pid_left.ff_offset  = (tgt_left  >= 0.0f)
-                                    ? p.ff_offset_left_fwd  : p.ff_offset_left_rev;
-            s_pid_right.ff_offset = (tgt_right >= 0.0f)
-                                    ? p.ff_offset_right_fwd : p.ff_offset_right_rev;
+            if (now_us < s_kickstart_end_us) {
+                // Inside kickstart window: fixed pulse, PID state held clean.
+                pid_reset(&s_pid_left);
+                pid_reset(&s_pid_right);
+                motor_driver_set(s_kickstart_left_pwm, s_kickstart_right_pwm);
+                if (++debug_counter % PID_DEBUG_INTERVAL == 0) {
+                    ESP_LOGI(TAG, "KICK pwm=%d/%d (%dms remaining)",
+                             s_kickstart_left_pwm, s_kickstart_right_pwm,
+                             (int)((s_kickstart_end_us - now_us) / 1000));
+                }
+            } else {
+                // Turn-in-place detection: targets have opposite sign (one
+                // wheel forward, one reverse) → boost kp for snappier rotation.
+                // Disabled by default (turn_kp_boost == 1.0); Phase 3 tunes.
+                bool turn_in_place = (tgt_left * tgt_right) < -1e-4f;
+                float eff_kp = p.kp * (turn_in_place ? p.turn_kp_boost : 1.0f);
 
-            float pwm_left  = pid_update(&s_pid_left,  tgt_left,  v_left_meas,  dt);
-            float pwm_right = pid_update(&s_pid_right, tgt_right, v_right_meas, dt);
+                s_pid_left.kp  = eff_kp;  s_pid_right.kp  = eff_kp;
+                s_pid_left.ki  = p.ki;    s_pid_right.ki  = p.ki;
+                s_pid_left.kd  = p.kd;    s_pid_right.kd  = p.kd;
+                s_pid_left.ff_scale   = p.ff_scale;   s_pid_right.ff_scale   = p.ff_scale;
+                s_pid_left.max_output = p.max_output; s_pid_right.max_output = p.max_output;
+                s_pid_left.max_integral_pwm  = p.max_integral_pwm;
+                s_pid_right.max_integral_pwm = p.max_integral_pwm;
 
-            // Convert float PWM to int16, rounding
-            int16_t cmd_left  = (int16_t)clampf(roundf(pwm_left),  -p.max_output, p.max_output);
-            int16_t cmd_right = (int16_t)clampf(roundf(pwm_right), -p.max_output, p.max_output);
+                // Per-wheel stall watchdog: if a commanded wheel has not
+                // produced encoder ticks for STALL_TIMEOUT_US, temporarily
+                // add stall_ff_boost to its feed-forward offset. Released
+                // automatically once the wheel starts moving.
+                // Disabled by default (stall_ff_boost == 0); Phase 3 tunes.
+                #define STALL_TIMEOUT_US 150000  /* 150 ms */
+                bool stall_left  = (fabsf(tgt_left)  > 0.01f) &&
+                                   (now_us - s_last_left_tick_us)  > STALL_TIMEOUT_US;
+                bool stall_right = (fabsf(tgt_right) > 0.01f) &&
+                                   (now_us - s_last_right_tick_us) > STALL_TIMEOUT_US;
 
-            motor_driver_set(cmd_left, cmd_right);
+                float ff_off_l = (tgt_left  >= 0.0f) ? p.ff_offset_left_fwd  : p.ff_offset_left_rev;
+                float ff_off_r = (tgt_right >= 0.0f) ? p.ff_offset_right_fwd : p.ff_offset_right_rev;
+                if (stall_left)  ff_off_l += p.stall_ff_boost;
+                if (stall_right) ff_off_r += p.stall_ff_boost;
+                s_pid_left.ff_offset  = ff_off_l;
+                s_pid_right.ff_offset = ff_off_r;
 
-            // Debug: periodic PID state dump (5Hz when active)
-            if (++debug_counter % PID_DEBUG_INTERVAL == 0) {
-                ESP_LOGI(TAG, "PID tgt=%.3f/%.3f meas=%.3f/%.3f enc=%ld/%ld pwm=%d/%d dt=%.1fms",
-                         tgt_left, tgt_right,
-                         v_left_meas, v_right_meas,
-                         (long)left_delta, (long)right_delta,
-                         cmd_left, cmd_right,
-                         dt * 1000.0f);
+                float pwm_left  = pid_update(&s_pid_left,  tgt_left,  v_left_meas,  dt);
+                float pwm_right = pid_update(&s_pid_right, tgt_right, v_right_meas, dt);
+
+                // Convert float PWM to int16, rounding
+                int16_t cmd_left  = (int16_t)clampf(roundf(pwm_left),  -p.max_output, p.max_output);
+                int16_t cmd_right = (int16_t)clampf(roundf(pwm_right), -p.max_output, p.max_output);
+
+                motor_driver_set(cmd_left, cmd_right);
+
+                if (++debug_counter % PID_DEBUG_INTERVAL == 0) {
+                    ESP_LOGI(TAG, "PID tgt=%.3f/%.3f meas=%.3f/%.3f enc=%ld/%ld pwm=%d/%d%s%s%s dt=%.1fms",
+                             tgt_left, tgt_right,
+                             v_left_meas, v_right_meas,
+                             (long)left_delta, (long)right_delta,
+                             cmd_left, cmd_right,
+                             turn_in_place ? " TURN" : "",
+                             stall_left    ? " STL-L" : "",
+                             stall_right   ? " STL-R" : "",
+                             dt * 1000.0f);
+                }
             }
         } else {
             motor_driver_stop();
             pid_reset(&s_pid_left);
             pid_reset(&s_pid_right);
+            s_was_pid_active   = false;
+            s_kickstart_end_us = 0;
             debug_counter = 0;
         }
     }

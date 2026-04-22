@@ -71,16 +71,29 @@ float pid_update(wheel_pid_t *pid, float target_vel, float measured_vel, float d
     float effective_kp = near_target ? (pid->kp * 2.0f) : pid->kp;
     float p_term = effective_kp * error;
 
-    // ---- Integral with dual anti-windup ----
-    // 1. Conditional: only accumulate when velocity is within 30% of target
-    //    (adaptive threshold scales with speed)
-    // 2. Back-calculation: don't accumulate when output is saturated
-    float threshold = fmaxf(fabsf(target_vel) * 0.3f, 0.02f);
-    if (fabsf(error) < threshold && !pid->saturated) {
+    // ---- Integral with conditional-integration anti-windup ----
+    //
+    // Standard textbook form: accumulate error unless the output is already
+    // saturated AND the current error would push further into saturation.
+    // This is critical for breaking stiction under mechanical load: when the
+    // motor is commanded but not moving, |error| is large and |output| has
+    // not yet reached max — so we MUST keep accumulating to grow the drive.
+    //
+    // Old behavior (which broke loaded turn-in-place): the integral was
+    // DECAYED whenever |error| exceeded 30% of target, regardless of output.
+    // That actively prevented the PID from building drive when stalled —
+    // exactly the opposite of what we want.
+    bool block_windup = false;
+    if (pid->saturated) {
+        // Positive saturation + positive error → more integral would push
+        // deeper into saturation. Same sign for negative side.
+        if ((pid->output > 0.0f && error > 0.0f) ||
+            (pid->output < 0.0f && error < 0.0f)) {
+            block_windup = true;
+        }
+    }
+    if (!block_windup) {
         pid->integral += error * dt;
-    } else if (fabsf(error) >= threshold) {
-        // Large transient — decay integral to prevent stale buildup
-        pid->integral *= 0.95f;
     }
     // Cap integral so its PWM contribution stays within ±max_integral_pwm.
     // I-term = ki * integral, so integral-space cap = max_integral_pwm / ki.

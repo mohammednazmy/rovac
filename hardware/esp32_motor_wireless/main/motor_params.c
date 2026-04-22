@@ -66,12 +66,15 @@ static const motor_params_t s_defaults = {
     .ff_offset_left_rev     = 136.0f,   /* Phase 2 will split fwd/rev */
     .ff_offset_right_fwd    = 132.0f,
     .ff_offset_right_rev    = 132.0f,
-    .max_integral_pwm       = 50.0f,    /* Phase 2 will raise to ~150 */
+    .max_integral_pwm       = 150.0f,   /* Phase 2: raised from 50 — paired
+                                         * with conditional-integration anti-
+                                         * windup so I-term can push near
+                                         * saturation under mechanical load. */
     .max_output             = 255.0f,
-    .kickstart_pwm          = 0.0f,     /* 0 = disabled (Phase 2 wires up) */
+    .kickstart_pwm          = 0.0f,     /* 0 = disabled; Phase 3 tunes */
     .kickstart_ms           = 0.0f,
-    .turn_kp_boost          = 1.0f,     /* 1.0 = no boost (Phase 2 wires up) */
-    .stall_ff_boost         = 0.0f,     /* 0 = disabled (Phase 2 wires up) */
+    .turn_kp_boost          = 1.0f,     /* 1.0 = no boost; Phase 3 tunes */
+    .stall_ff_boost         = 0.0f,     /* 0 = disabled; Phase 3 tunes */
     .gyro_yaw_kp            = 0.0f,     /* 0 = disabled (Phase 4 wires up) */
 };
 
