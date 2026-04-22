@@ -305,6 +305,18 @@ static void pid_task(void *arg)
                 float ff_off_r = (tgt_right >= 0.0f) ? p.ff_offset_right_fwd : p.ff_offset_right_rev;
                 if (stall_left)  ff_off_l += p.stall_ff_boost;
                 if (stall_right) ff_off_r += p.stall_ff_boost;
+
+                // Yaw-rate FF compensation — when commanded to turn in place,
+                // pre-bias FF by yaw_rate_ff * |commanded angular| to overcome
+                // track-scrub friction without waiting for the integral to
+                // build up. Disabled by default (yaw_rate_ff == 0).
+                if (turn_in_place && p.yaw_rate_ff > 0.0f) {
+                    float yaw_boost = p.yaw_rate_ff *
+                                      fabsf(s_current_angular_z_cmd);
+                    ff_off_l += yaw_boost;
+                    ff_off_r += yaw_boost;
+                }
+
                 s_pid_left.ff_offset  = ff_off_l;
                 s_pid_right.ff_offset = ff_off_r;
 
@@ -330,7 +342,16 @@ static void pid_task(void *arg)
                 }
             }
         } else {
-            motor_driver_stop();
+            // Honor brake_on_stop: active brake vs coast. Default is coast
+            // (brake_on_stop=0). Active brake shorts motor windings, giving
+            // a faster stop at the cost of more mechanical/thermal stress.
+            motor_params_t p_stop;
+            motor_params_get(&p_stop);
+            if (p_stop.brake_on_stop >= 0.5f) {
+                motor_driver_brake();
+            } else {
+                motor_driver_stop();
+            }
             pid_reset(&s_pid_left);
             pid_reset(&s_pid_right);
             s_was_pid_active   = false;
@@ -493,8 +514,15 @@ void motor_control_stop(void)
     // PID state is reset by the PID task when it sees active=false,
     // avoiding a cross-core data race with pid_update() on Core 1.
 
-    // Immediately stop motors (don't wait for PID task cycle)
-    motor_driver_stop();
+    // Immediately stop motors (don't wait for PID task cycle).
+    // Honor brake_on_stop param — default is coast.
+    motor_params_t p_stop;
+    motor_params_get(&p_stop);
+    if (p_stop.brake_on_stop >= 0.5f) {
+        motor_driver_brake();
+    } else {
+        motor_driver_stop();
+    }
 }
 
 void motor_control_watchdog(void)

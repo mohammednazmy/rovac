@@ -68,6 +68,8 @@ PARAMS = [
     (0x0D, "turn_kp_boost",         "×",         "kp multiplier during turn-in-place"),
     (0x0E, "stall_ff_boost",        "PWM",       "Extra FF when stall detected"),
     (0x0F, "gyro_yaw_kp",           "",          "Gyro outer-loop gain (Phase 4)"),
+    (0x10, "yaw_rate_ff",           "PWM/(rad/s)", "Extra FF during turn-in-place"),
+    (0x11, "brake_on_stop",         "bool",      "0=coast (default), 1=active brake"),
 ]
 NAME_TO_ID = {p[1]: p[0] for p in PARAMS}
 ID_TO_INFO = {p[0]: p for p in PARAMS}

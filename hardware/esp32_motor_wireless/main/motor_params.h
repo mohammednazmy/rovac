@@ -49,6 +49,10 @@ typedef struct {
 
     /* Phase 4 feature (stored now, wired up in Phase 4) */
     float gyro_yaw_kp;              /* Outer-loop gyro yaw-rate gain */
+
+    /* Phase 5 / Task A2 — turn compensation and stop behavior */
+    float yaw_rate_ff;              /* Extra FF PWM per rad/s in turn-in-place */
+    float brake_on_stop;            /* Bool-ish: 0 = coast (default), >=0.5 = brake */
 } motor_params_t;
 
 /* ── Source-of-value tracking ──────────────────────────── */

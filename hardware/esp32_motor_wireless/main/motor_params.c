@@ -51,6 +51,8 @@ static const char *const s_param_keys[PARAM_ID_MAX + 1] = {
     [PARAM_TURN_KP_BOOST]          = "p_turn_kp",
     [PARAM_STALL_FF_BOOST]         = "p_stall",
     [PARAM_GYRO_YAW_KP]            = "p_gyro_kp",
+    [PARAM_YAW_RATE_FF]            = "p_yaw_ff",
+    [PARAM_BRAKE_ON_STOP]          = "p_brake",
 };
 
 /* ── Compile-time defaults ─────────────────────────────── */
@@ -76,6 +78,8 @@ static const motor_params_t s_defaults = {
     .turn_kp_boost          = 1.0f,     /* 1.0 = no boost; Phase 3 tunes */
     .stall_ff_boost         = 0.0f,     /* 0 = disabled; Phase 3 tunes */
     .gyro_yaw_kp            = 0.0f,     /* 0 = disabled (Phase 4 wires up) */
+    .yaw_rate_ff            = 0.0f,     /* 0 = disabled; Phase 5 bench tunes */
+    .brake_on_stop          = 0.0f,     /* 0 = coast (default); see motor_driver.c */
 };
 
 /* ── Runtime state ─────────────────────────────────────── */
@@ -108,6 +112,8 @@ static float *param_ptr(motor_params_t *p, uint8_t id)
     case PARAM_TURN_KP_BOOST:        return &p->turn_kp_boost;
     case PARAM_STALL_FF_BOOST:       return &p->stall_ff_boost;
     case PARAM_GYRO_YAW_KP:          return &p->gyro_yaw_kp;
+    case PARAM_YAW_RATE_FF:          return &p->yaw_rate_ff;
+    case PARAM_BRAKE_ON_STOP:        return &p->brake_on_stop;
     default:                         return NULL;
     }
 }
@@ -128,6 +134,8 @@ static bool param_value_sane(uint8_t id, float value)
     case PARAM_KICKSTART_MS:
     case PARAM_STALL_FF_BOOST:
     case PARAM_GYRO_YAW_KP:
+    case PARAM_YAW_RATE_FF:
+    case PARAM_BRAKE_ON_STOP:
         return value >= 0.0f;
     case PARAM_TURN_KP_BOOST:
         return value > 0.0f;

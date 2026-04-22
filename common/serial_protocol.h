@@ -151,8 +151,10 @@ typedef struct __attribute__((packed)) {
 #define PARAM_TURN_KP_BOOST         0x0D  /* kp multiplier during turn-in-place */
 #define PARAM_STALL_FF_BOOST        0x0E  /* Extra PWM on FF when stall detected */
 #define PARAM_GYRO_YAW_KP           0x0F  /* Outer-loop gyro yaw-rate gain */
+#define PARAM_YAW_RATE_FF           0x10  /* FF PWM per rad/s during turn-in-place */
+#define PARAM_BRAKE_ON_STOP         0x11  /* 0=coast on stop, >=0.5=active brake */
 
-#define PARAM_ID_MAX                0x0F  /* Highest valid param ID */
+#define PARAM_ID_MAX                0x11  /* Highest valid param ID */
 
 /* ── Sensor Hub payload structs ─────────────────────────── */
 

@@ -82,6 +82,8 @@ PARAMS = [
     (0x0D, "turn_kp_boost",        0.1,   "×"),
     (0x0E, "stall_ff_boost",       2.0,   "PWM"),
     (0x0F, "gyro_yaw_kp",          0.1,   ""),
+    (0x10, "yaw_rate_ff",          2.0,   "PWM/(rad/s)"),
+    (0x11, "brake_on_stop",        1.0,   "bool"),
 ]
 PARAM_IDS   = [p[0] for p in PARAMS]
 PARAM_NAMES = {p[0]: p[1] for p in PARAMS}

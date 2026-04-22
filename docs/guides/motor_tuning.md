@@ -40,6 +40,8 @@ Tuned values stored in NVS:
 | `kickstart_pwm` / `_ms` | 0 / 0  | Disabled — not needed                           |
 | `turn_kp_boost`         | 1.0    | Disabled — no turn-specific kp boost            |
 | `gyro_yaw_kp`           | 0      | Disabled — requires IMU-aware tuning tool       |
+| `yaw_rate_ff`           | 0      | Extra FF PWM per rad/s during turn-in-place (see caution below) |
+| `brake_on_stop`         | 0      | 0 = coast (default), 1 = active brake on stop   |
 
 Read the current NVS state on the robot:
 ```bash
@@ -286,6 +288,31 @@ This is expected on tread drives — encoder-derived angular overestimates
 actual body rotation because the treads scrub (slip sideways) during
 turn-in-place. Use `/imu/data` (gyro z-axis) for true body rotation, or
 the forthcoming IMU-aware step response tool.
+
+### "Motors suddenly stopped responding after aggressive tuning"
+
+Symptom: firmware logs show PID commanding growing PWM (e.g., `pwm=-230/-230 STL-L STL-R`), encoders read 0, robot doesn't move. `/odom` and IMU data still stream normally.
+
+Root cause: the Maker ESP32 has two power rails — **USB from the Pi powers the ESP32 logic + sensors, but the 12V barrel jack powers the TB67H450FNG motor drivers**. If the 12V rail dies, the chip stays alive and keeps trying to drive motors, but the H-bridges have no supply.
+
+The 12V 5A adapter can latch into over-current protection (OCP) if both motors are driven to PWM 255 simultaneously for an extended period — e.g., during turn-in-place at high `yaw_rate_ff` combined with high angular targets.
+
+Fix: unplug the 12V adapter from the wall for 10 seconds, then reconnect. OCP self-resets. Motors return immediately.
+
+Prevention: keep `yaw_rate_ff × max_angular_target` below ~75 PWM of FF bias. With current tuning, `yaw_rate_ff = 15` paired with max teleop angular 6.5 rad/s gives 97 PWM — still risky. `yaw_rate_ff = 10` is the safer ceiling while using the 5A adapter. When the final secondary battery is installed (rated for 15-30A surge), this limit relaxes significantly.
+
+### Yaw-rate FF tuning observations (2026-04-22 bench)
+
+Measured step response at 2.0 rad/s commanded angular:
+
+| `yaw_rate_ff` | Rise 90% | Overshoot | SS error |
+|---------------|----------|-----------|----------|
+| 0             | 0.66 s   | 80 %      | -71 %    |
+| 10            | 0.30 s   | 78 %      | -63 %    |
+| 20            | 0.30 s   | 61 %      | -12 %    |
+| 30            | *OCP latch — motor rail lost* |
+
+`yaw_rate_ff = 20` cut rise time in half and brought steady-state error within 15% of target. `yaw_rate_ff = 30` tripped the 12V adapter's OCP at 3.0 rad/s target. Recommended ceiling with 5A adapter: **15**. Leave at **0** until ready to tune.
 
 ### "NVS is corrupted / values loaded as default on every boot"
 
