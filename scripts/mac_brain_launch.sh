@@ -54,7 +54,6 @@ usage() {
     echo "  nav       - Run navigation with existing map"
     echo "  foxglove  - Run only Foxglove bridge for visualization"
     echo "  ekf       - Run EKF sensor fusion (wheel odom + BNO055 IMU)"
-    echo "  ekf-gps   - Run EKF + GPS navigation (outdoor waypoint following)"
     echo "  all       - Run SLAM + Nav2 + Foxglove"
     echo ""
     echo "Examples:"
@@ -114,29 +113,38 @@ cleanup() {
     trap '' SIGINT SIGTERM
     log_warn "Shutting down Mac brain nodes..."
     pkill -f "foxglove_bridge" 2>/dev/null || true
-    pkill -f "phone_camera_bridge" 2>/dev/null || true
     pkill -f "slam_toolbox" 2>/dev/null || true
     pkill -f "nav2" 2>/dev/null || true
     pkill -f "ekf_node" 2>/dev/null || true
     start_pi_map_tf
     restore_motor_tf
 }
+trap cleanup EXIT SIGINT SIGTERM
 
-# Start phone camera bridge (phone IMU/GPS use rosbridge on Pi :9090 — no Mac relay needed)
-start_phone_relay() {
-    if ! pgrep -f "phone_camera_bridge" > /dev/null 2>&1; then
-        log_info "Starting phone camera HTTP bridge..."
-        python3 "$HOME/robots/rovac/scripts/phone_camera_bridge.py" &
-        PHONE_CAM_PID=$!
-        log_info "Phone camera bridge PID: $PHONE_CAM_PID"
-    else
-        log_info "Phone camera bridge already running"
+# Kill leftover Mac-side brain processes from a prior crashed/hard-killed run.
+# Orphans re-parent to PID 1 and keep holding port 8765, blocking the new
+# foxglove_bridge with a silent "Bind Error". Auto-kill is the right default
+# for a single-operator setup; swap to a detect-and-refuse check if you run
+# multiple Foxglove bridges on purpose.
+kill_stale_instances() {
+    local pids_8765
+    pids_8765=$(lsof -ti :8765 2>/dev/null || true)
+    if [ -n "$pids_8765" ]; then
+        log_warn "Port 8765 held by PID(s) $pids_8765 — killing stale foxglove"
+    fi
+    local pattern="foxglove_bridge|ekf_node|slam_toolbox|nav2_bringup"
+    if pgrep -f "$pattern" >/dev/null 2>&1; then
+        pkill -TERM -f "$pattern" 2>/dev/null || true
+        sleep 1
+        pkill -KILL -f "$pattern" 2>/dev/null || true
     fi
 }
-trap cleanup EXIT SIGINT SIGTERM
 
 # ── Pre-flight checks ──────────────────────────────────────────────
 log_info "Running pre-flight checks..."
+
+# 0) Clear orphaned Mac-side processes from a previous crashed run
+kill_stale_instances
 
 # 1) Pi connectivity via SSH
 if ssh -o ConnectTimeout=3 "$PI_USER@$PI_HOST" 'true' 2>/dev/null; then
@@ -186,12 +194,9 @@ case "$MODE" in
         ros2 launch slam_toolbox online_async_launch.py \
             slam_params_file:=$HOME/robots/rovac/config/slam_params.yaml \
             use_sim_time:=false &
-        SLAM_PID=$!
 
         log_info "Starting Foxglove Bridge on port 8765..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
-        start_phone_relay
-        FOX_PID=$!
         ;;
 
     nav)
@@ -208,12 +213,9 @@ case "$MODE" in
             map:="$MAP_FILE" \
             use_sim_time:=false \
             params_file:=$HOME/robots/rovac/config/nav2_params.yaml &
-        NAV_PID=$!
 
         log_info "Starting Foxglove Bridge..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
-        start_phone_relay
-        FOX_PID=$!
         ;;
 
     ekf)
@@ -222,31 +224,9 @@ case "$MODE" in
         log_info "Starting EKF sensor fusion (wheel odom + BNO055 IMU)..."
         log_info "BNO055 onboard IMU provides gyro-fused heading correction"
         ros2 launch $HOME/robots/rovac/scripts/ekf_launch.py &
-        EKF_PID=$!
 
         log_info "Starting Foxglove Bridge..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
-        start_phone_relay
-        FOX_PID=$!
-        ;;
-
-    ekf-gps)
-        disable_motor_tf
-
-        log_info "Starting EKF + GPS navigation stack..."
-        log_info "BNO055 IMU heading + phone GPS fix (go outdoors)"
-        ros2 launch $HOME/robots/rovac/scripts/ekf_launch.py gps:=true &
-        EKF_PID=$!
-
-        log_info "Starting Foxglove Bridge..."
-        ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
-        start_phone_relay
-        FOX_PID=$!
-
-        log_info ""
-        log_info "GPS navigation ready. To send waypoints:"
-        log_info "  python3 scripts/gps_waypoint_nav.py <lat> <lon>"
-        log_info "  python3 scripts/gps_waypoint_nav.py config/example_waypoints.yaml"
         ;;
 
     slam-ekf)
@@ -255,19 +235,15 @@ case "$MODE" in
 
         log_info "Starting EKF sensor fusion (wheel odom + BNO055 IMU)..."
         ros2 launch $HOME/robots/rovac/scripts/ekf_launch.py &
-        EKF_PID=$!
         sleep 2  # Let EKF start publishing TF before SLAM needs it
 
         log_info "Starting SLAM Toolbox (Online Async mode)..."
         ros2 launch slam_toolbox online_async_launch.py \
             slam_params_file:=$HOME/robots/rovac/config/slam_params.yaml \
             use_sim_time:=false &
-        SLAM_PID=$!
 
         log_info "Starting Foxglove Bridge on port 8765..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
-        start_phone_relay
-        FOX_PID=$!
         ;;
 
     foxglove)
@@ -280,8 +256,6 @@ case "$MODE" in
 
         log_info "Starting Foxglove Bridge only on port 8765..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
-        start_phone_relay
-        FOX_PID=$!
         ;;
 
     all)
@@ -293,19 +267,15 @@ case "$MODE" in
         ros2 launch slam_toolbox online_async_launch.py \
             slam_params_file:=$HOME/robots/rovac/config/slam_params.yaml \
             use_sim_time:=false &
-        SLAM_PID=$!
         sleep 3
 
         # Start Nav2
         ros2 launch nav2_bringup navigation_launch.py \
             use_sim_time:=false \
             params_file:=$HOME/robots/rovac/config/nav2_params.yaml &
-        NAV_PID=$!
 
         # Start Foxglove
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
-        start_phone_relay
-        FOX_PID=$!
         ;;
 
     *)

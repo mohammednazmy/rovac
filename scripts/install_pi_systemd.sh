@@ -108,9 +108,6 @@ install_units() {
   remote_sudo_install "/etc/systemd/system/rovac-edge-supersensor.service" "$UNIT_DIR/rovac-edge-supersensor.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-health.service" "$UNIT_DIR/rovac-edge-health.service"
 
-  # rosbridge WebSocket (phone sensors via port 9090)
-  remote_sudo_install "/etc/systemd/system/rovac-edge-rosbridge.service" "$UNIT_DIR/rovac-edge-rosbridge.service"
-
   # PS2 wireless controller
   remote_sudo_install "/etc/systemd/system/rovac-edge-ps2-joy.service" "$UNIT_DIR/rovac-edge-ps2-joy.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-ps2-mapper.service" "$UNIT_DIR/rovac-edge-ps2-mapper.service"
@@ -122,10 +119,7 @@ install_units() {
   remote_sudo_install "/etc/systemd/system/rovac-edge-stereo-depth.service" "$UNIT_DIR/rovac-edge-stereo-depth.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-stereo-obstacle.service" "$UNIT_DIR/rovac-edge-stereo-obstacle.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-stereo.target" "$UNIT_DIR/rovac-edge-stereo.target"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-phone-sensors.service" "$UNIT_DIR/rovac-edge-phone-sensors.service"
-  remote_sudo_install "/etc/systemd/system/rovac-phone-cameras.service" "$UNIT_DIR/rovac-phone-cameras.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-webcam.service" "$UNIT_DIR/rovac-edge-webcam.service"
-  remote_sudo_install "/etc/systemd/system/rovac-camera.service" "$UNIT_DIR/rovac-camera.service"
 
   ssh "$PI_HOST" "sudo systemctl daemon-reload"
 
