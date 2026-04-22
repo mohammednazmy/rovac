@@ -55,6 +55,12 @@ float pid_update(wheel_pid_t *pid, float target_vel, float measured_vel, float d
 
     // ---- Feedforward ----
     // Maps: 0 m/s → 0 PWM, ε m/s → ±offset, max_speed → max_output
+    //
+    // TODO(B3): Current linear FF (ff_offset + |v| × ff_scale) undershoots
+    // by ~15% at 0.30 m/s because the real loaded PWM→velocity curve is
+    // mildly nonlinear — slope flattens at high PWM. A quadratic or
+    // piecewise form would fix this. Revisit when extended-range on-ground
+    // sweep is possible (needs 6-8m corridor). See TODO.md "B3" entry.
     float ff_term;
     if (fabsf(target_vel) < 0.005f) {
         ff_term = 0.0f;

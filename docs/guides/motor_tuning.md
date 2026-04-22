@@ -356,6 +356,55 @@ likely be raised to 20-25 safely.
 
 ---
 
+## Deferred / future work
+
+### B3 — Piecewise or quadratic FF (⏸ TODO)
+
+**Why deferred**: The current linear FF (`ff_offset + |v| × ff_scale`)
+is calibrated against the on-ground sweep of PWM 0–180 (velocities
+0–0.14 m/s). It matches well at 0.15 m/s but **undershoots by ~15% at
+0.30 m/s** because the real loaded PWM→velocity curve is mildly
+nonlinear — slope flattens at higher PWM. Calibrating the fix requires
+an extended-range PWM 180–255 on-ground sweep (velocities 0.14–0.30
+m/s), which needs **6–8 m of clear corridor**. Current test area is
+too small.
+
+**What's needed**:
+1. On-ground PWM sweep covering PWM 180–255 in a space ≥6 m long.
+   Use `motor_characterization.py --min 180 --max 255 --step 5`.
+2. Fit either a piecewise-linear (two slopes) or quadratic (`pwm =
+   ff_offset + v × ff_scale + v² × ff_quad`) to the combined low- and
+   high-range data.
+3. Add a new protocol parameter `PARAM_FF_QUAD` (0x12) with default 0
+   so existing NVS behavior is preserved. Bump `PARAM_ID_MAX` to 0x12.
+4. Update `pid_controller.c` `ff_term` formula: add `v² × ff_quad`.
+5. Update tools: `motor_params_cli.py`, `pid_tune_live.py`,
+   `analyze_sweep.py` (piecewise fit).
+6. Re-run `tools/step_response.py --target 0.30` — SS error should drop
+   from +15% to <5%.
+
+**When to revisit**:
+- Before first Nav2 deployment that commands sustained 0.25+ m/s, OR
+- When the final secondary battery is installed (retune anyway), OR
+- If SLAM/path-following shows speed-dependent tracking errors.
+
+**Reference data already in repo**:
+- `bench_data/sweep_free_phase3_1.csv` — wheels-free full range (PWM 0-255).
+  Already shows nonlinearity: PWM 250 → 0.57 m/s, PWM 180 → 0.40 m/s
+  (ratio 1.43 vs linear prediction 1.39). Under load the nonlinearity
+  is stronger.
+- `bench_data/sweep_onground_phase3_2.csv` — on-ground PWM 0-180 only.
+
+### IMU-aware gyro outer loop retune
+
+`gyro_yaw_kp` is wired up end-to-end (Phase 4 firmware + B2 tool) but
+remains at 0 in NVS. Bench data showed body rotation saturates near
+1.5-1.8 rad/s regardless of the gain under current load, so no value
+improved beyond what `yaw_rate_ff` alone achieves. Revisit when chassis
+mass changes (heavier → more scrub → loop may provide value).
+
+---
+
 ## Related
 
 - **Firmware defaults**: `hardware/esp32_motor_wireless/main/motor_params.c`
@@ -365,3 +414,4 @@ likely be raised to 20-25 safely.
   keyed on them).
 - **Bench data**: `bench_data/` — historical sweep and step CSVs for
   reference.
+- **Deferred work**: see "Deferred / future work" section above.
