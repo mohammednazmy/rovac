@@ -173,7 +173,13 @@ class CoverageNode(Node):
         data = np.array(self.map_msg.data, dtype=np.int8).reshape(h, w)
 
         free = data == 0
-        blocked = (data >= 65) | (data == -1)
+        # CONFIRMED obstacles only (walls). Do NOT treat unknown (-1) as an
+        # obstacle for inflation — on a real SLAM map, unknown cells ring the
+        # edges of every explored area, and inflating around them captures
+        # most of the free floor. Nav2's local costmap + LIDAR watches for
+        # actual obstacles during execution, so we don't need to pre-inflate
+        # unknown space.
+        confirmed_obstacle = data >= 65
 
         # Obstacle inflation — robot footprint safety margin.
         # Pure-numpy binary dilation with a square structuring element: shift
@@ -182,13 +188,19 @@ class CoverageNode(Node):
         # (Avoids a scipy.ndimage dependency that's been fragile in this conda
         # env due to LAPACK ABI shenanigans.)
         inflate_cells = max(1, int(math.ceil(self.robot_radius / res)))
-        inflated_block = _binary_dilate(blocked, inflate_cells)
+        inflated_obstacle = _binary_dilate(confirmed_obstacle, inflate_cells)
 
-        safe = free & ~inflated_block
+        # Safe to traverse: confirmed-free AND not-too-close-to-a-wall.
+        # Unknown cells stay OUT of safe (we don't plan waypoints there)
+        # but they also don't infect the free cells via inflation.
+        safe = free & ~inflated_obstacle
         n_safe = int(np.sum(safe))
         self.get_logger().info(
-            f"Cells:  free={int(free.sum())}  inflated_block={int(inflated_block.sum())}  "
-            f"safe={n_safe} (after {inflate_cells}-cell inflation)"
+            f"Cells:  free={int(free.sum())}  "
+            f"confirmed_obstacle={int(confirmed_obstacle.sum())}  "
+            f"inflated_obstacle={int(inflated_obstacle.sum())}  "
+            f"safe={n_safe} (inflation radius = {inflate_cells} cells = "
+            f"{inflate_cells * res:.2f}m)"
         )
 
         if n_safe == 0:
