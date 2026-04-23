@@ -1,0 +1,272 @@
+{
+  "configById": {
+    "3D!nav_view": {
+      "cameraState": {
+        "perspective": false,
+        "distance": 12,
+        "phi": 0,
+        "thetaOffset": 90,
+        "targetOffset": [0, 0, 0],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.01,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "followTf": "base_link",
+      "scene": {
+        "backgroundColor": "#1a1a2e",
+        "enableStats": false,
+        "labelScaleFactor": 1
+      },
+      "transforms": {
+        "editable": false,
+        "showLabel": false,
+        "axisScale": 0.1,
+        "enablePreloading": false
+      },
+      "topics": {
+        "/map": {
+          "visible": true,
+          "frameLocked": true,
+          "colorMode": "costmap",
+          "alpha": 1.0
+        },
+        "/global_costmap/costmap": {
+          "visible": false,
+          "frameLocked": true,
+          "alpha": 0.35
+        },
+        "/local_costmap/costmap": {
+          "visible": false,
+          "frameLocked": true,
+          "alpha": 0.35
+        },
+        "/scan": {
+          "visible": true,
+          "colorMode": "flat",
+          "flatColor": "#00ffcc",
+          "pointSize": 5
+        },
+        "/robot_description": {
+          "visible": true
+        },
+        "/coverage_path": {
+          "visible": true,
+          "lineWidth": 0.03,
+          "gradient": ["#ffdd00", "#ff7700"]
+        },
+        "/plan": {
+          "visible": true,
+          "lineWidth": 0.04,
+          "gradient": ["#00ffff", "#0066ff"]
+        },
+        "/particle_cloud": {
+          "visible": true,
+          "pointSize": 3,
+          "colorMode": "flat",
+          "flatColor": "#ff66ff"
+        },
+        "/amcl_pose": {
+          "visible": true
+        },
+        "/obstacle/points": {
+          "visible": false,
+          "colorMode": "flat",
+          "flatColor": "#ff4400",
+          "pointSize": 10
+        }
+      },
+      "layers": {},
+      "publish": {
+        "type": "pose_estimate",
+        "poseTopic": "/goal_pose",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26
+      }
+    },
+    "Log!rosout": {
+      "searchTerms": [],
+      "minLogLevel": 2,
+      "nameFilter": {},
+      "topicToRender": "/rosout"
+    },
+    "Plot!velocity": {
+      "paths": [
+        {
+          "value": "/cmd_vel_smoothed.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "cmd linear.x (m/s)",
+          "color": "#66ccff"
+        },
+        {
+          "value": "/cmd_vel_smoothed.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "cmd angular.z (rad/s)",
+          "color": "#ffaa66"
+        },
+        {
+          "value": "/odometry/filtered.twist.twist.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "actual linear.x (m/s)",
+          "color": "#66ffaa"
+        },
+        {
+          "value": "/odometry/filtered.twist.twist.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "actual angular.z (rad/s)",
+          "color": "#ffcc66"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 200,
+      "minYValue": -2.0,
+      "maxYValue": 2.0,
+      "followingViewWidth": 20
+    },
+    "Indicator!motor_health": {
+      "path": "/diagnostics.status[0].level",
+      "style": "background",
+      "fallbackColor": "#333333",
+      "fallbackLabel": "MOTOR ESP32: OFFLINE",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "0",
+          "color": "#00aa00",
+          "label": "MOTOR ESP32: OK"
+        },
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#ffaa00",
+          "label": "MOTOR ESP32: WARN"
+        },
+        {
+          "operator": "=",
+          "rawValue": "2",
+          "color": "#aa0000",
+          "label": "MOTOR ESP32: ERROR"
+        }
+      ]
+    },
+    "Indicator!amcl_active": {
+      "path": "/amcl_pose.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#882200",
+      "fallbackLabel": "AMCL: NO POSE YET",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#008866",
+          "label": "AMCL: LOCALIZED"
+        }
+      ]
+    },
+    "Indicator!map_loaded": {
+      "path": "/map.info.width",
+      "style": "background",
+      "fallbackColor": "#882200",
+      "fallbackLabel": "MAP: NOT LOADED",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#008866",
+          "label": "MAP: LOADED"
+        }
+      ]
+    },
+    "Indicator!coverage_planning": {
+      "path": "/coverage_path.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#333344",
+      "fallbackLabel": "COVERAGE: IDLE",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#ffaa00",
+          "label": "COVERAGE: PATH READY"
+        }
+      ]
+    },
+    "Publish!cancel_nav": {
+      "topicName": "/behavior_tree_log",
+      "datatype": "std_msgs/msg/String",
+      "value": "{ \"data\": \"Use teleop to interrupt Nav2\" }",
+      "advertiseMode": "once"
+    },
+    "RawMessages!amcl_pose_view": {
+      "topicPath": "/amcl_pose.pose.pose",
+      "diffEnabled": false,
+      "expansion": "all"
+    },
+    "RawMessages!goal_pose_view": {
+      "topicPath": "/goal_pose.pose",
+      "diffEnabled": false,
+      "expansion": "all"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "direction": "row",
+    "splitPercentage": 72,
+    "first": {
+      "direction": "column",
+      "splitPercentage": 72,
+      "first": "3D!nav_view",
+      "second": "Plot!velocity"
+    },
+    "second": {
+      "direction": "column",
+      "splitPercentage": 22,
+      "first": {
+        "direction": "column",
+        "splitPercentage": 33,
+        "first": "Indicator!map_loaded",
+        "second": {
+          "direction": "column",
+          "splitPercentage": 50,
+          "first": "Indicator!amcl_active",
+          "second": "Indicator!coverage_planning"
+        }
+      },
+      "second": {
+        "direction": "column",
+        "splitPercentage": 25,
+        "first": "Indicator!motor_health",
+        "second": {
+          "direction": "column",
+          "splitPercentage": 50,
+          "first": "Log!rosout",
+          "second": {
+            "direction": "column",
+            "splitPercentage": 50,
+            "first": "RawMessages!amcl_pose_view",
+            "second": "RawMessages!goal_pose_view"
+          }
+        }
+      }
+    }
+  }
+}
