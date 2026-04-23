@@ -207,6 +207,15 @@ case "$MODE" in
         fi
 
         stop_pi_map_tf
+        disable_motor_tf
+
+        # EKF must run for AMCL to get a scrub-free odom->base_link TF.
+        # Without EKF, AMCL localizes against the motor driver's raw /odom
+        # yaw (which tread-scrubs during turns) and drifts heavily.
+        log_info "Starting EKF sensor fusion (wheel odom + BNO055 IMU)..."
+        ros2 launch $HOME/robots/rovac/scripts/ekf_launch.py &
+        EKF_PID=$!
+        sleep 2  # Let EKF publish TF before AMCL starts looking for it
 
         log_info "Starting Nav2 with map: $MAP_FILE"
         ros2 launch nav2_bringup bringup_launch.py \
@@ -216,6 +225,7 @@ case "$MODE" in
 
         log_info "Starting Foxglove Bridge..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
+        FOX_PID=$!
         ;;
 
     ekf)
