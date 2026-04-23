@@ -217,11 +217,14 @@ case "$MODE" in
         EKF_PID=$!
         sleep 2  # Let EKF publish TF before AMCL starts looking for it
 
+        # NOTE: RoboStack doesn't package nav2_bringup for macOS (osx-arm64),
+        # so we use our own launch file that wires up the individual Nav2
+        # nodes the same way bringup_launch.py would. See scripts/nav2_launch.py.
         log_info "Starting Nav2 with map: $MAP_FILE"
-        ros2 launch nav2_bringup bringup_launch.py \
+        ros2 launch $HOME/robots/rovac/scripts/nav2_launch.py \
             map:="$MAP_FILE" \
-            use_sim_time:=false \
-            params_file:=$HOME/robots/rovac/config/nav2_params.yaml &
+            params_file:=$HOME/robots/rovac/config/nav2_params.yaml \
+            use_sim_time:=false &
 
         log_info "Starting Foxglove Bridge..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
