@@ -32,7 +32,6 @@ import math
 import sys
 
 import numpy as np
-from scipy import ndimage
 
 try:
     import rclpy
@@ -176,10 +175,14 @@ class CoverageNode(Node):
         free = data == 0
         blocked = (data >= 65) | (data == -1)
 
-        # Obstacle inflation — robot footprint safety margin
+        # Obstacle inflation — robot footprint safety margin.
+        # Pure-numpy binary dilation with a square structuring element: shift
+        # the mask by every (dy, dx) in the kernel radius and OR them together.
+        # At inflate_cells=4 that's 81 OR ops of a small 2D array — trivial.
+        # (Avoids a scipy.ndimage dependency that's been fragile in this conda
+        # env due to LAPACK ABI shenanigans.)
         inflate_cells = max(1, int(math.ceil(self.robot_radius / res)))
-        structure = np.ones((2 * inflate_cells + 1, 2 * inflate_cells + 1), dtype=bool)
-        inflated_block = ndimage.binary_dilation(blocked, structure=structure)
+        inflated_block = _binary_dilate(blocked, inflate_cells)
 
         safe = free & ~inflated_block
         n_safe = int(np.sum(safe))
@@ -335,6 +338,27 @@ def _contiguous_runs(row: np.ndarray) -> list[tuple[int, int]]:
     starts = np.where(diff == 1)[0]
     ends = np.where(diff == -1)[0] - 1
     return list(zip(starts.tolist(), ends.tolist()))
+
+
+def _binary_dilate(mask: np.ndarray, radius: int) -> np.ndarray:
+    """
+    2D binary morphological dilation with a square (2*radius+1)^2 kernel.
+    Equivalent to scipy.ndimage.binary_dilation(mask, structure=ones((N,N))).
+    Pure numpy so we don't pull scipy into the conda env's LAPACK trap.
+    """
+    if radius <= 0:
+        return mask.astype(bool, copy=False)
+    mask = mask.astype(bool, copy=False)
+    h, w = mask.shape
+    # Pad with False on all sides so we can shift without wrapping
+    padded = np.zeros((h + 2 * radius, w + 2 * radius), dtype=bool)
+    padded[radius:radius + h, radius:radius + w] = mask
+    out = np.zeros_like(mask)
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            out |= padded[radius + dy:radius + dy + h,
+                          radius + dx:radius + dx + w]
+    return out
 
 
 def main():

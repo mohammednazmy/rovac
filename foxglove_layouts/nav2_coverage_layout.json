@@ -89,11 +89,10 @@
         "poseEstimateThetaDeviation": 0.26
       }
     },
-    "Log!rosout": {
-      "searchTerms": [],
-      "minLogLevel": 2,
-      "nameFilter": {},
-      "topicToRender": "/rosout"
+    "RawMessages!rosout_view": {
+      "topicPath": "/rosout",
+      "diffEnabled": false,
+      "expansion": "none"
     },
     "Plot!velocity": {
       "paths": [
@@ -258,7 +257,7 @@
         "second": {
           "direction": "column",
           "splitPercentage": 50,
-          "first": "Log!rosout",
+          "first": "RawMessages!rosout_view",
           "second": {
             "direction": "column",
             "splitPercentage": 50,
