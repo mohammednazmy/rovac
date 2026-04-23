@@ -284,6 +284,15 @@ class CoverageNode(Node):
 
     def _dispatch(self):
         goal = NavigateThroughPoses.Goal()
+        # Explicit BT path — belt-and-suspenders in case bt_navigator's
+        # default_nav_through_poses_bt_xml param resolution is flaky.
+        # The NavigateThroughPoses action has a `behavior_tree` field
+        # that overrides the default.
+        goal.behavior_tree = (
+            "/opt/homebrew/Caskroom/miniforge/base/envs/ros_jazzy/"
+            "share/nav2_bt_navigator/behavior_trees/"
+            "navigate_through_poses_w_replanning_and_recovery.xml"
+        )
         now = self.get_clock().now().to_msg()
         for (x, y, yaw) in self.waypoints:
             p = PoseStamped()
