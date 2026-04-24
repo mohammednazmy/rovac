@@ -40,7 +40,7 @@ try:
     from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
     from nav_msgs.msg import OccupancyGrid, Path
     from geometry_msgs.msg import PoseStamped
-    from nav2_msgs.action import NavigateThroughPoses
+    from nav2_msgs.action import NavigateToPose
     from action_msgs.msg import GoalStatus
 except ImportError as e:
     sys.exit(
@@ -91,9 +91,18 @@ class CoverageNode(Node):
         # /coverage_path for Foxglove visualization
         self.path_pub = self.create_publisher(Path, "/coverage_path", 1)
 
-        # Nav2 action client
-        self.nav_client = ActionClient(self, NavigateThroughPoses,
-                                       "navigate_through_poses")
+        # Nav2 action client — using NavigateToPose (one waypoint at a time).
+        # We used to send all waypoints at once via NavigateThroughPoses, but
+        # in Nav2 Jazzy that action rejects goals immediately in this install
+        # (likely a BT plugin resolution issue) while NavigateToPose works
+        # fine. Looping through waypoints with NavigateToPose is simpler to
+        # debug and gives per-waypoint failure handling for free.
+        self.nav_client = ActionClient(self, NavigateToPose,
+                                       "navigate_to_pose")
+
+        # Waypoint execution state
+        self._waypoint_idx = 0
+        self._current_goal_handle = None
 
         # Orchestration timer — fires until we've successfully dispatched
         self.create_timer(1.0, self._tick)
@@ -125,7 +134,7 @@ class CoverageNode(Node):
             return
         if not self.nav_client.wait_for_server(timeout_sec=0.2):
             self.get_logger().info(
-                "Nav2 action server /navigate_through_poses not ready — "
+                "Nav2 action server /navigate_to_pose not ready — "
                 "is nav2_launch.py running?"
             )
             return
@@ -147,8 +156,8 @@ class CoverageNode(Node):
             rclpy.shutdown()
             return
 
-        self._dispatch()
         self._dispatched = True
+        self._send_next_waypoint()
 
     # ---- Coverage planning --------------------------------------------------
 
@@ -282,72 +291,66 @@ class CoverageNode(Node):
             "View in Foxglove 3D panel, map frame."
         )
 
-    def _dispatch(self):
-        goal = NavigateThroughPoses.Goal()
-        # Explicit BT path — belt-and-suspenders in case bt_navigator's
-        # default_nav_through_poses_bt_xml param resolution is flaky.
-        # The NavigateThroughPoses action has a `behavior_tree` field
-        # that overrides the default.
-        goal.behavior_tree = (
-            "/opt/homebrew/Caskroom/miniforge/base/envs/ros_jazzy/"
-            "share/nav2_bt_navigator/behavior_trees/"
-            "navigate_through_poses_w_replanning_and_recovery.xml"
-        )
-        now = self.get_clock().now().to_msg()
-        for (x, y, yaw) in self.waypoints:
-            p = PoseStamped()
-            p.header.frame_id = "map"
-            p.header.stamp = now
-            p.pose.position.x = float(x)
-            p.pose.position.y = float(y)
-            qx, qy, qz, qw = _yaw_to_quat(yaw)
-            p.pose.orientation.x = qx
-            p.pose.orientation.y = qy
-            p.pose.orientation.z = qz
-            p.pose.orientation.w = qw
-            goal.poses.append(p)
+    def _send_next_waypoint(self):
+        """Dispatch the next waypoint in the coverage plan via NavigateToPose."""
+        if self._waypoint_idx >= len(self.waypoints):
+            self.get_logger().info(
+                f"Coverage complete — executed {len(self.waypoints)} waypoints. "
+                "You can power-cycle the vacuum now."
+            )
+            rclpy.shutdown()
+            return
+
+        x, y, yaw = self.waypoints[self._waypoint_idx]
+        goal = NavigateToPose.Goal()
+        goal.pose.header.frame_id = "map"
+        goal.pose.header.stamp = self.get_clock().now().to_msg()
+        goal.pose.pose.position.x = float(x)
+        goal.pose.pose.position.y = float(y)
+        qx, qy, qz, qw = _yaw_to_quat(yaw)
+        goal.pose.pose.orientation.x = qx
+        goal.pose.pose.orientation.y = qy
+        goal.pose.pose.orientation.z = qz
+        goal.pose.pose.orientation.w = qw
 
         self.get_logger().info(
-            f"Sending {len(goal.poses)} waypoints to Nav2 "
-            "(NavigateThroughPoses)..."
+            f"Waypoint {self._waypoint_idx + 1}/{len(self.waypoints)}: "
+            f"driving to ({x:+.2f}, {y:+.2f}) yaw={math.degrees(yaw):+.0f}°"
         )
-        send_future = self.nav_client.send_goal_async(
-            goal, feedback_callback=self._on_feedback
-        )
+        send_future = self.nav_client.send_goal_async(goal)
         send_future.add_done_callback(self._on_goal_response)
-
-    def _on_feedback(self, fb_msg):
-        fb = fb_msg.feedback
-        # number_of_poses_remaining is the standard feedback field
-        remaining = getattr(fb, "number_of_poses_remaining", None)
-        if remaining is not None:
-            self.get_logger().info(
-                f"  progress: {remaining} waypoints remaining"
-            )
 
     def _on_goal_response(self, future):
         handle = future.result()
         if not handle.accepted:
-            self.get_logger().error("Nav2 REJECTED the goal. Stopping.")
-            rclpy.shutdown()
+            self.get_logger().warn(
+                f"Nav2 rejected waypoint {self._waypoint_idx + 1}. Skipping to next."
+            )
+            self._waypoint_idx += 1
+            self._send_next_waypoint()
             return
-        self.get_logger().info("Nav2 accepted the coverage goal. Executing...")
+        self._current_goal_handle = handle
         result_future = handle.get_result_async()
-        result_future.add_done_callback(self._on_result)
+        result_future.add_done_callback(self._on_waypoint_result)
 
-    def _on_result(self, future):
+    def _on_waypoint_result(self, future):
         result_wrapper = future.result()
         status = result_wrapper.status
         status_str = {
-            GoalStatus.STATUS_SUCCEEDED: "SUCCEEDED",
+            GoalStatus.STATUS_SUCCEEDED: "OK",
             GoalStatus.STATUS_ABORTED: "ABORTED",
             GoalStatus.STATUS_CANCELED: "CANCELED",
         }.get(status, f"unknown({status})")
+
         self.get_logger().info(
-            f"Coverage complete: status={status_str} "
-            "— you can power-cycle the vacuum now."
+            f"  → waypoint {self._waypoint_idx + 1}/{len(self.waypoints)}: {status_str}"
         )
-        rclpy.shutdown()
+        self._current_goal_handle = None
+        self._waypoint_idx += 1
+        # Dispatch the next one directly — callback chain keeps Nav2 fed
+        # with no gaps while still letting the controller finish the last
+        # one cleanly before the new one arrives.
+        self._send_next_waypoint()
 
 
 def _contiguous_runs(row: np.ndarray) -> list[tuple[int, int]]:

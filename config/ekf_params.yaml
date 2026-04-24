@@ -9,10 +9,17 @@
 /**:
   ros__parameters:
     # ── General ───────────────────────────────────────────
-    frequency: 30.0
+    # 2026-04-23: dropped from 30 Hz to 20 Hz. Log showed sustained
+    # "Failed to meet update rate" errors — individual cycles taking up
+    # to 630 ms meant EKF was intermittently running at ~2 Hz, stale
+    # TF, jittery Nav2 control. /odom and /imu/data are both 20 Hz, so
+    # EKF at 20 Hz matches the input rate exactly (no benefit running
+    # faster than the slowest sensor). Also disabled print_diagnostics
+    # to remove its per-cycle stdout overhead.
+    frequency: 20.0
     two_d_mode: true          # Tank operates on a plane
     publish_tf: true          # Publishes odom -> base_link
-    print_diagnostics: true
+    print_diagnostics: false
 
     # ── Frame configuration ───────────────────────────────
     map_frame: map
