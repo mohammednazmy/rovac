@@ -43,6 +43,34 @@
     <origin xyz="0 0 -0.02" rpy="0 0 0"/>
   </joint>
 
+  <!-- ==================== Vacuum Suction Pad ==================== -->
+  <!-- Dimensions per measurements (inch->mm):
+       width  = 4.125" = 104.775 mm  (Y / lateral)
+       depth  = 2.125" =  53.975 mm  (X / fore-aft)
+       Rear edge sits 50.8 mm (2") in front of front edge of tracks.
+       Front of tracks ~ base_link X = +0.110 m (chassis is 0.22 m long,
+       base_link at center). So:
+         pad rear edge  = +0.110 + 0.0508    = +0.1608 m  (base_link)
+         pad center  X  = +0.1608 + 0.05398/2 = +0.1878 m
+       Pad is dead-center laterally (Y=0). Parented to base_footprint so
+       Z = 0 is the floor; pad center Z = half pad thickness ≈ 0.0025 m. -->
+  <link name="vacuum_pad_link">
+    <visual>
+      <geometry>
+        <box size="0.05398 0.10478 0.005"/>
+      </geometry>
+      <material name="vacuum_pad">
+        <color rgba="0.15 0.15 0.15 0.85"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="vacuum_pad_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="vacuum_pad_link"/>
+    <origin xyz="0.1878 0 0.0025" rpy="0 0 0"/>
+  </joint>
+
   <!-- ==================== RPLIDAR C1 ==================== -->
   <!-- SLAMTEC RPLIDAR C1 DTOF, 55.6x55.6x41.3mm, scan height 23.1mm from base -->
   <link name="laser_frame">

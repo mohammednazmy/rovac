@@ -1,32 +1,51 @@
 #!/usr/bin/env python3
 """
-coverage_node — Boustrophedon coverage planner for ROVAC.
+coverage_node — Pad-aware boustrophedon coverage planner for ROVAC.
 
-Loads the current /map (occupancy grid), computes a safe back-and-forth
-sweep path over the reachable free space, and dispatches the sequence
-of waypoints to Nav2 via the NavigateThroughPoses action. Nav2 handles
-the actual path execution (planner + controller + recovery) between
-waypoints.
+Loads the current /map (occupancy grid), computes a back-and-forth sweep
+path that ensures the **vacuum pad** (not just the robot body) covers
+every accessible patch of floor, and dispatches the sequence of waypoints
+to Nav2 via NavigateToPose (one at a time). Nav2 handles path execution
+(planner + controller + recovery) between waypoints.
 
-Philosophy: this is NOT a competitor to opennav_coverage / Fields2Cover
-— those do much more sophisticated swath optimization and TSP-style
-route planning. For a single indoor room with a ~30cm-wide robot, a
-simple row-by-row boustrophedon over a grid covers 90%+ of floor with
-a trivial fraction of the code.
+Why pad-aware?
+  The robot is 22 × 24.5 cm but the suction pad is only 10.5 cm wide and
+  is mounted 18.8 cm forward of base_link. A naive boustrophedon at "robot
+  width" spacing would leave un-vacuumed strips between rows — the robot
+  rolls over the floor without the pad ever making contact. So we:
+    1) Spec swath_width as a fraction of pad_width with deliberate
+       overlap (default = 33% overlap = 7cm row spacing).
+    2) Inflate obstacles by the body half-width only, NOT pad reach.
+       The pad sticks out forward of the body and can extend into the
+       inflation zone safely — this lets it actually approach walls.
+
+Philosophy: this is NOT a competitor to opennav_coverage / Fields2Cover.
+For a single indoor room with a small robot, a tightly-spaced row-by-row
+boustrophedon covers ~95% of floor with a trivial fraction of the code.
+The remaining edge gaps are best handled by the companion node
+coverage_tracker.py (publishes ground-truth visited-cells grid).
 
 Run:
   python3 scripts/coverage_node.py
   (requires: Nav2 stack running via mac_brain_launch.sh nav <map>)
 
 Parameters:
-  swath_width      : spacing between sweep rows (m). Default 0.30.
-  robot_radius     : safety inflation around obstacles (m). Default 0.17.
-                     Robot is 22x24.5cm, so half-diagonal ~16cm.
-  min_span_length  : reject row sweeps shorter than this (m). Default 0.25.
-  goal_tolerance   : hand this to Nav2 as waypoint acceptance radius (m).
-                     Default 0.25 — generous, lets controller steer cleanly.
-  preview_only     : if true, publish /coverage_path but don't dispatch.
-                     Good for first dry run. Default false.
+  pad_width            : width of the vacuum suction pad (m). Default 0.10478.
+  pad_overlap_fraction : how much each row overlaps the next, as a fraction
+                         of pad_width. 0.33 = 33% overlap (conservative).
+                         Higher = thorougher, more rows, longer run.
+                         Lower  = faster, more sensitive to localization drift.
+  swath_width          : if > 0, OVERRIDES pad_width × (1-overlap) and forces
+                         this exact row spacing (m). Default 0 (auto from pad).
+  robot_radius         : safety inflation around obstacles (m). Default 0.13
+                         (≈ robot half-width 12.25cm + 1cm safety). The pad,
+                         being narrower and forward of base, can reach into
+                         this zone — that's the point.
+  min_span_length      : reject row sweeps shorter than this (m). Default 0.20.
+  goal_tolerance       : hand this to Nav2 as waypoint acceptance radius (m).
+                         Default 0.20 — tight enough that rows stay on-line.
+  preview_only         : if true, publish /coverage_path but don't dispatch.
+                         Good for first dry run. Default false.
 """
 import math
 import sys
@@ -62,13 +81,21 @@ class CoverageNode(Node):
     def __init__(self):
         super().__init__("coverage_node")
 
-        self.declare_parameter("swath_width", 0.30)
-        self.declare_parameter("robot_radius", 0.17)
-        self.declare_parameter("min_span_length", 0.25)
-        self.declare_parameter("goal_tolerance", 0.25)
+        self.declare_parameter("pad_width", 0.10478)
+        self.declare_parameter("pad_overlap_fraction", 0.33)
+        self.declare_parameter("swath_width", 0.0)  # 0 = auto from pad params
+        self.declare_parameter("robot_radius", 0.13)
+        self.declare_parameter("min_span_length", 0.20)
+        self.declare_parameter("goal_tolerance", 0.20)
         self.declare_parameter("preview_only", False)
 
-        self.swath_width = self.get_parameter("swath_width").value
+        self.pad_width = self.get_parameter("pad_width").value
+        self.pad_overlap = self.get_parameter("pad_overlap_fraction").value
+        explicit_swath = self.get_parameter("swath_width").value
+        if explicit_swath > 0:
+            self.swath_width = explicit_swath
+        else:
+            self.swath_width = max(0.02, self.pad_width * (1.0 - self.pad_overlap))
         self.robot_radius = self.get_parameter("robot_radius").value
         self.min_span_length = self.get_parameter("min_span_length").value
         self.goal_tolerance = self.get_parameter("goal_tolerance").value
@@ -107,9 +134,13 @@ class CoverageNode(Node):
         # Orchestration timer — fires until we've successfully dispatched
         self.create_timer(1.0, self._tick)
 
+        overlap_cm = max(0.0, self.pad_width - self.swath_width) * 100
+        overlap_pct = (overlap_cm / 100) / self.pad_width * 100 if self.pad_width > 0 else 0
         self.get_logger().info(
-            f"coverage_node up — swath_width={self.swath_width:.2f}m  "
-            f"robot_radius={self.robot_radius:.2f}m  "
+            f"coverage_node up — pad_width={self.pad_width*100:.1f}cm  "
+            f"swath_width={self.swath_width*100:.1f}cm  "
+            f"pad_overlap={overlap_cm:.1f}cm ({overlap_pct:.0f}%)  "
+            f"robot_radius={self.robot_radius*100:.0f}cm  "
             f"preview_only={self.preview_only}"
         )
         self.get_logger().info("Waiting for /map and Nav2 action server...")

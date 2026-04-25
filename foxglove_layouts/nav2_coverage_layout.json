@@ -57,6 +57,19 @@
           "lineWidth": 0.03,
           "gradient": ["#ffdd00", "#ff7700"]
         },
+        "/coverage/visited": {
+          "visible": true,
+          "frameLocked": true,
+          "colorMode": "custom",
+          "minColor": "#00000000",
+          "maxColor": "#22cc66cc",
+          "alpha": 0.55
+        },
+        "/coverage/pad_polygon": {
+          "visible": true,
+          "lineWidth": 0.015,
+          "color": "#ff33aa"
+        },
         "/plan": {
           "visible": true,
           "lineWidth": 0.04,
@@ -205,6 +218,20 @@
         }
       ]
     },
+    "Indicator!coverage_tracker_alive": {
+      "path": "/coverage/visited.header.stamp.sec",
+      "style": "background",
+      "fallbackColor": "#333344",
+      "fallbackLabel": "TRACKER: OFFLINE",
+      "rules": [
+        {
+          "operator": ">",
+          "rawValue": "0",
+          "color": "#22aa66",
+          "label": "TRACKER: RECORDING"
+        }
+      ]
+    },
     "Publish!cancel_nav": {
       "topicName": "/behavior_tree_log",
       "datatype": "std_msgs/msg/String",
@@ -241,13 +268,18 @@
       "splitPercentage": 22,
       "first": {
         "direction": "column",
-        "splitPercentage": 33,
+        "splitPercentage": 25,
         "first": "Indicator!map_loaded",
         "second": {
           "direction": "column",
-          "splitPercentage": 50,
+          "splitPercentage": 33,
           "first": "Indicator!amcl_active",
-          "second": "Indicator!coverage_planning"
+          "second": {
+            "direction": "column",
+            "splitPercentage": 50,
+            "first": "Indicator!coverage_planning",
+            "second": "Indicator!coverage_tracker_alive"
+          }
         }
       },
       "second": {
