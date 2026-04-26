@@ -37,13 +37,19 @@ Parameters:
                          Lower  = faster, more sensitive to localization drift.
   swath_width          : if > 0, OVERRIDES pad_width × (1-overlap) and forces
                          this exact row spacing (m). Default 0 (auto from pad).
-  robot_radius         : safety inflation around obstacles (m). Default 0.13
-                         (≈ robot half-width 12.25cm + 1cm safety). The pad,
-                         being narrower and forward of base, can reach into
-                         this zone — that's the point.
+  robot_radius         : safety inflation around obstacles (m). Default 0.215
+                         = max forward reach of pad. MUST match Nav2's
+                         footprint or Nav2 will reject row-end goals near
+                         walls. Larger radius means safer planning at the
+                         cost of pad-to-lateral-wall coverage; the
+                         cross-hatched second pass (passes=2) compensates.
   min_span_length      : reject row sweeps shorter than this (m). Default 0.20.
   goal_tolerance       : hand this to Nav2 as waypoint acceptance radius (m).
                          Default 0.20 — tight enough that rows stay on-line.
+  passes               : 1 = single boustrophedon along X-axis rows.
+                         2 = cross-hatched: pass 1 along X, pass 2 along Y.
+                         Two passes catch each other's row-end edge gaps.
+                         Default 2 (thorough).
   preview_only         : if true, publish /coverage_path but don't dispatch.
                          Good for first dry run. Default false.
 """
@@ -84,9 +90,10 @@ class CoverageNode(Node):
         self.declare_parameter("pad_width", 0.10478)
         self.declare_parameter("pad_overlap_fraction", 0.33)
         self.declare_parameter("swath_width", 0.0)  # 0 = auto from pad params
-        self.declare_parameter("robot_radius", 0.13)
+        self.declare_parameter("robot_radius", 0.215)
         self.declare_parameter("min_span_length", 0.20)
         self.declare_parameter("goal_tolerance", 0.20)
+        self.declare_parameter("passes", 2)
         self.declare_parameter("preview_only", False)
 
         self.pad_width = self.get_parameter("pad_width").value
@@ -99,6 +106,7 @@ class CoverageNode(Node):
         self.robot_radius = self.get_parameter("robot_radius").value
         self.min_span_length = self.get_parameter("min_span_length").value
         self.goal_tolerance = self.get_parameter("goal_tolerance").value
+        self.passes = max(1, min(2, int(self.get_parameter("passes").value)))
         self.preview_only = self.get_parameter("preview_only").value
 
         self.map_msg: OccupancyGrid | None = None
@@ -249,35 +257,22 @@ class CoverageNode(Node):
         swath_cells = max(1, int(round(self.swath_width / res)))
         min_span_cells = max(1, int(round(self.min_span_length / res)))
 
-        # Boustrophedon: iterate rows, alternate direction
-        waypoints = []
-        direction = 1  # +1 = left→right, -1 = right→left
-
-        for row in range(0, h, swath_cells):
-            runs = _contiguous_runs(safe[row])
-            if not runs:
-                continue
-            # Keep only runs long enough to justify sweeping
-            runs = [(a, b) for (a, b) in runs if (b - a + 1) >= min_span_cells]
-            if not runs:
-                continue
-
-            # Order runs along the current sweep direction so adjacent runs in
-            # this row are visited in a sensible sequence
-            if direction == -1:
-                runs = sorted(runs, key=lambda r: -r[0])
-            else:
-                runs = sorted(runs, key=lambda r: r[0])
-
-            for a, b in runs:
-                if direction == 1:
-                    waypoints.append((a, row))
-                    waypoints.append((b, row))
-                else:
-                    waypoints.append((b, row))
-                    waypoints.append((a, row))
-
-            direction = -direction
+        # Pass 1: rows of constant Y (sweep along X)
+        waypoints = _boustrophedon_pass(safe, swath_cells, min_span_cells)
+        n_pass1 = len(waypoints)
+        # Pass 2 (optional): rows of constant X (sweep along Y).
+        # We get this for free by transposing the safe mask: what was a row
+        # of constant Y becomes a row of constant X. The (col, row) tuples
+        # come back referring to the transposed grid, so we swap them.
+        if self.passes >= 2:
+            pass2_t = _boustrophedon_pass(safe.T, swath_cells, min_span_cells)
+            waypoints.extend([(r, c) for (c, r) in pass2_t])
+        n_pass2 = len(waypoints) - n_pass1
+        self.get_logger().info(
+            f"Plan: pass-1 {n_pass1//2} legs (X-axis), "
+            f"pass-2 {n_pass2//2} legs (Y-axis), "
+            f"total {len(waypoints)} waypoints"
+        )
 
         # Grid → map frame
         origin_x = info.origin.position.x
@@ -293,10 +288,6 @@ class CoverageNode(Node):
                 yaw = math.atan2(y - py, x - px)
             map_wps.append((x, y, yaw))
 
-        self.get_logger().info(
-            f"Plan: {len(map_wps)} waypoints across "
-            f"~{len([1 for i in range(0, h, swath_cells)])} rows"
-        )
         return map_wps
 
     # ---- ROS wiring ----------------------------------------------------------
@@ -382,6 +373,45 @@ class CoverageNode(Node):
         # with no gaps while still letting the controller finish the last
         # one cleanly before the new one arrives.
         self._send_next_waypoint()
+
+
+def _boustrophedon_pass(safe: np.ndarray, swath_cells: int,
+                        min_span_cells: int) -> list[tuple[int, int]]:
+    """One axis-aligned boustrophedon pass over `safe`.
+
+    Iterates rows of constant Y at swath_cells spacing. For each row, finds
+    contiguous runs of safe cells and emits two waypoints (start, end) per
+    run. Direction alternates between rows — that's the zigzag.
+
+    Returns flat list of (col, row) grid-index tuples; pairs of consecutive
+    entries are the start/end of one row leg.
+
+    To plan along the OTHER axis, transpose `safe` before passing in and
+    swap (col, row) → (row, col) on the way out.
+    """
+    h, _ = safe.shape
+    waypoints: list[tuple[int, int]] = []
+    direction = 1
+    for row in range(0, h, swath_cells):
+        runs = _contiguous_runs(safe[row])
+        if not runs:
+            continue
+        runs = [(a, b) for (a, b) in runs if (b - a + 1) >= min_span_cells]
+        if not runs:
+            continue
+        if direction == -1:
+            runs = sorted(runs, key=lambda r: -r[0])
+        else:
+            runs = sorted(runs, key=lambda r: r[0])
+        for a, b in runs:
+            if direction == 1:
+                waypoints.append((a, row))
+                waypoints.append((b, row))
+            else:
+                waypoints.append((b, row))
+                waypoints.append((a, row))
+        direction = -direction
+    return waypoints
 
 
 def _contiguous_runs(row: np.ndarray) -> list[tuple[int, int]]:

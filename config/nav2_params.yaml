@@ -179,7 +179,14 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      robot_radius: 0.15
+      # Polygon footprint that includes BOTH the chassis AND the vacuum pad.
+      # Without this, Nav2 thinks the robot is a 15cm circle around base_link
+      # — it doesn't know the pad sticks 21.5cm forward, and would drive the
+      # pad into walls at row endings.
+      # Vertices CCW from front-right body, in base_link frame, [m]:
+      #   chassis is 0.22 (X) × 0.245 (Y) centered on base_link
+      #   pad rear at +0.161, pad front at +0.215, pad ±0.0524 lateral
+      footprint: "[[0.110, -0.1225], [0.215, -0.0524], [0.215, 0.0524], [0.110, 0.1225], [-0.110, 0.1225], [-0.110, -0.1225]]"
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -217,7 +224,10 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: false
-      robot_radius: 0.15
+      # Same body-plus-pad polygon as local_costmap. Required for the global
+      # planner to (a) refuse paths that would put the pad inside a wall, and
+      # (b) keep the pad close enough to walls to vacuum near them.
+      footprint: "[[0.110, -0.1225], [0.215, -0.0524], [0.215, 0.0524], [0.110, 0.1225], [-0.110, 0.1225], [-0.110, -0.1225]]"
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
