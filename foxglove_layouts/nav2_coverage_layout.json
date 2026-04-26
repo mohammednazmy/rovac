@@ -18,12 +18,12 @@
       "scene": {
         "backgroundColor": "#1a1a2e",
         "enableStats": false,
-        "labelScaleFactor": 1
+        "labelScaleFactor": 0
       },
       "transforms": {
         "editable": false,
         "showLabel": false,
-        "axisScale": 0.1,
+        "axisScale": 0.0,
         "enablePreloading": false
       },
       "topics": {
@@ -151,7 +151,7 @@
       "followingViewWidth": 20
     },
     "Indicator!motor_health": {
-      "path": "/diagnostics.status[0].level",
+      "path": "/diag/motor.level",
       "style": "background",
       "fallbackColor": "#333333",
       "fallbackLabel": "MOTOR ESP32: OFFLINE",
@@ -173,6 +173,32 @@
           "rawValue": "2",
           "color": "#aa0000",
           "label": "MOTOR ESP32: ERROR"
+        }
+      ]
+    },
+    "Indicator!sensor_hub_health": {
+      "path": "/diag/sensor_hub.level",
+      "style": "background",
+      "fallbackColor": "#333333",
+      "fallbackLabel": "SENSOR HUB: OFFLINE",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "0",
+          "color": "#00aa00",
+          "label": "SENSOR HUB: OK"
+        },
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#ffaa00",
+          "label": "SENSOR HUB: WARN"
+        },
+        {
+          "operator": "=",
+          "rawValue": "2",
+          "color": "#aa0000",
+          "label": "SENSOR HUB: ERROR"
         }
       ]
     },
@@ -284,17 +310,22 @@
       },
       "second": {
         "direction": "column",
-        "splitPercentage": 25,
+        "splitPercentage": 20,
         "first": "Indicator!motor_health",
         "second": {
           "direction": "column",
-          "splitPercentage": 50,
-          "first": "RawMessages!rosout_view",
+          "splitPercentage": 25,
+          "first": "Indicator!sensor_hub_health",
           "second": {
             "direction": "column",
-            "splitPercentage": 50,
-            "first": "RawMessages!amcl_pose_view",
-            "second": "RawMessages!goal_pose_view"
+            "splitPercentage": 40,
+            "first": "RawMessages!rosout_view",
+            "second": {
+              "direction": "column",
+              "splitPercentage": 50,
+              "first": "RawMessages!amcl_pose_view",
+              "second": "RawMessages!goal_pose_view"
+            }
           }
         }
       }

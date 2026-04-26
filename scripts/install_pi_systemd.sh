@@ -107,6 +107,7 @@ install_units() {
   remote_sudo_install "/etc/systemd/system/rovac-edge-obstacle.service" "$UNIT_DIR/rovac-edge-obstacle.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-supersensor.service" "$UNIT_DIR/rovac-edge-supersensor.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-health.service" "$UNIT_DIR/rovac-edge-health.service"
+  remote_sudo_install "/etc/systemd/system/rovac-edge-diagnostics-splitter.service" "$UNIT_DIR/rovac-edge-diagnostics-splitter.service"
 
   # PS2 wireless controller
   remote_sudo_install "/etc/systemd/system/rovac-edge-ps2-joy.service" "$UNIT_DIR/rovac-edge-ps2-joy.service"

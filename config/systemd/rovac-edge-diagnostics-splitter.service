@@ -1,0 +1,41 @@
+[Unit]
+Description=ROVAC Diagnostics Splitter (per-source DiagnosticStatus topics)
+Wants=network-online.target
+After=network-online.target
+PartOf=rovac-edge.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+
+# DDS Configuration
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rovac-edge-diag-splitter
+
+# Timeout settings
+TimeoutStartSec=30
+TimeoutStopSec=10
+
+# Lightweight — barely uses any resources
+MemoryMax=64M
+CPUQuota=5%
+
+# Restart policy
+Restart=always
+RestartSec=5
+
+# Wait for other edge services to be publishing before subscribing
+ExecStartPre=/bin/sleep 8
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; [ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh; exec python3 /home/pi/robots/rovac/scripts/diagnostics_splitter.py'
+
+[Install]
+WantedBy=rovac-edge.target

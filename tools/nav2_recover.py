@@ -38,13 +38,14 @@ except ImportError as e:
 
 
 NAV2_NODES = [
+    "/map_server",
     "/amcl",
     "/controller_server",
     "/planner_server",
-    "/bt_navigator",
     "/behavior_server",
     "/velocity_smoother",
-    "/map_server",
+    "/waypoint_follower",
+    "/bt_navigator",
 ]
 LIFECYCLE_MANAGER = "/lifecycle_manager_navigation"
 

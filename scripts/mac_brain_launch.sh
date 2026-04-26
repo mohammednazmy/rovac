@@ -182,8 +182,14 @@ wait_for_topic() {
 # misses the activation window — RESET+STARTUP fixes it deterministically.
 verify_and_recover_nav2() {
     local timeout_s="${1:-25}"
-    local nav_nodes=(/amcl /controller_server /planner_server /bt_navigator
-                     /behavior_server /velocity_smoother /map_server)
+    # Must match the lifecycle_nodes list in scripts/nav2_launch.py.
+    # /smoother_server is NOT in the list — Nav2 has two distinct smoothers
+    # and we use velocity_smoother (the cmd_vel limiter), not smoother_server
+    # (the path smoother). Adding /smoother_server here makes verification
+    # always fail because that node doesn't exist.
+    local nav_nodes=(/map_server /amcl /controller_server /planner_server
+                     /behavior_server /velocity_smoother /waypoint_follower
+                     /bt_navigator)
     log_info "Verifying Nav2 lifecycle state (up to ${timeout_s}s)..."
     local deadline=$((SECONDS + timeout_s))
     local all_active=false
