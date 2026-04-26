@@ -69,6 +69,9 @@ class RosBridge:
             'topics_seen': [],
         }
         self._logs = deque(maxlen=200)
+        # Live /rosout tail — WARN and above only. Coverage panel renders
+        # the last ~8 entries so the user sees Nav2 errors immediately.
+        self._rosout_tail = deque(maxlen=50)
         self._node = None
         self._thread = None
         self._hz = {}  # topic_name -> HzTracker
@@ -125,6 +128,11 @@ class RosBridge:
         """Return recent log entries as list of (timestamp_str, message)."""
         with self.lock:
             return list(self._logs)
+
+    def get_rosout_tail(self) -> list:
+        """Return recent (level, node, message) tuples from /rosout WARN+."""
+        with self.lock:
+            return list(self._rosout_tail)
 
     def add_log(self, msg: str):
         """Add a log message with timestamp."""
@@ -279,6 +287,18 @@ class RosBridge:
             self._node.create_subscription(
                 Imu, '/imu/data', self._on_bno055_imu, best_effort_qos)
 
+            # /rosout — subscribe to capture Nav2/coverage error messages
+            # so the Coverage panel can show a live tail. rosout is RELIABLE
+            # by convention, KEEP_LAST(100) on the publisher side.
+            from rcl_interfaces.msg import Log as RosLog
+            rosout_qos = QoSProfile(
+                reliability=ReliabilityPolicy.RELIABLE,
+                history=HistoryPolicy.KEEP_LAST, depth=100,
+                durability=DurabilityPolicy.VOLATILE,
+            )
+            self._node.create_subscription(
+                RosLog, '/rosout', self._on_rosout, rosout_qos)
+
             # --- Publishers ---
             # cmd_vel_teleop must be RELIABLE (depth 10) to match the mux subscriber.
             # best_effort publisher + reliable subscriber = QoS mismatch = no delivery.
@@ -333,8 +353,15 @@ class RosBridge:
 
     def _on_map(self, msg):
         self._hz['map'].tick()
-        # Count free cells once per /map update for the coverage % denominator
-        free_cells = sum(1 for v in msg.data if v == 0)
+        # Count free cells once per /map update for coverage % denominator.
+        # numpy frombuffer is ~50x faster than a Python sum-over-generator
+        # on a 100k-cell grid, and /map is published as int8 in ROS2.
+        try:
+            import numpy as np
+            arr = np.frombuffer(bytes(msg.data), dtype=np.int8)
+            free_cells = int((arr == 0).sum())
+        except Exception:
+            free_cells = sum(1 for v in msg.data if v == 0)
         with self.lock:
             self.state['map_hz'] = self._hz['map'].hz()
             self.state['map_width'] = msg.info.width
@@ -388,6 +415,22 @@ class RosBridge:
         with self.lock:
             self.state['mux_active'] = msg.data
 
+    def _on_rosout(self, msg):
+        """Capture Nav2/coverage_node/etc log messages for the Coverage
+        panel's live tail. We only keep WARN and above to avoid the
+        million INFO lines from active Nav2."""
+        # rcl_interfaces/msg/Log.level: 10=DEBUG, 20=INFO, 30=WARN, 40=ERROR, 50=FATAL
+        if msg.level < 30:
+            return
+        level_str = {30: 'WARN', 40: 'ERROR', 50: 'FATAL'}.get(msg.level, '?')
+        # name is e.g. "controller_server", "bt_navigator". Truncate
+        # message to keep tail panel tidy.
+        text = (msg.msg or '').strip()
+        if len(text) > 110:
+            text = text[:107] + '...'
+        with self.lock:
+            self._rosout_tail.append((level_str, msg.name, text))
+
     def _on_coverage_path(self, msg):
         """Length of /coverage_path = total waypoints in current plan."""
         with self.lock:
@@ -396,23 +439,20 @@ class RosBridge:
     def _on_coverage_visited(self, msg):
         """OccupancyGrid where 100=visited, -1=untouched. Compute coverage %.
 
-        All state reads/writes happen under the lock — including the read
-        of coverage_free_cells, which in the previous version was outside
-        the lock. The fallback computation (counting non-(-1) cells) is
-        done OUTSIDE the lock to avoid holding it during a million-cell
-        scan; we only enter the lock to read+write final values.
+        Uses numpy.frombuffer (vectorized) instead of a Python sum-over-
+        generator. On a 250×250 cell map (62500 cells) at 1Hz, this is
+        the difference between ~10ms and ~0.2ms per callback.
         """
         try:
-            data = msg.data
-            visited = sum(1 for v in data if v == 100)
+            import numpy as np
+            arr = np.frombuffer(bytes(msg.data), dtype=np.int8)
+            visited = int((arr == 100).sum())
+            # /map count is the authoritative denominator; fall back to
+            # the visited grid's own non-unknown cells only if /map
+            # hasn't arrived yet.
             with self.lock:
                 free_from_map = self.state.get('coverage_free_cells', 0)
-            free_total = free_from_map
-            if free_total == 0:
-                # /map hasn't been received yet — derive denominator from
-                # the visited grid's own non-unknown cells. Done outside
-                # the lock since it's another full scan of the data.
-                free_total = sum(1 for v in data if v != -1)
+            free_total = free_from_map or int((arr != -1).sum())
             with self.lock:
                 self.state['coverage_visited_cells'] = visited
                 if free_total > 0:

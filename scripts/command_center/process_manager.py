@@ -69,15 +69,26 @@ class ProcessManager:
     def __init__(self, pi_host='192.168.1.200', pi_user='pi', log_fn=None):
         self.pi_host = pi_host
         self.pi_user = pi_user
-        self.log = log_fn or (lambda msg: None)
+        self._log_fn = log_fn or (lambda msg: None)
         self.processes = {}  # name -> subprocess.Popen
 
+        # ── Thread safety ──────────────────────────────────────────────
+        # `processes` mutated by Popen-spawning calls + Popen.poll() reads
+        # from get_status. Multi-threaded action handlers can race the
+        # check-then-act in _start_process. Protect with this lock.
+        self._proc_lock = threading.Lock()
+        # Reentrancy guards — a single auto-start macro at a time, etc.
+        self._auto_start_running = threading.Event()
         # Pi side-effect flags. Mutated in async SSH callbacks AND read in
-        # synchronous callers (start_/stop_*). Protect with a lock so
-        # concurrent rapid calls don't drift the flag from real Pi state.
+        # synchronous callers (start_/stop_*). Protect with a lock.
         self._flag_lock = threading.Lock()
         self._stopped_map_tf = False
         self._motor_tf_disabled = False
+        # SSH unreachable cooldown — when Pi is down, don't hammer it.
+        # Tracks last successful + failed ssh attempt timestamps.
+        self._ssh_last_success = 0.0
+        self._ssh_last_failure = 0.0
+        self._ssh_failure_count = 0
 
         # ── Background-update cache ────────────────────────────────────
         # SSH calls and `ros2 service call get_state` each take 0.3-3s.
@@ -88,52 +99,107 @@ class ProcessManager:
         self._cached_pi_services: dict = {}
         self._cached_nav2_lifecycle: dict = {}
         self._cached_foxglove_alive: bool = False
+        # _stop_updater MUST be initialized before any worker thread can
+        # call self.log() — log() reads it as the shutdown guard.
         self._stop_updater = threading.Event()
         self._updater = threading.Thread(target=self._update_loop, daemon=True)
         self._updater.start()
+
+    def log(self, msg: str):
+        """Log a message, but only if we're not shutting down. Worker
+        threads may try to log after the RosBridge closure has been torn
+        down; this guard prevents a late log from crashing the worker."""
+        if self._stop_updater.is_set():
+            return
+        try:
+            self._log_fn(msg)
+        except Exception:
+            pass
 
     def stop(self):
         """Stop the background updater. Call before exiting."""
         self._stop_updater.set()
 
     def _update_loop(self):
-        """Refresh expensive caches in the background. Runs forever."""
-        while not self._stop_updater.is_set():
-            try:
-                pi = self._fetch_pi_services_blocking()
-            except Exception:
-                pi = {}
-            try:
-                nav = self._fetch_nav2_lifecycle_blocking()
-            except Exception:
-                nav = {}
-            fox = self._port_listening(8765)
-            with self._cache_lock:
-                self._cached_pi_services = pi
-                self._cached_nav2_lifecycle = nav
-                self._cached_foxglove_alive = fox
-            # Sleep 5s, but wake up early on shutdown
-            self._stop_updater.wait(5.0)
+        """Refresh expensive caches in the background. Runs forever.
+
+        Parallel fetch: pi_services and nav2_lifecycle are independent
+        I/O calls; running them concurrently roughly halves the worst-
+        case refresh time (4s instead of 8s+).
+
+        Pi-unreachable backoff: when SSH fails 3x in a row, slow the
+        refresh interval from 5s → 30s and only log the state change
+        once. Restores to 5s on first success.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+        last_pi_unreachable_log = 0
+        with ThreadPoolExecutor(max_workers=2,
+                                thread_name_prefix='pm-fetch') as pool:
+            while not self._stop_updater.is_set():
+                pi_future = pool.submit(self._fetch_pi_services_blocking)
+                nav_future = pool.submit(self._fetch_nav2_lifecycle_blocking)
+                try:
+                    pi = pi_future.result(timeout=12)
+                except Exception:
+                    pi = {}
+                try:
+                    nav = nav_future.result(timeout=20)
+                except Exception:
+                    nav = {}
+                fox = self._port_listening(8765)
+                with self._cache_lock:
+                    self._cached_pi_services = pi
+                    self._cached_nav2_lifecycle = nav
+                    self._cached_foxglove_alive = fox
+
+                # Pi reachability tracking (no SSH spam when Pi is down)
+                pi_alive = bool(pi) and 'unknown' not in pi.values()
+                if pi_alive:
+                    self._ssh_failure_count = 0
+                else:
+                    self._ssh_failure_count += 1
+                # Decide sleep interval — backoff when Pi is dead
+                if self._ssh_failure_count >= 3:
+                    interval = 30.0
+                    if self._ssh_failure_count == 3:
+                        # Only log once on entering backoff
+                        self.log('Pi appears unreachable — backing off '
+                                 'service polling to 30s')
+                    last_pi_unreachable_log = self._ssh_failure_count
+                else:
+                    if last_pi_unreachable_log >= 3:
+                        self.log('Pi reachable again — service polling '
+                                 'restored to 5s')
+                        last_pi_unreachable_log = 0
+                    interval = 5.0
+                self._stop_updater.wait(interval)
 
     # ── Generic local process management ───────────────────────────────
 
     def _start_process(self, name: str, cmd: list) -> bool:
-        if name in self.processes and self.processes[name].poll() is None:
-            self.log(f'{name} already running (PID {self.processes[name].pid})')
-            return True
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                preexec_fn=os.setsid,
-            )
-            self.processes[name] = proc
-            self.log(f'Started {name} (PID {proc.pid})')
-            return True
-        except Exception as e:
-            self.log(f'Failed to start {name}: {e}')
-            return False
+        """Spawn a process if not already running. Thread-safe:
+        the check-then-act is wrapped in self._proc_lock so concurrent
+        callers (rapid keypresses, auto-start macro + manual press)
+        can't double-spawn."""
+        with self._proc_lock:
+            existing = self.processes.get(name)
+            if existing is not None and existing.poll() is None:
+                self.log(f'{name} already running (PID {existing.pid})')
+                return True
+            try:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    preexec_fn=os.setsid,
+                )
+                self.processes[name] = proc
+                pid = proc.pid
+            except Exception as e:
+                self.log(f'Failed to start {name}: {e}')
+                return False
+        self.log(f'Started {name} (PID {pid})')
+        return True
 
     def _stop_process(self, name: str):
         proc = self.processes.get(name)
@@ -190,13 +256,24 @@ class ProcessManager:
         self._restore_pi_motor_tf()
         self._start_pi_map_tf()
 
-    def auto_start_full_stack(self, map_file: str, on_step=None):
-        """One-shot: bring up EKF → wait for /odometry/filtered → Nav2 →
-        verify lifecycle → Foxglove → tracker. Runs fully in background.
+    def auto_start_full_stack(self, map_file: str, on_step=None) -> bool:
+        """One-shot: bring up EKF → wait for /odometry/filtered → /scan →
+        Nav2 → verify lifecycle → Foxglove → tracker. Runs fully in
+        background. Returns True if the macro was scheduled, False if
+        another auto-start is already in progress (reentrancy guard).
 
         on_step(step_label, status) is called for UI progress updates,
-        where status is 'pending' | 'ok' | 'failed'.
+        where status is 'pending' | 'ok' | 'failed' | 'recovering'.
         """
+        # Reentrancy guard — pressing 'A' twice rapidly previously spawned
+        # two macros that both tried to start EKF, Nav2, etc. Now the
+        # second press is a no-op until the first finishes.
+        if not self._auto_start_running.is_set():
+            self._auto_start_running.set()
+        else:
+            self.log('auto-start: already running — ignoring duplicate')
+            return False
+
         def report(label, status):
             if on_step:
                 try:
@@ -206,60 +283,81 @@ class ProcessManager:
             self.log(f'auto-start: {label} = {status}')
 
         def worker():
-            # EKF
-            report('EKF', 'pending')
-            self._disable_pi_motor_tf()  # async, fire-and-forget
-            ok = self._start_process('ekf', EKF_CMD)
-            report('EKF', 'ok' if ok else 'failed')
-            if not ok:
-                return
+            try:
+                # EKF
+                report('EKF', 'pending')
+                self._disable_pi_motor_tf()  # async, fire-and-forget
+                ok = self._start_process('ekf', EKF_CMD)
+                report('EKF', 'ok' if ok else 'failed')
+                if not ok:
+                    return
 
-            # Wait up to 25s for /odometry/filtered to be flowing.
-            report('odometry/filtered ≥15Hz', 'pending')
-            ok = self._wait_for_topic('/odometry/filtered', 25.0, 15.0)
-            report('odometry/filtered ≥15Hz', 'ok' if ok else 'failed')
-            if not ok:
-                return
+                # Wait up to 25s for /odometry/filtered to be flowing.
+                report('odometry/filtered ≥15Hz', 'pending')
+                ok = self._wait_for_topic('/odometry/filtered', 25.0, 15.0)
+                report('odometry/filtered ≥15Hz',
+                       'ok' if ok else 'failed')
+                if not ok:
+                    return
 
-            # Nav2
-            report('Nav2', 'pending')
-            self._stop_pi_map_tf()  # async
-            ok = self._start_process('nav2', NAV2_CMD_TEMPLATE + [f'map:={map_file}'])
-            report('Nav2', 'ok' if ok else 'failed')
-            if not ok:
-                return
+                # LIDAR check — Nav2 with no /scan can't see obstacles.
+                # Common failure: USB drop on the RPLIDAR after power-on.
+                # 5 Hz threshold is well below the 10 Hz nominal but high
+                # enough to catch a totally-dead lidar.
+                report('/scan ≥5Hz', 'pending')
+                ok = self._wait_for_topic('/scan', 15.0, 5.0)
+                report('/scan ≥5Hz', 'ok' if ok else 'failed')
+                if not ok:
+                    self.log('LIDAR check failed — restart '
+                             'rovac-edge-rplidar-c1 on Pi')
+                    return
 
-            # Wait up to 25s for lifecycle to come up; auto-recover if not.
-            report('Nav2 lifecycle (8 active)', 'pending')
-            ok = False
-            for _ in range(12):  # ~24s
-                lc = self._fetch_nav2_lifecycle_blocking()
-                if lc and all(s == 'active' for s in lc.values()):
-                    ok = True
-                    break
-                time.sleep(2)
-            if not ok:
-                report('Nav2 lifecycle', 'recovering')
-                self.recover_nav2_lifecycle()  # fire-and-forget
-                # Re-poll once after recovery
-                time.sleep(8)
-                lc = self._fetch_nav2_lifecycle_blocking()
-                ok = bool(lc) and all(s == 'active' for s in lc.values())
-            report('Nav2 lifecycle (8 active)', 'ok' if ok else 'failed')
+                # Nav2
+                report('Nav2', 'pending')
+                self._stop_pi_map_tf()  # async
+                ok = self._start_process('nav2',
+                    NAV2_CMD_TEMPLATE + [f'map:={map_file}'])
+                report('Nav2', 'ok' if ok else 'failed')
+                if not ok:
+                    return
 
-            # Foxglove
-            if not self._port_listening(8765):
-                report('Foxglove bridge', 'pending')
-                ok2 = self._start_process('foxglove', FOXGLOVE_CMD)
-                report('Foxglove bridge', 'ok' if ok2 else 'failed')
+                # Wait up to 25s for lifecycle to come up; auto-recover if not.
+                report('Nav2 lifecycle (8 active)', 'pending')
+                ok = False
+                for _ in range(12):  # ~24s
+                    lc = self._fetch_nav2_lifecycle_blocking()
+                    if lc and all(s == 'active' for s in lc.values()):
+                        ok = True
+                        break
+                    time.sleep(2)
+                if not ok:
+                    report('Nav2 lifecycle', 'recovering')
+                    self.recover_nav2_lifecycle()  # fire-and-forget
+                    time.sleep(8)
+                    lc = self._fetch_nav2_lifecycle_blocking()
+                    ok = bool(lc) and all(s == 'active' for s in lc.values())
+                report('Nav2 lifecycle (8 active)',
+                       'ok' if ok else 'failed')
 
-            # Tracker
-            report('Coverage tracker', 'pending')
-            ok3 = self._start_process('tracker', COVERAGE_TRACKER_CMD)
-            report('Coverage tracker', 'ok' if ok3 else 'failed')
+                # Foxglove
+                if not self._port_listening(8765):
+                    report('Foxglove bridge', 'pending')
+                    ok2 = self._start_process('foxglove', FOXGLOVE_CMD)
+                    report('Foxglove bridge', 'ok' if ok2 else 'failed')
 
-            report('READY for coverage', 'ok')
+                # Tracker
+                report('Coverage tracker', 'pending')
+                ok3 = self._start_process('tracker', COVERAGE_TRACKER_CMD)
+                report('Coverage tracker', 'ok' if ok3 else 'failed')
+
+                report('READY for coverage', 'ok')
+            finally:
+                # Always clear the guard so the user can re-run, even if
+                # the macro raised or returned early.
+                self._auto_start_running.clear()
+
         threading.Thread(target=worker, daemon=True).start()
+        return True
 
     def _wait_for_topic(self, topic: str, timeout_s: float, min_hz: float) -> bool:
         """Poll `ros2 topic hz` until the topic publishes at >= min_hz."""
@@ -284,26 +382,42 @@ class ProcessManager:
         return False
 
     def get_status(self) -> dict:
+        """Return {name: status} for managed + recognized-external Mac
+        processes. Cross-checks Popen.poll() with pgrep so that an
+        externally-killed process (e.g. user `pkill coverage_node`)
+        flips to 'stopped' on the next call instead of lying as 'running'
+        until the next get_status call."""
         result = {}
-        for name, proc in self.processes.items():
-            if proc.poll() is None:
-                result[name] = 'running'
-            else:
-                result[name] = f'exited ({proc.returncode})'
+        with self._proc_lock:
+            for name, proc in list(self.processes.items()):
+                if proc.poll() is None:
+                    # Cross-check via pgrep — if the process was killed
+                    # externally, Popen.poll() may not yet reflect it.
+                    pattern = self._known_pattern_for(name)
+                    if pattern and not self._proc_running(pattern):
+                        # Treat as exited and clean up; don't try to
+                        # call wait() since the OS already reaped it.
+                        result[name] = 'exited (external)'
+                        self.processes.pop(name, None)
+                    else:
+                        result[name] = 'running'
+                else:
+                    result[name] = f'exited ({proc.returncode})'
 
         # Detect externally-started processes we didn't launch
         if result.get('foxglove') != 'running' and self._port_listening(8765):
             result['foxglove'] = 'running'
-        for proc_name, pattern in [
-            ('slam', 'slam_toolbox'),
-            ('nav2', 'nav2_launch.py'),
-            ('ekf', 'ekf_node'),
-            ('coverage', 'coverage_node.py'),
-            ('tracker', 'coverage_tracker.py'),
-        ]:
+        for proc_name, pattern in self._EXTERNAL_KILL_PATTERNS:
             if result.get(proc_name) != 'running' and self._proc_running(pattern):
                 result[proc_name] = 'running (external)'
         return result
+
+    @classmethod
+    def _known_pattern_for(cls, name: str):
+        for pname, pattern in cls._EXTERNAL_KILL_PATTERNS:
+            if pname == name:
+                return pattern
+        return None
 
     @staticmethod
     def _port_listening(port: int) -> bool:
@@ -628,13 +742,33 @@ class ProcessManager:
             if f.endswith('.yaml')
         )
 
+    @staticmethod
+    def _sanitize_map_name(name: str) -> str:
+        """Strip everything that isn't safe for a filename. Defends
+        against the user typing 'mymap; rm -rf ~' and seeing the rest
+        of the command interpreted by a shell layer (subprocess uses
+        argv directly, but downstream tools sometimes don't)."""
+        import re
+        # Take basename in case user typed a path; strip extension
+        basename = os.path.splitext(os.path.basename(name))[0]
+        # Allow only alphanumerics, dash, underscore, dot
+        safe = re.sub(r'[^A-Za-z0-9_.-]', '_', basename).strip('._-')
+        return safe or 'rovac_map'
+
     def save_map(self, name: str) -> bool:
         """Dispatch a map save in a worker thread. Returns True if the
         worker was scheduled. The actual map_saver_cli takes 5-15s and
         logs its result when done — UI must not wait on this."""
+        safe_name = self._sanitize_map_name(name)
+        if safe_name != name:
+            self.log(f'Map name sanitized: "{name}" → "{safe_name}"')
         maps_dir = os.path.expanduser('~/maps')
-        os.makedirs(maps_dir, exist_ok=True)
-        filepath = os.path.join(maps_dir, name)
+        try:
+            os.makedirs(maps_dir, exist_ok=True)
+        except Exception as e:
+            self.log(f'Cannot create ~/maps: {e}')
+            return False
+        filepath = os.path.join(maps_dir, safe_name)
 
         def worker():
             try:
@@ -646,8 +780,34 @@ class ProcessManager:
                     capture_output=True, text=True, timeout=20
                 )
                 ok = r.returncode == 0
-                self.log(f'Map save "{name}": {"OK" if ok else "FAILED"}')
+                self.log(f'Map save "{safe_name}": {"OK" if ok else "FAILED"}')
             except Exception as e:
                 self.log(f'Map save error: {e}')
         threading.Thread(target=worker, daemon=True).start()
         return True
+
+    @staticmethod
+    def validate_map_for_nav(path: str) -> tuple:
+        """Verify a map yaml is loadable: yaml exists, sibling pgm exists.
+        Returns (ok, error_message). On failure error_message is a string
+        suitable for direct UI display."""
+        path = os.path.expanduser(path)
+        if not os.path.exists(path):
+            return (False, f"Map yaml not found: {path}")
+        if not path.endswith('.yaml'):
+            return (False, f"Map path must end in .yaml: {path}")
+        # Sibling .pgm in the same directory (Nav2 map_saver default layout)
+        try:
+            import yaml as _yaml
+            with open(path) as f:
+                cfg = _yaml.safe_load(f) or {}
+            image = cfg.get('image', '')
+        except Exception as e:
+            return (False, f"Cannot parse map yaml: {e}")
+        if not image:
+            return (False, "Map yaml has no 'image' key")
+        if not os.path.isabs(image):
+            image = os.path.join(os.path.dirname(path), image)
+        if not os.path.exists(image):
+            return (False, f"Map image missing: {image}")
+        return (True, "")

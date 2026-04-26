@@ -84,18 +84,25 @@ class CoveragePanel(Widget):
                 )
                 yield Static(" ", id="cov-result")
 
+        # Row 4 — /rosout tail (WARN+ only)
+        with Container(classes="panel-box-magenta") as c:
+            c.border_title = "ROS Logs (WARN/ERROR/FATAL from /rosout)"
+            yield Static("[dim]No warnings/errors yet[/]", id="cov-rosout")
+
         # Row 4 — actions
         with Container(classes="panel-box-cyan") as c:
             c.border_title = "Actions"
             yield Static(
-                " [bold yellow]A[/] AUTO-START full stack (EKF→Nav2→Foxglove→Tracker)\n"
+                " [bold yellow]A[/] AUTO-START full stack (EKF→/scan→Nav2→Foxglove→Tracker)\n"
                 "\n"
                 " [bold]e[/] start EKF       "
                 "[bold]n[/] start Nav2       "
-                "[bold]f[/] toggle Foxglove\n"
+                "[bold]f[/] toggle Foxglove   "
+                "[bold]F[/] restart Foxglove\n"
                 " [bold]t[/] toggle tracker  "
                 "[bold]p[/] coverage PREVIEW  "
-                "[bold]r[/] coverage LIVE\n"
+                "[bold]r[/] coverage LIVE     "
+                "[bold]S[/] STOP coverage\n"
                 " [bold]l[/] Nav2 RECOVER    "
                 "[bold]k[/] kill teleop       "
                 "[bold]s[/] save map\n"
@@ -106,7 +113,16 @@ class CoveragePanel(Widget):
     # ── Key dispatch ──────────────────────────────────────────────────
 
     def process_key(self, key: str) -> bool:
-        if key in ("a", "A"):
+        # Capital-letter actions before lowercase to avoid collisions.
+        if key in ("A", "shift+a"):
+            self._auto_start()
+        elif key in ("F", "shift+f"):
+            self._restart_foxglove()
+        elif key in ("S", "shift+s"):
+            self._stop_coverage()
+        elif key in ("X", "shift+x"):
+            self._kill_all()
+        elif key == "a":
             self._auto_start()
         elif key == "e":
             self._start_ekf()
@@ -126,8 +142,6 @@ class CoveragePanel(Widget):
             self._kill_teleop()
         elif key == "s":
             self._save_map()
-        elif key in ("X", "shift+x"):
-            self._kill_all()
         else:
             return False
         return True
@@ -154,34 +168,48 @@ class CoveragePanel(Widget):
                 self._show_result("[red]No map yaml found in ~/maps. SLAM first, then save.[/]")
                 return
         map_path = os.path.expanduser(map_path)
-        if not os.path.exists(map_path):
-            self._show_result(f"[red]Map not found: {map_path}[/]")
+        ok, err = self.app.pm.validate_map_for_nav(map_path)
+        if not ok:
+            self._show_result(f"[red]{err}[/]")
             return
 
-        # Track step progress in a class-level deque so update_state can
-        # render it. Bound size keeps display tidy.
+        # Track step progress in a thread-safe list so the worker
+        # thread that calls on_step can mutate while UI thread reads
+        # via _refresh_auto_status. Lock protects against torn reads.
+        import threading
         self._auto_steps = []
+        if not hasattr(self, "_auto_steps_lock"):
+            self._auto_steps_lock = threading.Lock()
         def on_step(label, status):
             symbol = {"pending": "[yellow]…[/]",
                       "ok": "[green]✓[/]",
                       "failed": "[red]✗[/]",
                       "recovering": "[yellow]↻[/]"}.get(status, "•")
-            # Replace existing entry for the label, or append
-            for i, (lbl, _) in enumerate(self._auto_steps):
-                if lbl == label:
-                    self._auto_steps[i] = (label, symbol)
-                    break
-            else:
-                self._auto_steps.append((label, symbol))
+            # Worker thread may fire this while UI thread iterates the
+            # list — lock both ends. Replace existing label entry or
+            # append a new one.
+            with self._auto_steps_lock:
+                for i, (lbl, _) in enumerate(self._auto_steps):
+                    if lbl == label:
+                        self._auto_steps[i] = (label, symbol)
+                        break
+                else:
+                    self._auto_steps.append((label, symbol))
             self._refresh_auto_status()
 
-        self._show_result(f"[green]Auto-starting full stack with map: {map_path}[/]")
-        self.app.pm.auto_start_full_stack(map_path, on_step=on_step)
+        self._show_result(
+            f"[green]Auto-starting full stack with map: {map_path}[/]")
+        if not self.app.pm.auto_start_full_stack(map_path, on_step=on_step):
+            # Reentrancy guard fired — another auto-start is in flight.
+            self._show_result(
+                "[yellow]Auto-start already in progress — wait for it to finish[/]")
 
     def _refresh_auto_status(self):
-        if not getattr(self, "_auto_steps", None):
+        with self._auto_steps_lock:
+            steps = list(self._auto_steps)  # snapshot
+        if not steps:
             return
-        lines = [f"  {sym} {lbl}" for lbl, sym in self._auto_steps]
+        lines = [f"  {sym} {lbl}" for lbl, sym in steps]
         try:
             self.query_one("#cov-result", Static).update(
                 "[bold]Auto-start progress:[/]\n" + "\n".join(lines))
@@ -202,11 +230,12 @@ class CoveragePanel(Widget):
         if not map_path:
             self._show_result("[yellow]Enter a map yaml path first[/]")
             return
+        ok, err = self.app.pm.validate_map_for_nav(map_path)
+        if not ok:
+            self._show_result(f"[red]{err}[/]")
+            return
         import os
         map_path = os.path.expanduser(map_path)
-        if not os.path.exists(map_path):
-            self._show_result(f"[red]Map not found: {map_path}[/]")
-            return
         if self.app.pm.start_nav2(map_path):
             self._show_result(f"[green]Nav2 starting with {map_path}[/]")
         else:
@@ -281,6 +310,37 @@ class CoveragePanel(Widget):
             f"[dim]Watch the log for 'Map save \"{name}\": OK' (5-15s)[/]"
         )
 
+    def _stop_coverage(self):
+        """Stop ONLY coverage_node — keep Nav2, EKF, tracker running so
+        the user can re-run the planner without re-bringing-up the stack."""
+        self.app.pm.stop_coverage()
+        # Also kill any externally-spawned coverage_node we don't track
+        import subprocess
+        try:
+            subprocess.run(['pkill', '-f', 'coverage_node.py'],
+                           capture_output=True, timeout=2)
+        except Exception:
+            pass
+        self._show_result(
+            "[yellow]Coverage stopped. Nav2/EKF/tracker still running. "
+            "Press 'p' or 'r' to start a new run.[/]"
+        )
+
+    def _restart_foxglove(self):
+        """Stop + start the Foxglove bridge. Useful when channel IDs go
+        stale after a Nav2 lifecycle reset and the bridge holds them."""
+        self.app.pm.stop_foxglove()
+        # Brief delay so the port frees up
+        self.set_timer(1.5, self._restart_foxglove_step2)
+        self._show_result("[yellow]Restarting Foxglove bridge…[/]")
+
+    def _restart_foxglove_step2(self):
+        ok = self.app.pm.start_foxglove()
+        self._show_result(
+            "[green]Foxglove bridge restarted. Reload Foxglove client.[/]"
+            if ok else "[red]Foxglove restart failed[/]"
+        )
+
     def _kill_all(self):
         self.app.pm.stop_all()
         self._show_result("[yellow]Killed all Mac-side processes[/]")
@@ -300,6 +360,36 @@ class CoveragePanel(Widget):
         self._update_cmdvel(state)
         self._update_progress(state, proc_status)
         self._update_alerts(state, proc_status)
+        self._update_rosout_tail()
+
+    def _update_rosout_tail(self):
+        """Render last ~8 WARN/ERROR/FATAL lines from /rosout."""
+        if not self.app.ros:
+            return
+        try:
+            entries = self.app.ros.get_rosout_tail()
+        except Exception:
+            entries = []
+        if not entries:
+            text = "[dim]No warnings/errors yet[/]"
+        else:
+            level_color = {
+                "WARN":  "yellow",
+                "ERROR": "red",
+                "FATAL": "red bold",
+            }
+            recent = entries[-8:]
+            lines = []
+            for level, node, msg in recent:
+                color = level_color.get(level, "white")
+                lines.append(
+                    f"[{color}]{level:<5}[/] [dim]{node[:22]:<22}[/] {msg}"
+                )
+            text = "\n".join(lines)
+        try:
+            self.query_one("#cov-rosout", Static).update(text)
+        except Exception:
+            pass
 
     def _update_pi_services(self):
         # Pi service status is expensive (SSH). Cache between refreshes.
