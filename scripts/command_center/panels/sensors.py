@@ -59,13 +59,13 @@ class SensorsPanel(Widget):
                 id="sens-lidar",
             )
 
-        # Ultrasonic
+        # Ultrasonic + cliff (ESP32 sensor hub: 4x HC-SR04 + 2x IR cliff)
         with Container(classes="panel-box-cyan") as c:
-            c.border_title = "Ultrasonic"
+            c.border_title = "Ultrasonic + Cliff (ESP32 sensor hub)"
             yield Static(
-                "Front Top:    [dim]  --- [/]    Front Bottom: [dim]  --- [/]\n"
-                "Left:         [dim]  --- [/]    Right:        [dim]  --- [/]\n"
-                "Obstacle:     [green]CLEAR[/]",
+                "Front:  [dim]  --- [/]    Rear:   [dim]  --- [/]\n"
+                "Left:   [dim]  --- [/]    Right:  [dim]  --- [/]\n"
+                "Cliff:  [green]CLEAR[/]",
                 id="sens-ultra",
             )
 
@@ -79,30 +79,12 @@ class SensorsPanel(Widget):
             c.border_title = "BNO055 IMU"
             yield Static("[dim]No BNO055 IMU data[/]", id="sens-bno055-imu")
 
-        # Phone IMU
-        with Container(classes="panel-box-blue") as c:
-            c.border_title = "Phone IMU"
-            yield Static("[dim]No phone IMU data[/]", id="sens-phone-imu")
-
-        # Phone GPS + Camera side by side
-        with Horizontal(id="sensors-phone-row"):
-            with Container(classes="panel-box-green") as c:
-                c.border_title = "Phone GPS"
-                yield Static("[dim]No GPS data[/]", id="sens-phone-gps")
-
-            with Container(classes="panel-box-cyan") as c:
-                c.border_title = "Phone Camera"
-                yield Static("[dim]No camera data[/]", id="sens-phone-camera")
-
     def update_state(self, state: dict, logs: list, proc_status: dict) -> None:
         self._update_odom(state)
         self._update_lidar(state)
         self._update_ultra(state)
         self._update_diag_motor(state)
         self._update_bno055_imu(state)
-        self._update_phone_imu(state)
-        self._update_phone_gps(state)
-        self._update_phone_camera(state)
 
     def _update_odom(self, state: dict) -> None:
         x = state.get("odom_x", 0)
@@ -148,23 +130,23 @@ class SensorsPanel(Widget):
             pass
 
     def _update_ultra(self, state: dict) -> None:
-        ft = state.get("ultra_front_top", float("inf"))
-        fb = state.get("ultra_front_bottom", float("inf"))
+        front = state.get("ultra_front", float("inf"))
+        rear = state.get("ultra_rear", float("inf"))
         left = state.get("ultra_left", float("inf"))
         right = state.get("ultra_right", float("inf"))
-        obstacle = state.get("obstacle_detected", False)
+        cliff = state.get("cliff_detected", False)
 
         def _f(v: float) -> str:
             if v == float("inf") or v <= 0:
                 return "[dim]  --- [/]"
             return f"{v:5.2f} m"
 
-        obs_text = "[red bold]DETECTED[/]" if obstacle else "[green]CLEAR[/]"
+        cliff_text = "[red bold]CLIFF![/]" if cliff else "[green]CLEAR[/]"
 
         lines = [
-            f"Front Top:    {_f(ft)}    Front Bottom: {_f(fb)}",
-            f"Left:         {_f(left)}    Right:        {_f(right)}",
-            f"Obstacle:     {obs_text}",
+            f"Front:  {_f(front)}    Rear:   {_f(rear)}",
+            f"Left:   {_f(left)}    Right:  {_f(right)}",
+            f"Cliff:  {cliff_text}",
         ]
         try:
             self.query_one("#sens-ultra", Static).update("\n".join(lines))
@@ -233,78 +215,3 @@ class SensorsPanel(Widget):
         except Exception:
             pass
 
-    def _update_phone_imu(self, state: dict) -> None:
-        hz = state.get("phone_imu_hz", 0)
-        if hz <= 0:
-            try:
-                self.query_one("#sens-phone-imu", Static).update("[dim]No phone IMU data[/]")
-            except Exception:
-                pass
-            return
-
-        ax = state.get("phone_accel_x", 0)
-        ay = state.get("phone_accel_y", 0)
-        az = state.get("phone_accel_z", 0)
-        gx = state.get("phone_gyro_x", 0)
-        gy = state.get("phone_gyro_y", 0)
-        gz = state.get("phone_gyro_z", 0)
-        roll = state.get("phone_orient_roll", 0)
-        pitch = state.get("phone_orient_pitch", 0)
-        yaw = state.get("phone_orient_yaw", 0)
-
-        text = (
-            f"Accel   x:{ax:+7.2f}  y:{ay:+7.2f}  z:{az:+7.2f} m/s²    Rate: {hz:.0f} Hz\n"
-            f"Gyro    x:{gx:+7.2f}  y:{gy:+7.2f}  z:{gz:+7.2f} rad/s\n"
-            f"Orient  R:{roll:+6.1f}°  P:{pitch:+6.1f}°  Y:{yaw:+6.1f}°"
-        )
-        try:
-            self.query_one("#sens-phone-imu", Static).update(text)
-        except Exception:
-            pass
-
-    def _update_phone_gps(self, state: dict) -> None:
-        hz = state.get("phone_gps_hz", 0)
-        if hz <= 0:
-            try:
-                self.query_one("#sens-phone-gps", Static).update("[dim]No GPS data[/]")
-            except Exception:
-                pass
-            return
-
-        lat = state.get("phone_lat", 0)
-        lon = state.get("phone_lon", 0)
-        alt = state.get("phone_alt", 0)
-        status = state.get("phone_gps_status", -1)
-        status_text = "[green]Fix[/]" if status >= 0 else "[red]No Fix[/]"
-
-        text = (
-            f"Lat:  {lat:11.6f}°\n"
-            f"Lon:  {lon:11.6f}°\n"
-            f"Alt:  {alt:6.1f} m\n"
-            f"Status: {status_text}  {hz:.1f} Hz"
-        )
-        try:
-            self.query_one("#sens-phone-gps", Static).update(text)
-        except Exception:
-            pass
-
-    def _update_phone_camera(self, state: dict) -> None:
-        hz = state.get("phone_camera_hz", 0)
-        size = state.get("phone_camera_bytes", 0)
-        if hz <= 0:
-            try:
-                self.query_one("#sens-phone-camera", Static).update("[dim]No camera data[/]")
-            except Exception:
-                pass
-            return
-
-        size_kb = size / 1024
-        text = (
-            f"Rate:  {hz:.1f} FPS\n"
-            f"Frame: {size_kb:.1f} KB\n"
-            f"Status: [green]● Streaming[/]"
-        )
-        try:
-            self.query_one("#sens-phone-camera", Static).update(text)
-        except Exception:
-            pass

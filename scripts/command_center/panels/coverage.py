@@ -242,13 +242,27 @@ class CoveragePanel(Widget):
         )
 
     def _recover_nav2(self):
-        self._show_result("[dim]Running Nav2 RESET → STARTUP…[/]")
-        ok = self.app.pm.recover_nav2_lifecycle()
-        self._show_result("[green]Nav2 recovered[/]" if ok else "[red]Recovery failed[/]")
+        # The recovery runs in a worker thread (~25-35s). UI shouldn't
+        # block waiting; the lifecycle indicators in the Nav2 panel will
+        # flip back to active when it succeeds.
+        if self.app.pm.recover_nav2_lifecycle():
+            self._show_result(
+                "[yellow]Nav2 RESET → STARTUP dispatched. "
+                "Watch the lifecycle column — nodes flip back to active in ~30s.[/]"
+            )
+        else:
+            self._show_result("[red]Recovery couldn't start (manager shutting down?)[/]")
 
     def _kill_teleop(self):
         n = self.app.pm.kill_zombie_teleop()
-        self._show_result(f"[green]Killed {n} local + Pi teleop processes[/]")
+        if n > 0:
+            self._show_result(
+                f"[green]Killed {n} local teleop process(es); Pi cleanup dispatched[/]"
+            )
+        else:
+            self._show_result(
+                "[green]No local teleop running; Pi cleanup dispatched anyway[/]"
+            )
 
     def _save_map(self):
         try:
@@ -259,14 +273,12 @@ class CoveragePanel(Widget):
             self._show_result("[yellow]Enter a map name in the input field[/]")
             return
         import os
-        # Strip path/extension if user typed full path
-        name = os.path.splitext(os.path.basename(map_input))[0]
-        if not name:
-            name = "rovac_map"
-        ok = self.app.pm.save_map(name)
+        name = os.path.splitext(os.path.basename(map_input))[0] or "rovac_map"
+        # Async — worker thread runs map_saver_cli (5-15s).
+        self.app.pm.save_map(name)
         self._show_result(
-            f"[green]Map saved: ~/maps/{name}.yaml[/]" if ok
-            else f"[red]Map save failed[/]"
+            f"[yellow]Map save dispatched: ~/maps/{name}.yaml[/]\n"
+            f"[dim]Watch the log for 'Map save \"{name}\": OK' (5-15s)[/]"
         )
 
     def _kill_all(self):

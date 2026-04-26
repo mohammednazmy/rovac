@@ -25,7 +25,7 @@ class RovacCommandCenter(App):
     }
 
     /* ── Panel widgets fill their TabPane ───────────── */
-    DashboardPanel, DrivePanel, SensorsPanel, SlamPanel, EdgePanel, PhonePanel, CoveragePanel {
+    DashboardPanel, DrivePanel, SensorsPanel, SlamPanel, EdgePanel, CoveragePanel {
         height: 1fr;
         overflow-y: auto;
         padding: 0 1;
@@ -111,15 +111,6 @@ class RovacCommandCenter(App):
     #sensors-diag-row > .panel-box-magenta {
         width: 1fr;
     }
-    #sensors-phone-row {
-        layout: horizontal;
-        height: auto;
-    }
-    #sensors-phone-row > .panel-box-green,
-    #sensors-phone-row > .panel-box-cyan {
-        width: 1fr;
-    }
-
     /* ── SLAM panel ───────────────────────────────────── */
     #slam-layout {
         layout: horizontal;
@@ -133,24 +124,6 @@ class RovacCommandCenter(App):
     #slam-map-input {
         width: 40;
         margin: 0 1;
-    }
-
-    /* ── Phone panel ──────────────────────────────────── */
-    #phone-imu-row {
-        layout: horizontal;
-        height: auto;
-    }
-    #phone-imu-row > .panel-box-blue,
-    #phone-imu-row > .panel-box-cyan {
-        width: 1fr;
-    }
-    #phone-lower-row {
-        layout: horizontal;
-        height: auto;
-    }
-    #phone-lower-row > .panel-box-green,
-    #phone-lower-row > .panel-box-magenta {
-        width: 1fr;
     }
 
     /* ── Edge panel ───────────────────────────────────── */
@@ -187,8 +160,7 @@ class RovacCommandCenter(App):
         Binding("3", "switch_tab('sensors')", "Sensors", show=True),
         Binding("4", "switch_tab('slam')", "SLAM", show=True),
         Binding("5", "switch_tab('edge')", "Edge", show=True),
-        Binding("6", "switch_tab('phone')", "Phone", show=True),
-        Binding("7", "switch_tab('coverage')", "Coverage", show=True),
+        Binding("6", "switch_tab('coverage')", "Coverage", show=True),
         # Arrow keys — priority bindings to intercept before Tabs widget
         Binding("left", "arrow('left')", show=False, priority=True),
         Binding("right", "arrow('right')", show=False, priority=True),
@@ -238,9 +210,6 @@ class RovacCommandCenter(App):
             with TabPane("Edge", id="tab-edge"):
                 from .panels.edge import EdgePanel
                 yield EdgePanel()
-            with TabPane("Phone", id="tab-phone"):
-                from .panels.phone import PhonePanel
-                yield PhonePanel()
             with TabPane("Coverage", id="tab-coverage"):
                 from .panels.coverage import CoveragePanel
                 yield CoveragePanel()
@@ -265,11 +234,10 @@ class RovacCommandCenter(App):
         from .panels.sensors import SensorsPanel
         from .panels.slam import SlamPanel
         from .panels.edge import EdgePanel
-        from .panels.phone import PhonePanel
         from .panels.coverage import CoveragePanel
 
         for PanelType in (DashboardPanel, DrivePanel, SensorsPanel, SlamPanel,
-                          EdgePanel, PhonePanel, CoveragePanel):
+                          EdgePanel, CoveragePanel):
             try:
                 panel = self.query_one(PanelType)
                 panel.update_state(state, logs, proc_status)
@@ -317,18 +285,6 @@ class RovacCommandCenter(App):
             from .panels.coverage import CoveragePanel
             try:
                 handled = self.query_one(CoveragePanel).process_key(event.key)
-            except Exception as e:
-                self._log(f"Key dispatch error: {e}")
-        elif active == "tab-phone":
-            from .panels.phone import PhonePanel
-            try:
-                panel = self.query_one(PhonePanel)
-                def _toggle():
-                    if self.ros:
-                        current = self.ros.get_state().get('phone_flashlight_on', False)
-                        self.ros.publish_flashlight(not current)
-                panel._toggle_flashlight = _toggle
-                handled = panel.process_key(event.key)
             except Exception as e:
                 self._log(f"Key dispatch error: {e}")
 

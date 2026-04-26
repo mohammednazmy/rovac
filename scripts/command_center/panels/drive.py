@@ -105,10 +105,6 @@ class DrivePanel(Widget):
             if self._driving:
                 self._update_speed_while_driving()
             self._refresh_controls_display()
-        elif key == "h":
-            if self.app.ros:
-                current = self.app.ros.get_state().get('phone_flashlight_on', False)
-                self.app.ros.publish_flashlight(not current)
         else:
             return False
         return True
@@ -193,21 +189,13 @@ class DrivePanel(Widget):
         else:
             out_color = "dim"
 
-        # Flashlight state
-        if self.app.ros:
-            flash_on = self.app.ros.get_state().get('phone_flashlight_on', False)
-        else:
-            flash_on = False
-        flash_text = "[yellow]● ON[/]" if flash_on else "[dim]○ OFF[/]"
-
         text = (
             "        [bold]W/Up[/] Fwd     [bold]Q[/] Arc-L     "
             f"Gear [bold]{gear_num}[/]/{total_gears}  "
             f"[bold]{lin_speed:.2f}[/] m/s  [bold]{ang_speed:.1f}[/] rad/s\n"
             "  [bold]A/Left[/] [bold]SPACE[/] [bold]D/Right[/]   [bold]E[/] Arc-R     "
             f"[{out_color}]Out: lin={lin_out:+.2f} ang={ang_out:+.2f}[/]\n"
-            f"        [bold]S/Down[/] Rev    [bold]+/-[/] Speed    "
-            f"[bold]H[/] Headlight {flash_text}"
+            f"        [bold]S/Down[/] Rev    [bold]+/-[/] Speed"
         )
         try:
             self.query_one("#drive-controls", Static).update(text)

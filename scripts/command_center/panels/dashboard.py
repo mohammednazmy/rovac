@@ -112,23 +112,7 @@ class DashboardPanel(Widget):
         else:
             bno055_line = f"[dim]BNO055[/] [dim]○ ---[/]"
 
-        # Phone sensor status
-        phone_imu_hz = state.get("phone_imu_hz", 0)
-        phone_gps_hz = state.get("phone_gps_hz", 0)
-        phone_cam_hz = state.get("phone_camera_hz", 0)
-        if phone_imu_hz > 0 or phone_gps_hz > 0 or phone_cam_hz > 0:
-            phone_parts = []
-            if phone_imu_hz > 0:
-                phone_parts.append(f"IMU {phone_imu_hz:.0f}Hz")
-            if phone_gps_hz > 0:
-                phone_parts.append(f"GPS {phone_gps_hz:.0f}Hz")
-            if phone_cam_hz > 0:
-                phone_parts.append(f"Cam {phone_cam_hz:.0f}FPS")
-            phone_line = f"[dim]Phone[/] [green]● {' '.join(phone_parts)}[/]"
-        else:
-            phone_line = f"[dim]Phone[/] [dim]○ ---[/]"
-
-        lines = [line1, line2, bno055_line, phone_line]
+        lines = [line1, line2, bno055_line]
         self.query_one("#dash-connectivity", Static).update("\n".join(lines))
 
     def _update_pi_system(self, state: dict) -> None:

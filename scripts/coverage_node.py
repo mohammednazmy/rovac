@@ -25,9 +25,16 @@ boustrophedon covers ~95% of floor with a trivial fraction of the code.
 The remaining edge gaps are best handled by the companion node
 coverage_tracker.py (publishes ground-truth visited-cells grid).
 
-Run:
+Run (recommended):
+  ./rovac          → Coverage tab → press 'A' for full auto-start macro,
+                     then 'p' to preview the path or 'r' for live coverage.
+                     The TUI ensures EKF/Nav2/Foxglove/tracker are all up
+                     in the right order before dispatching.
+
+Run (manual, if you know what you're doing):
   python3 scripts/coverage_node.py
-  (requires: Nav2 stack running via mac_brain_launch.sh nav <map>)
+  (requires: EKF + Nav2 stack already running with /odometry/filtered
+   flowing and /navigate_to_pose action server alive)
 
 Parameters:
   pad_width            : width of the vacuum suction pad (m). Default 0.10478.

@@ -96,11 +96,13 @@ class SlamPanel(Widget):
             self._show_result("[yellow]Enter a map name first[/]")
             return
 
-        self._show_result(f"[dim]Saving map '{name}'...[/]")
-        if self.app.pm.save_map(name):
-            self._show_result(f"[green]Map saved: ~/maps/{name}[/]")
-        else:
-            self._show_result(f"[red]Failed to save map '{name}'[/]")
+        # save_map is now async (worker thread); UI shows pending status,
+        # log line arrives 5-15s later when map_saver_cli completes.
+        self.app.pm.save_map(name)
+        self._show_result(
+            f"[yellow]Map save dispatched: ~/maps/{name}[/]\n"
+            f"[dim]Watch log for 'Map save \"{name}\": OK'[/]"
+        )
 
     def _show_result(self, msg: str) -> None:
         try:

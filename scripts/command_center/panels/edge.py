@@ -91,12 +91,17 @@ class EdgePanel(Widget):
             try:
                 statuses = self.app.pm.pi_all_service_status()
                 self._service_statuses = statuses
-                # Schedule UI update on main thread
                 try:
                     self.app.call_from_thread(self._apply_service_statuses)
                     self.app.call_from_thread(
                         self._show_result, "[green]Refreshed[/]"
                     )
+                    # Auto-clear after 4s so a stale "Refreshed" doesn't
+                    # mask a later operation's feedback. This was the
+                    # "stuck refresh" UX bug — message persisting forever.
+                    self.app.call_from_thread(
+                        self.set_timer, 4.0,
+                        lambda: self._show_result(" "))
                 except Exception:
                     pass  # App may have shut down
             except Exception:
@@ -104,6 +109,9 @@ class EdgePanel(Widget):
                     self.app.call_from_thread(
                         self._show_result, "[red]SSH refresh failed[/]"
                     )
+                    self.app.call_from_thread(
+                        self.set_timer, 8.0,
+                        lambda: self._show_result(" "))
                 except Exception:
                     pass
             finally:

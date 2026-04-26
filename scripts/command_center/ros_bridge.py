@@ -48,36 +48,18 @@ class RosBridge:
             # Edge health (from /rovac/edge/health)
             'edge_health': {},  # full parsed JSON
 
-            # Ultrasonic (from /super_sensor/range/*)
-            'ultra_front_top': float('inf'),
-            'ultra_front_bottom': float('inf'),
+            # Ultrasonic (from /sensors/ultrasonic/* — ESP32 sensor hub)
+            'ultra_front': float('inf'),
+            'ultra_rear': float('inf'),
             'ultra_left': float('inf'),
             'ultra_right': float('inf'),
-            'obstacle_detected': False,
+            'cliff_detected': False,
 
-            # Phone IMU (from /phone/imu, best_effort, 50 Hz)
-            'phone_imu_hz': 0.0,
-            'phone_accel_x': 0.0, 'phone_accel_y': 0.0, 'phone_accel_z': 0.0,
-            'phone_gyro_x': 0.0, 'phone_gyro_y': 0.0, 'phone_gyro_z': 0.0,
-            'phone_orient_roll': 0.0, 'phone_orient_pitch': 0.0, 'phone_orient_yaw': 0.0,
-
-            # BNO055 IMU (from /imu/data, best_effort)
+            # BNO055 IMU (from /imu/data, best_effort, 20 Hz)
             'bno055_imu_hz': 0.0,
             'bno055_accel_x': 0.0, 'bno055_accel_y': 0.0, 'bno055_accel_z': 0.0,
             'bno055_gyro_x': 0.0, 'bno055_gyro_y': 0.0, 'bno055_gyro_z': 0.0,
             'bno055_orient_roll': 0.0, 'bno055_orient_pitch': 0.0, 'bno055_orient_yaw': 0.0,
-
-            # Phone GPS (from /phone/gps/fix, best_effort, ~1 Hz)
-            'phone_gps_hz': 0.0,
-            'phone_lat': 0.0, 'phone_lon': 0.0, 'phone_alt': 0.0,
-            'phone_gps_status': -1,  # -1=no fix, 0=fix
-
-            # Phone Camera (from /phone/camera/image_raw/compressed, best_effort, ~2 FPS)
-            'phone_camera_hz': 0.0,
-            'phone_camera_bytes': 0,
-
-            # Flashlight
-            'phone_flashlight_on': False,
 
             # cmd_vel being sent
             'cmd_vel_linear': 0.0, 'cmd_vel_angular': 0.0,
@@ -95,9 +77,6 @@ class RosBridge:
 
         # Publishers (set after node creation)
         self._pub_cmd_vel = None
-        self._pub_led = None
-        self._pub_servo = None
-        self._pub_flashlight = None
 
     def start(self):
         """Start the ROS2 spin thread. Call this once."""
@@ -105,14 +84,37 @@ class RosBridge:
         self._thread.start()
 
     def stop(self):
-        """Shutdown ROS2."""
-        if self._node:
-            self._node.destroy_node()
+        """Shutdown the ROS2 node, publisher(s), and spin thread.
+        Best-effort — failures here must not block app exit."""
+        # 1) Tear down explicit publishers/subscribers we hold references to
         try:
-            import rclpy
-            rclpy.shutdown()
+            if self._node and self._pub_cmd_vel is not None:
+                self._node.destroy_publisher(self._pub_cmd_vel)
+                self._pub_cmd_vel = None
         except Exception:
             pass
+        # 2) Destroy the node (which destroys remaining subs/pubs)
+        try:
+            if self._node:
+                self._node.destroy_node()
+                self._node = None
+        except Exception:
+            pass
+        # 3) Tell rclpy to shut down (lets the spin thread return)
+        try:
+            import rclpy
+            if rclpy.ok():
+                rclpy.shutdown()
+        except Exception:
+            pass
+        # 4) Join the spin thread with a short timeout. Daemon=True means
+        # we'd survive without this, but joining ensures clean teardown
+        # (no rclpy access after shutdown) when the process is reused.
+        if self._thread and self._thread.is_alive():
+            try:
+                self._thread.join(timeout=2.0)
+            except Exception:
+                pass
 
     def get_state(self) -> dict:
         """Return a snapshot of state (thread-safe)."""
@@ -143,36 +145,6 @@ class RosBridge:
         with self.lock:
             self.state['cmd_vel_linear'] = linear
             self.state['cmd_vel_angular'] = angular
-
-    def publish_led(self, r: int, g: int, b: int):
-        """Publish LED color to /super_sensor/led_cmd."""
-        if self._pub_led is None:
-            return
-        from std_msgs.msg import Int32MultiArray
-        msg = Int32MultiArray()
-        msg.data = [r, g, b]
-        self._pub_led.publish(msg)
-
-    def publish_servo(self, angle: int):
-        """Publish servo angle to /super_sensor/servo_cmd."""
-        if self._pub_servo is None:
-            return
-        from std_msgs.msg import Int32MultiArray
-        msg = Int32MultiArray()
-        msg.data = [angle]
-        self._pub_servo.publish(msg)
-
-    def publish_flashlight(self, on: bool):
-        """Publish flashlight state to /phone/flashlight."""
-        if self._pub_flashlight is None:
-            return
-        from std_msgs.msg import Bool
-        msg = Bool()
-        msg.data = on
-        self._pub_flashlight.publish(msg)
-        with self.lock:
-            self.state['phone_flashlight_on'] = on
-        self.add_log(f'Flashlight {"ON" if on else "OFF"}')
 
     def _run(self):
         """ROS2 spin loop (runs in daemon thread)."""
@@ -228,14 +200,16 @@ class RosBridge:
             self._node.create_subscription(DiagnosticArray, '/diagnostics', self._on_diagnostics, best_effort_qos)
             self._node.create_subscription(String, '/rovac/edge/health', self._on_edge_health, 10)
 
-            # Ultrasonic range topics
-            for direction in ['front_top', 'front_bottom', 'left', 'right']:
+            # ESP32 sensor hub ultrasonic + cliff (replaces retired super_sensor)
+            for direction in ['front', 'rear', 'left', 'right']:
                 self._node.create_subscription(
-                    Range, f'/super_sensor/range/{direction}',
+                    Range, f'/sensors/ultrasonic/{direction}',
                     lambda msg, d=direction: self._on_range(msg, d),
                     best_effort_qos
                 )
-            self._node.create_subscription(Bool, '/super_sensor/obstacle_detected', self._on_obstacle, best_effort_qos)
+            self._node.create_subscription(
+                Bool, '/sensors/cliff/detected',
+                self._on_cliff, best_effort_qos)
 
             # Monitor current cmd_vel output
             self._node.create_subscription(Twist, '/cmd_vel', self._on_cmd_vel_out, best_effort_qos)
@@ -299,25 +273,16 @@ class RosBridge:
                 OccupancyGrid, '/coverage/visited',
                 self._on_coverage_visited, visited_qos)
 
-            # Phone sensor topics (via rosbridge WebSocket on Pi :9090)
-            from sensor_msgs.msg import Imu, NavSatFix, CompressedImage
-            self._hz['phone_imu'] = HzTracker()
-            self._hz['phone_gps'] = HzTracker()
-            self._hz['phone_camera'] = HzTracker()
+            # BNO055 IMU (the ONE remaining IMU after phone retirement)
+            from sensor_msgs.msg import Imu
             self._hz['bno055_imu'] = HzTracker()
-
-            self._node.create_subscription(Imu, '/phone/imu', self._on_phone_imu, best_effort_qos)
-            self._node.create_subscription(NavSatFix, '/phone/gps/fix', self._on_phone_gps, best_effort_qos)
-            self._node.create_subscription(CompressedImage, '/phone/camera/image_raw/compressed', self._on_phone_camera, best_effort_qos)
-            self._node.create_subscription(Imu, '/imu/data', self._on_bno055_imu, best_effort_qos)
+            self._node.create_subscription(
+                Imu, '/imu/data', self._on_bno055_imu, best_effort_qos)
 
             # --- Publishers ---
             # cmd_vel_teleop must be RELIABLE (depth 10) to match the mux subscriber.
             # best_effort publisher + reliable subscriber = QoS mismatch = no delivery.
             self._pub_cmd_vel = self._node.create_publisher(Twist, '/cmd_vel_teleop', 10)
-            self._pub_led = self._node.create_publisher(Int32MultiArray, '/super_sensor/led_cmd', 10)
-            self._pub_servo = self._node.create_publisher(Int32MultiArray, '/super_sensor/servo_cmd', 10)
-            self._pub_flashlight = self._node.create_publisher(Bool, '/phone/flashlight', 10)
 
             with self.lock:
                 self.state['ros_connected'] = True
@@ -394,13 +359,15 @@ class RosBridge:
             pass
 
     def _on_range(self, msg, direction):
+        """ESP32 sensor hub ultrasonic — direction is one of front/rear/left/right."""
         key = f'ultra_{direction}'
         with self.lock:
             self.state[key] = msg.range
 
-    def _on_obstacle(self, msg):
+    def _on_cliff(self, msg):
+        """Sharp IR cliff detector — True if any sensor reads cliff."""
         with self.lock:
-            self.state['obstacle_detected'] = msg.data
+            self.state['cliff_detected'] = msg.data
 
     def _on_cmd_vel_out(self, msg):
         # This monitors the mux OUTPUT (what actually reaches motors)
@@ -427,72 +394,31 @@ class RosBridge:
             self.state['coverage_total'] = len(msg.poses)
 
     def _on_coverage_visited(self, msg):
-        """OccupancyGrid where 100=visited, -1=untouched. Compute coverage %."""
+        """OccupancyGrid where 100=visited, -1=untouched. Compute coverage %.
+
+        All state reads/writes happen under the lock — including the read
+        of coverage_free_cells, which in the previous version was outside
+        the lock. The fallback computation (counting non-(-1) cells) is
+        done OUTSIDE the lock to avoid holding it during a million-cell
+        scan; we only enter the lock to read+write final values.
+        """
         try:
             data = msg.data
             visited = sum(1 for v in data if v == 100)
             with self.lock:
+                free_from_map = self.state.get('coverage_free_cells', 0)
+            free_total = free_from_map
+            if free_total == 0:
+                # /map hasn't been received yet — derive denominator from
+                # the visited grid's own non-unknown cells. Done outside
+                # the lock since it's another full scan of the data.
+                free_total = sum(1 for v in data if v != -1)
+            with self.lock:
                 self.state['coverage_visited_cells'] = visited
-                # Total free cells comes from /map (already tracked); fallback
-                # to non-(-1) cells if /map hasn't been received here yet.
-                free_total = self.state.get('coverage_free_cells', 0)
-                if free_total == 0:
-                    free_total = sum(1 for v in data if v != -1)
                 if free_total > 0:
                     self.state['coverage_pct'] = 100.0 * visited / free_total
         except Exception:
             pass
-
-    def _on_phone_imu(self, msg):
-        self._hz['phone_imu'].tick()
-        # Accelerometer
-        ax = msg.linear_acceleration.x
-        ay = msg.linear_acceleration.y
-        az = msg.linear_acceleration.z
-        # Gyroscope
-        gx = msg.angular_velocity.x
-        gy = msg.angular_velocity.y
-        gz = msg.angular_velocity.z
-        # Orientation from quaternion → euler
-        q = msg.orientation
-        # Roll
-        sinr = 2.0 * (q.w * q.x + q.y * q.z)
-        cosr = 1.0 - 2.0 * (q.x * q.x + q.y * q.y)
-        roll = math.atan2(sinr, cosr)
-        # Pitch
-        sinp = 2.0 * (q.w * q.y - q.z * q.x)
-        pitch = math.asin(max(-1.0, min(1.0, sinp)))
-        # Yaw
-        siny = 2.0 * (q.w * q.z + q.x * q.y)
-        cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-        yaw = math.atan2(siny, cosy)
-
-        with self.lock:
-            self.state['phone_imu_hz'] = self._hz['phone_imu'].hz()
-            self.state['phone_accel_x'] = ax
-            self.state['phone_accel_y'] = ay
-            self.state['phone_accel_z'] = az
-            self.state['phone_gyro_x'] = gx
-            self.state['phone_gyro_y'] = gy
-            self.state['phone_gyro_z'] = gz
-            self.state['phone_orient_roll'] = math.degrees(roll)
-            self.state['phone_orient_pitch'] = math.degrees(pitch)
-            self.state['phone_orient_yaw'] = math.degrees(yaw)
-
-    def _on_phone_gps(self, msg):
-        self._hz['phone_gps'].tick()
-        with self.lock:
-            self.state['phone_gps_hz'] = self._hz['phone_gps'].hz()
-            self.state['phone_lat'] = msg.latitude
-            self.state['phone_lon'] = msg.longitude
-            self.state['phone_alt'] = msg.altitude
-            self.state['phone_gps_status'] = msg.status.status
-
-    def _on_phone_camera(self, msg):
-        self._hz['phone_camera'].tick()
-        with self.lock:
-            self.state['phone_camera_hz'] = self._hz['phone_camera'].hz()
-            self.state['phone_camera_bytes'] = len(msg.data)
 
     def _on_bno055_imu(self, msg):
         self._hz['bno055_imu'].tick()
