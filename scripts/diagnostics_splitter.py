@@ -63,21 +63,21 @@ class DiagnosticsSplitter(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )
-        self._publishers = {}
+        self._diag_pubs = {}
         # Pre-create the known-source publishers so Foxglove sees the
         # topics immediately rather than waiting for a matching message.
         for _, basename in ROUTES:
             topic = f"/diag/{basename}"
-            self._publishers[topic] = self.create_publisher(
+            self._diag_pubs[topic] = self.create_publisher(
                 DiagnosticStatus, topic, latched)
-        self._publishers["/diag/other"] = self.create_publisher(
+        self._diag_pubs["/diag/other"] = self.create_publisher(
             DiagnosticStatus, "/diag/other", latched)
 
         self.create_subscription(
             DiagnosticArray, "/diagnostics", self._on_diag, 10)
         self.get_logger().info(
             f"diagnostics_splitter up — routing /diagnostics into "
-            f"{len(self._publishers)} per-source latched topics."
+            f"{len(self._diag_pubs)} per-source latched topics."
         )
 
     def _on_diag(self, msg: DiagnosticArray):
@@ -87,7 +87,7 @@ class DiagnosticsSplitter(Node):
                 if matcher.match(status.name):
                     topic = f"/diag/{basename}"
                     break
-            pub = self._publishers.get(topic)
+            pub = self._diag_pubs.get(topic)
             if pub is None:
                 continue
             pub.publish(status)
