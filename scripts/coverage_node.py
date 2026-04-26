@@ -64,7 +64,7 @@ try:
     from rclpy.action import ActionClient
     from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
     from nav_msgs.msg import OccupancyGrid, Path
-    from geometry_msgs.msg import PoseStamped
+    from geometry_msgs.msg import PoseStamped, Twist
     from nav2_msgs.action import NavigateToPose
     from action_msgs.msg import GoalStatus
 except ImportError as e:
@@ -112,6 +112,23 @@ class CoverageNode(Node):
         self.map_msg: OccupancyGrid | None = None
         self.waypoints: list[tuple[float, float, float]] = []
         self._dispatched = False
+
+        # Mux-input watchdog: count messages on higher-priority mux inputs
+        # (teleop = 1, joy = 2). If either publishes during our run, it
+        # silently overrides Nav2's cmd_vel_smoothed and the robot won't
+        # follow the plan. Most common cause: a stale keyboard_teleop.py
+        # process the user thought they killed. We refuse to start until
+        # those topics are silent.
+        self._teleop_msgs_seen = 0
+        self._joy_msgs_seen = 0
+        self.create_subscription(
+            Twist, "/cmd_vel_teleop",
+            lambda _msg: setattr(self, "_teleop_msgs_seen", self._teleop_msgs_seen + 1),
+            10)
+        self.create_subscription(
+            Twist, "/cmd_vel_joy",
+            lambda _msg: setattr(self, "_joy_msgs_seen", self._joy_msgs_seen + 1),
+            10)
 
         # /map is typically published as transient_local (latched). Subscribe
         # with matching QoS or we'll never receive it.
@@ -176,6 +193,16 @@ class CoverageNode(Node):
                 "Nav2 action server /navigate_to_pose not ready — "
                 "is nav2_launch.py running?"
             )
+            return
+
+        # MUX PREFLIGHT — refuse to dispatch if a higher-priority cmd_vel
+        # source is publishing. Sample for 1s; if anything arrives on
+        # /cmd_vel_teleop or /cmd_vel_joy in that window, it'll silently
+        # override Nav2's commands at the mux and the robot won't move.
+        # This is the kind of failure that took 7 minutes to diagnose
+        # because the robot LOOKS like it's being commanded but cmd_vel
+        # arrives at the motors as zeros.
+        if not self._mux_preflight_ok():
             return
 
         self.get_logger().info("Planning coverage path...")
@@ -312,6 +339,44 @@ class CoverageNode(Node):
             f"Published /coverage_path with {len(path.poses)} poses. "
             "View in Foxglove 3D panel, map frame."
         )
+
+    def _mux_preflight_ok(self) -> bool:
+        """Sample higher-priority mux inputs for 1s; refuse if anyone is alive.
+
+        Returns True if /cmd_vel_teleop and /cmd_vel_joy are both silent.
+        Returns False (and logs an actionable error) otherwise.
+        """
+        teleop_baseline = self._teleop_msgs_seen
+        joy_baseline = self._joy_msgs_seen
+        # Use the executor to actually receive messages during this window
+        # (we're inside the timer callback so spinning happens around us).
+        end_time = self.get_clock().now() + rclpy.duration.Duration(seconds=1.0)
+        while self.get_clock().now() < end_time:
+            rclpy.spin_once(self, timeout_sec=0.1)
+        teleop_count = self._teleop_msgs_seen - teleop_baseline
+        joy_count = self._joy_msgs_seen - joy_baseline
+        if teleop_count == 0 and joy_count == 0:
+            return True
+
+        msgs = []
+        if teleop_count > 0:
+            msgs.append(f"/cmd_vel_teleop publishing at ~{teleop_count} Hz")
+        if joy_count > 0:
+            msgs.append(f"/cmd_vel_joy publishing at ~{joy_count} Hz")
+        self.get_logger().error(
+            "MUX PREFLIGHT FAILED — refusing to dispatch coverage:\n"
+            f"  {' AND '.join(msgs)}\n"
+            "  These topics have HIGHER mux priority than Nav2 — they will\n"
+            "  silently override every command Nav2 sends. Until silenced,\n"
+            "  the robot will twitch (during gaps) but never reach a goal.\n"
+            "\n"
+            "  Most common cause: a stale keyboard_teleop.py running on the\n"
+            "  Pi from a previous session that you Ctrl-C'd locally but the\n"
+            "  remote process kept running.\n"
+            "  Fix: ssh pi@192.168.1.200 'pkill -9 -f keyboard_teleop'\n"
+        )
+        rclpy.shutdown()
+        return False
 
     def _send_next_waypoint(self):
         """Dispatch the next waypoint in the coverage plan via NavigateToPose."""

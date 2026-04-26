@@ -35,7 +35,23 @@ PI_SCRIPT = "~/robots/rovac/scripts/keyboard_teleop.py"
 
 
 def ssh_to_pi(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10.0):
-    """Replace this process with an SSH session to the Pi running the teleop."""
+    """Run a remote keyboard_teleop on the Pi, with guaranteed cleanup
+    of the remote Python process when this local wrapper exits.
+
+    We used to `os.execvp` into ssh — but execvp replaces this process,
+    so atexit handlers don't fire and the remote keyboard_teleop kept
+    publishing /cmd_vel_teleop forever after the local user Ctrl-C'd.
+    That stale publisher silently overrides Nav2 (mux priority 1) and
+    breaks autonomous coverage runs.
+
+    Belt-and-suspenders: (a) run ssh as a child via subprocess so we
+    keep control here, (b) register an atexit handler that issues a
+    follow-up ssh "pkill" of the remote keyboard_teleop process tree,
+    (c) the remote python registers its own SIGHUP handler so even an
+    unclean SSH disconnect terminates it.
+    """
+    import atexit
+    import subprocess
     print(f"Connecting to Pi ({PI_HOST}) for lowest-latency control...")
     extra = ""
     if ramp_min != 0.25:
@@ -46,29 +62,76 @@ def ssh_to_pi(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10.
         extra += f" --linear-accel {linear_accel}"
     if angular_accel != 10.0:
         extra += f" --angular-accel {angular_accel}"
-    cmd = f"{PI_SETUP} && python3 {PI_SCRIPT} --local{extra}"
-    os.execvp("ssh", ["ssh", "-t", PI_HOST, cmd])
-    # execvp replaces the process — never returns
+    # The bash trap is the second line of defense: if SSH dies cleanly,
+    # this kills the python tree before the bash exits.
+    cmd = (
+        f'trap "pkill -9 -f keyboard_teleop.py" EXIT INT TERM HUP; '
+        f'{PI_SETUP} && python3 {PI_SCRIPT} --local{extra}'
+    )
+
+    def _kill_remote():
+        try:
+            subprocess.run(
+                ["ssh", "-o", "ConnectTimeout=3", PI_HOST,
+                 "pkill -9 -f keyboard_teleop.py 2>/dev/null; "
+                 "pkill -9 -f 'ros2 topic pub.*cmd_vel_teleop' 2>/dev/null; "
+                 "true"],
+                timeout=5, capture_output=True)
+        except Exception:
+            pass
+    atexit.register(_kill_remote)
+
+    try:
+        # ServerAliveInterval forces SSH to detect a dead Mac quickly so
+        # the remote bash trap fires (instead of hanging on a dead TCP).
+        rc = subprocess.call([
+            "ssh", "-t",
+            "-o", "ServerAliveInterval=2",
+            "-o", "ServerAliveCountMax=2",
+            PI_HOST, cmd])
+        sys.exit(rc)
+    except KeyboardInterrupt:
+        # Cleanup happens via atexit; nothing else to do.
+        sys.exit(130)
 
 
 def _kill_stale_cmd_vel_publishers():
-    """Kill any stale processes publishing to cmd_vel_teleop.
-    These ghost processes override real teleop commands and cause
-    the robot to appear unresponsive."""
+    """Kill any stale process holding the /cmd_vel_teleop publisher.
+
+    Two categories:
+      1. Manual `ros2 topic pub /cmd_vel_teleop ...` invocations.
+      2. OTHER keyboard_teleop.py processes (the dangerous one — this is
+         what caused 7 minutes of "robot won't move" debugging because a
+         previous SSH session left its remote python alive).
+
+    Always run this at startup so we know we own /cmd_vel_teleop exclusively.
+    """
     import subprocess
-    try:
-        result = subprocess.run(
-            ["pgrep", "-f", "ros2 topic pub.*cmd_vel_teleop"],
-            capture_output=True, text=True, timeout=2)
-        pids = result.stdout.strip().split('\n')
-        my_pid = str(os.getpid())
-        for pid in pids:
-            pid = pid.strip()
-            if pid and pid != my_pid:
-                print(f"Killing stale cmd_vel_teleop publisher (PID {pid})")
-                subprocess.run(["kill", pid], timeout=2)
-    except Exception:
-        pass  # Best-effort cleanup
+    my_pid = str(os.getpid())
+    patterns = [
+        "ros2 topic pub.*cmd_vel_teleop",
+        "keyboard_teleop\\.py",
+    ]
+    for pattern in patterns:
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", pattern],
+                capture_output=True, text=True, timeout=2)
+            pids = result.stdout.strip().split('\n')
+            for pid in pids:
+                pid = pid.strip()
+                if pid and pid != my_pid:
+                    # Verify the PID still matches the pattern (avoid
+                    # killing wrong process if PID was recycled)
+                    cmdline = subprocess.run(
+                        ["ps", "-p", pid, "-o", "command="],
+                        capture_output=True, text=True, timeout=2).stdout
+                    if pattern.replace("\\", "") in cmdline or "cmd_vel_teleop" in cmdline:
+                        print(f"Killing stale teleop process PID {pid}: "
+                              f"{cmdline.strip()[:60]}")
+                        subprocess.run(["kill", "-9", pid], timeout=2)
+        except Exception:
+            pass  # Best-effort cleanup
 
 
 def run_teleop(ramp_min=0.25, ramp_repeats=6, linear_accel=1.5, angular_accel=10.0):
