@@ -240,6 +240,35 @@ class RosBridge:
             # Monitor current cmd_vel output
             self._node.create_subscription(Twist, '/cmd_vel', self._on_cmd_vel_out, best_effort_qos)
 
+            # Mux pipeline rate tracking — used by Coverage panel to detect
+            # zombie /cmd_vel_teleop publishers that silently override Nav2.
+            from rclpy.qos import ReliabilityPolicy
+            reliable_qos = QoSProfile(
+                reliability=ReliabilityPolicy.RELIABLE,
+                history=HistoryPolicy.KEEP_LAST, depth=10,
+                durability=DurabilityPolicy.VOLATILE,
+            )
+            self._hz['cmd_vel_teleop'] = HzTracker()
+            self._hz['cmd_vel_joy'] = HzTracker()
+            self._hz['cmd_vel_smoothed'] = HzTracker()
+            self._hz['cmd_vel'] = HzTracker()
+            self._node.create_subscription(
+                Twist, '/cmd_vel_teleop',
+                lambda _msg: self._tick_pipeline('cmd_vel_teleop'),
+                reliable_qos)
+            self._node.create_subscription(
+                Twist, '/cmd_vel_joy',
+                lambda _msg: self._tick_pipeline('cmd_vel_joy'),
+                reliable_qos)
+            self._node.create_subscription(
+                Twist, '/cmd_vel_smoothed',
+                lambda _msg: self._tick_pipeline('cmd_vel_smoothed'),
+                reliable_qos)
+            self._node.create_subscription(
+                Twist, '/cmd_vel',
+                lambda _msg: self._tick_pipeline('cmd_vel'),
+                reliable_qos)
+
             # Phone sensor topics (via rosbridge WebSocket on Pi :9090)
             from sensor_msgs.msg import Imu, NavSatFix, CompressedImage
             self._hz['phone_imu'] = HzTracker()
@@ -344,6 +373,15 @@ class RosBridge:
         # This monitors the mux OUTPUT (what actually reaches motors)
         # Don't overwrite cmd_vel_linear/angular which track what WE publish
         pass
+
+    def _tick_pipeline(self, key: str):
+        """Update HZ for a cmd_vel pipeline topic. Used by Coverage panel."""
+        tracker = self._hz.get(key)
+        if tracker is None:
+            return
+        tracker.tick()
+        with self.lock:
+            self.state[f'{key}_hz'] = tracker.hz()
 
     def _on_phone_imu(self, msg):
         self._hz['phone_imu'].tick()

@@ -25,10 +25,33 @@ class RovacCommandCenter(App):
     }
 
     /* ── Panel widgets fill their TabPane ───────────── */
-    DashboardPanel, DrivePanel, SensorsPanel, SlamPanel, EdgePanel, PhonePanel {
+    DashboardPanel, DrivePanel, SensorsPanel, SlamPanel, EdgePanel, PhonePanel, CoveragePanel {
         height: 1fr;
         overflow-y: auto;
         padding: 0 1;
+    }
+
+    /* ── Coverage panel rows ──────────────────────────── */
+    #cov-row-1, #cov-row-2, #cov-row-3 {
+        layout: horizontal;
+        height: auto;
+    }
+    #cov-row-1 > .panel-box-green,
+    #cov-row-1 > .panel-box-blue,
+    #cov-row-1 > .panel-box-cyan {
+        width: 1fr;
+    }
+    #cov-row-2 > .panel-box-yellow,
+    #cov-row-2 > .panel-box-magenta {
+        width: 1fr;
+    }
+    #cov-row-3 > .panel-box-blue,
+    #cov-row-3 > .panel-box-green {
+        width: 1fr;
+    }
+    #cov-map-input {
+        width: 50;
+        margin: 0 1;
     }
 
     /* ── Shared panel styling ─────────────────────────── */
@@ -165,6 +188,7 @@ class RovacCommandCenter(App):
         Binding("4", "switch_tab('slam')", "SLAM", show=True),
         Binding("5", "switch_tab('edge')", "Edge", show=True),
         Binding("6", "switch_tab('phone')", "Phone", show=True),
+        Binding("7", "switch_tab('coverage')", "Coverage", show=True),
         # Arrow keys — priority bindings to intercept before Tabs widget
         Binding("left", "arrow('left')", show=False, priority=True),
         Binding("right", "arrow('right')", show=False, priority=True),
@@ -217,6 +241,9 @@ class RovacCommandCenter(App):
             with TabPane("Phone", id="tab-phone"):
                 from .panels.phone import PhonePanel
                 yield PhonePanel()
+            with TabPane("Coverage", id="tab-coverage"):
+                from .panels.coverage import CoveragePanel
+                yield CoveragePanel()
         yield Footer()
 
     def on_mount(self) -> None:
@@ -239,8 +266,10 @@ class RovacCommandCenter(App):
         from .panels.slam import SlamPanel
         from .panels.edge import EdgePanel
         from .panels.phone import PhonePanel
+        from .panels.coverage import CoveragePanel
 
-        for PanelType in (DashboardPanel, DrivePanel, SensorsPanel, SlamPanel, EdgePanel, PhonePanel):
+        for PanelType in (DashboardPanel, DrivePanel, SensorsPanel, SlamPanel,
+                          EdgePanel, PhonePanel, CoveragePanel):
             try:
                 panel = self.query_one(PanelType)
                 panel.update_state(state, logs, proc_status)
@@ -282,6 +311,12 @@ class RovacCommandCenter(App):
             from .panels.edge import EdgePanel
             try:
                 handled = self.query_one(EdgePanel).process_key(event.key)
+            except Exception as e:
+                self._log(f"Key dispatch error: {e}")
+        elif active == "tab-coverage":
+            from .panels.coverage import CoveragePanel
+            try:
+                handled = self.query_one(CoveragePanel).process_key(event.key)
             except Exception as e:
                 self._log(f"Key dispatch error: {e}")
         elif active == "tab-phone":

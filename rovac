@@ -1,0 +1,54 @@
+#!/bin/bash
+# rovac — single-command launcher for the ROVAC Command Center TUI.
+#
+# Activates the conda env, sources the ROS2 environment, and runs the
+# Textual TUI. Pass any command-center args after `rovac` (e.g.
+# `./rovac --no-ros` for UI testing without ROS2).
+#
+# The Coverage tab (key '7' inside the TUI) is the canonical workflow
+# screen for autonomous vacuuming runs — start there if you don't know
+# where to start.
+
+set -e
+
+ROVAC_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Activate conda
+if ! command -v conda &> /dev/null; then
+    if [ -x "/opt/homebrew/bin/conda" ]; then
+        eval "$(/opt/homebrew/bin/conda shell.bash hook)"
+    else
+        echo "Error: conda not found. Install miniforge or set up conda." >&2
+        exit 1
+    fi
+else
+    eval "$(conda shell.bash hook)"
+fi
+
+if conda env list | grep -q "^ros_jazzy "; then
+    conda activate ros_jazzy
+else
+    echo "Error: 'ros_jazzy' conda env not found." >&2
+    exit 1
+fi
+
+# Source ROS2 environment (sets DDS, peers, domain, etc.)
+ROS_ENV="$ROVAC_DIR/config/ros2_env.sh"
+if [ -f "$ROS_ENV" ]; then
+    # shellcheck disable=SC1090
+    source "$ROS_ENV"
+else
+    echo "Warning: $ROS_ENV not found — using minimal defaults" >&2
+    export ROS_DOMAIN_ID=42
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+fi
+
+# Make sure textual is available; install on demand
+if ! python3 -c 'import textual' 2>/dev/null; then
+    echo "Installing textual into ros_jazzy env..."
+    pip install --quiet textual
+fi
+
+# Run the command center; PYTHONPATH so `python3 -m command_center` resolves
+export PYTHONPATH="$ROVAC_DIR/scripts:$PYTHONPATH"
+exec python3 -m command_center "$@"

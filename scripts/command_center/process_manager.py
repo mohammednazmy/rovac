@@ -1,10 +1,24 @@
+"""ROVAC Command Center — Process Manager.
+
+Local Mac process lifecycle (EKF, Nav2, SLAM, Foxglove, Coverage planner,
+Coverage tracker), Pi systemd service control via SSH, plus utilities for
+the kinds of incidents that have actually broken live runs:
+
+  - "Stale keyboard_teleop on Pi blocks Nav2 because /cmd_vel_teleop has
+     mux priority 1" → kill_zombie_teleop()
+  - "Nav2 lifecycle stuck inactive after cold start" → recover_nav2_lifecycle()
+
+Use these as primitives from any panel.
+"""
 import os
-import subprocess
 import signal
+import socket
+import subprocess
 
 ROVAC_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# ROS2 launch commands (run on Mac)
+# ── Mac-side launch commands ───────────────────────────────────────────
+
 SLAM_CMD = [
     'ros2', 'launch', 'slam_toolbox', 'online_async_launch.py',
     f'slam_params_file:={ROVAC_DIR}/config/slam_params.yaml',
@@ -16,26 +30,36 @@ FOXGLOVE_CMD = [
     'port:=8765'
 ]
 
-NAV2_CMD_TEMPLATE = [
-    'ros2', 'launch', 'nav2_bringup', 'bringup_launch.py',
-    'use_sim_time:=false',
-    f'params_file:={ROVAC_DIR}/config/nav2_params.yaml',
-    # 'map:=' gets appended
+EKF_CMD = [
+    'ros2', 'launch', f'{ROVAC_DIR}/scripts/ekf_launch.py',
 ]
 
-# Pi edge services
+# RoboStack doesn't ship nav2_bringup for osx-arm64; we hand-roll the
+# launch in scripts/nav2_launch.py.
+NAV2_CMD_TEMPLATE = [
+    'ros2', 'launch', f'{ROVAC_DIR}/scripts/nav2_launch.py',
+    f'params_file:={ROVAC_DIR}/config/nav2_params.yaml',
+    'use_sim_time:=false',
+    # 'map:=' gets appended at runtime
+]
+
+COVERAGE_NODE_CMD = ['python3', f'{ROVAC_DIR}/scripts/coverage_node.py']
+COVERAGE_TRACKER_CMD = ['python3', f'{ROVAC_DIR}/scripts/coverage_tracker.py']
+
+# ── Pi services (current set, post-retirement of phone/super_sensor) ───
+
 PI_SERVICES = [
     'rovac-edge-motor-driver',
+    'rovac-edge-sensor-hub',
     'rovac-edge-rplidar-c1',
     'rovac-edge-mux',
     'rovac-edge-tf',
-    'rovac-edge-obstacle',
-    'rovac-edge-supersensor',
     'rovac-edge-map-tf',
+    'rovac-edge-obstacle',
+    'rovac-edge-health',
+    'rovac-edge-diagnostics-splitter',
     'rovac-edge-ps2-joy',
     'rovac-edge-ps2-mapper',
-    'rovac-edge-health',
-    'rovac-edge-rosbridge',
 ]
 
 
@@ -46,8 +70,9 @@ class ProcessManager:
         self.log = log_fn or (lambda msg: None)
         self.processes = {}  # name -> subprocess.Popen
         self._stopped_map_tf = False
+        self._motor_tf_disabled = False
 
-    # --- Local process management ---
+    # ── Generic local process management ───────────────────────────────
 
     def _start_process(self, name: str, cmd: list) -> bool:
         if name in self.processes and self.processes[name].poll() is None:
@@ -81,8 +106,57 @@ class ProcessManager:
             self.log(f'Stopped {name}')
         self.processes.pop(name, None)
 
+    def stop_all(self):
+        for name in list(self.processes.keys()):
+            self._stop_process(name)
+        self._restore_pi_motor_tf()
+        self._start_pi_map_tf()
+
+    def get_status(self) -> dict:
+        result = {}
+        for name, proc in self.processes.items():
+            if proc.poll() is None:
+                result[name] = 'running'
+            else:
+                result[name] = f'exited ({proc.returncode})'
+
+        # Detect externally-started processes we didn't launch
+        if result.get('foxglove') != 'running' and self._port_listening(8765):
+            result['foxglove'] = 'running'
+        for proc_name, pattern in [
+            ('slam', 'slam_toolbox'),
+            ('nav2', 'nav2_launch.py'),
+            ('ekf', 'ekf_node'),
+            ('coverage', 'coverage_node.py'),
+            ('tracker', 'coverage_tracker.py'),
+        ]:
+            if result.get(proc_name) != 'running' and self._proc_running(pattern):
+                result[proc_name] = 'running (external)'
+        return result
+
+    @staticmethod
+    def _port_listening(port: int) -> bool:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.3)
+                return s.connect_ex(('127.0.0.1', port)) == 0
+        except Exception:
+            return False
+
+    @staticmethod
+    def _proc_running(pattern: str) -> bool:
+        try:
+            return subprocess.run(
+                ['pgrep', '-f', pattern],
+                capture_output=True, timeout=2
+            ).returncode == 0
+        except Exception:
+            return False
+
+    # ── Mac-side launchers ─────────────────────────────────────────────
+
     def start_slam(self) -> bool:
-        self._stop_pi_map_tf()  # SLAM provides dynamic map->odom
+        self._stop_pi_map_tf()
         return self._start_process('slam', SLAM_CMD)
 
     def stop_slam(self):
@@ -95,68 +169,41 @@ class ProcessManager:
     def stop_foxglove(self):
         self._stop_process('foxglove')
 
+    def start_ekf(self) -> bool:
+        self._disable_pi_motor_tf()
+        return self._start_process('ekf', EKF_CMD)
+
+    def stop_ekf(self):
+        self._stop_process('ekf')
+        self._restore_pi_motor_tf()
+
     def start_nav2(self, map_file: str) -> bool:
-        cmd = NAV2_CMD_TEMPLATE + [f'map:={map_file}']
         self._stop_pi_map_tf()
+        cmd = NAV2_CMD_TEMPLATE + [f'map:={map_file}']
         return self._start_process('nav2', cmd)
 
     def stop_nav2(self):
         self._stop_process('nav2')
         self._start_pi_map_tf()
 
-    def stop_all(self):
-        for name in list(self.processes.keys()):
-            self._stop_process(name)
-        self._start_pi_map_tf()
+    def start_coverage_tracker(self) -> bool:
+        return self._start_process('tracker', COVERAGE_TRACKER_CMD)
 
-    def get_status(self) -> dict:
-        result = {}
-        for name, proc in self.processes.items():
-            if proc.poll() is None:
-                result[name] = 'running'
-            else:
-                result[name] = f'exited ({proc.returncode})'
+    def stop_coverage_tracker(self):
+        self._stop_process('tracker')
 
-        # Detect externally-started processes we didn't launch
-        if 'foxglove' not in result or result['foxglove'] != 'running':
-            if self._is_port_listening(8765):
-                result['foxglove'] = 'running'
-        if 'slam' not in result or result['slam'] != 'running':
-            if self._is_process_running('slam_toolbox'):
-                result['slam'] = 'running'
-        if 'nav2' not in result or result['nav2'] != 'running':
-            if self._is_process_running('nav2_bringup'):
-                result['nav2'] = 'running'
+    def start_coverage(self, preview_only: bool = False) -> bool:
+        cmd = list(COVERAGE_NODE_CMD)
+        if preview_only:
+            cmd += ['--ros-args', '-p', 'preview_only:=true']
+        return self._start_process('coverage', cmd)
 
-        return result
+    def stop_coverage(self):
+        self._stop_process('coverage')
 
-    @staticmethod
-    def _is_port_listening(port: int) -> bool:
-        """Check if a local TCP port is listening."""
-        import socket
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(0.3)
-                return s.connect_ex(('127.0.0.1', port)) == 0
-        except Exception:
-            return False
-
-    @staticmethod
-    def _is_process_running(name: str) -> bool:
-        """Check if a process with the given name is running."""
-        try:
-            result = subprocess.run(
-                ['pgrep', '-f', name],
-                capture_output=True, timeout=2
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
-
-    # --- Pi service management via SSH ---
+    # ── Pi service control via SSH ─────────────────────────────────────
 
     def _ssh(self, cmd: str, timeout: int = 5) -> tuple:
-        """Run command on Pi via SSH. Returns (success, stdout)."""
         try:
             result = subprocess.run(
                 ['ssh', '-o', 'ConnectTimeout=3', '-o', 'BatchMode=yes',
@@ -168,23 +215,19 @@ class ProcessManager:
             return False, str(e)
 
     def pi_ssh_ok(self) -> bool:
-        ok, _ = self._ssh('true')
+        ok, _ = self._ssh('true', timeout=4)
         return ok
 
-    def pi_service_status(self, service: str) -> str:
-        """Returns 'active', 'inactive', 'failed', or 'unknown'."""
-        ok, out = self._ssh(f'systemctl is-active {service}')
-        return out if ok else (out if out in ('inactive', 'failed') else 'unknown')
-
     def pi_service_action(self, service: str, action: str) -> bool:
-        """Start/stop/restart a Pi service. Action: start|stop|restart."""
         ok, _ = self._ssh(f'sudo systemctl {action} {service}')
         self.log(f'Pi {action} {service}: {"OK" if ok else "FAILED"}')
         return ok
 
     def pi_all_service_status(self) -> dict:
-        """Get status of all known Pi services in one SSH call."""
-        cmd = ' && '.join(f'echo "{svc}:$(systemctl is-active {svc})"' for svc in PI_SERVICES)
+        cmd = ' && '.join(
+            f'echo "{svc}:$(systemctl is-active {svc})"'
+            for svc in PI_SERVICES
+        )
         ok, out = self._ssh(cmd, timeout=10)
         if not ok:
             return {svc: 'unknown' for svc in PI_SERVICES}
@@ -196,39 +239,155 @@ class ProcessManager:
         return result
 
     def _stop_pi_map_tf(self):
-        """Stop static map->odom TF (conflicts with SLAM's dynamic TF)."""
         ok, out = self._ssh('systemctl is-active rovac-edge-map-tf')
         if out.strip() == 'active':
             self._ssh('sudo systemctl stop rovac-edge-map-tf')
             self._stopped_map_tf = True
-            self.log('Stopped Pi static map->odom TF (SLAM provides it)')
+            self.log('Stopped Pi static map->odom TF (SLAM/Nav2 owns it now)')
 
     def _start_pi_map_tf(self):
-        """Re-enable static map->odom TF when SLAM exits."""
         if self._stopped_map_tf:
             self._ssh('sudo systemctl start rovac-edge-map-tf')
             self._stopped_map_tf = False
             self.log('Re-enabled Pi static map->odom TF')
 
+    def _disable_pi_motor_tf(self):
+        """Tell motor_driver_node to stop publishing odom→base_link TF.
+        EKF takes over; otherwise we'd have two publishers fighting."""
+        env_prefix = (
+            'source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && '
+            'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && '
+            'export CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml'
+        )
+        ok, _ = self._ssh(
+            f'{env_prefix} && ros2 param set /motor_driver_node publish_tf false',
+            timeout=8)
+        if ok:
+            self._motor_tf_disabled = True
+            self.log('Disabled motor_driver TF (EKF will publish odom->base_link)')
+
+    def _restore_pi_motor_tf(self):
+        if not self._motor_tf_disabled:
+            return
+        env_prefix = (
+            'source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && '
+            'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && '
+            'export CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml'
+        )
+        self._ssh(
+            f'{env_prefix} && ros2 param set /motor_driver_node publish_tf true',
+            timeout=8)
+        self._motor_tf_disabled = False
+        self.log('Re-enabled motor_driver TF publishing')
+
+    # ── Incident-specific recovery primitives ──────────────────────────
+
+    def kill_zombie_teleop(self) -> int:
+        """Kill ALL keyboard_teleop processes locally and on Pi.
+
+        Returns count killed across both. After this, /cmd_vel_teleop
+        publisher count should be 0, freeing the mux to forward Nav2.
+        """
+        n = 0
+        # Local
+        try:
+            r = subprocess.run(['pgrep', '-f', 'keyboard_teleop.py'],
+                               capture_output=True, text=True, timeout=3)
+            for pid in r.stdout.strip().split('\n'):
+                if pid.strip().isdigit() and int(pid) != os.getpid():
+                    subprocess.run(['kill', '-9', pid.strip()], timeout=2)
+                    n += 1
+        except Exception:
+            pass
+        # Remote
+        ok, out = self._ssh(
+            "pkill -9 -f keyboard_teleop.py 2>/dev/null; "
+            "pkill -9 -f 'ros2 topic pub.*cmd_vel_teleop' 2>/dev/null; "
+            "echo done", timeout=5)
+        if ok:
+            self.log(f'Killed {n} local + Pi-side teleop processes')
+        return n
+
+    def recover_nav2_lifecycle(self) -> bool:
+        """RESET → STARTUP via lifecycle_manager service.
+        Same primitive nav2_recover.py uses; convenient one-call form."""
+        env_prefix = (
+            'source ~/robots/rovac/config/ros2_env.sh 2>/dev/null; '
+        )
+        cmd_reset = (
+            f'ros2 service call /lifecycle_manager_navigation/manage_nodes '
+            f'nav2_msgs/srv/ManageLifecycleNodes "{{command: 3}}"'
+        )
+        cmd_startup = (
+            f'ros2 service call /lifecycle_manager_navigation/manage_nodes '
+            f'nav2_msgs/srv/ManageLifecycleNodes "{{command: 0}}"'
+        )
+        try:
+            r1 = subprocess.run(['bash', '-c', f'{env_prefix} timeout 10 {cmd_reset}'],
+                                capture_output=True, text=True, timeout=15)
+            r2 = subprocess.run(['bash', '-c', f'{env_prefix} timeout 25 {cmd_startup}'],
+                                capture_output=True, text=True, timeout=30)
+            ok = ('success=True' in r1.stdout and 'success=True' in r2.stdout)
+            self.log(f'Nav2 RESET+STARTUP: {"OK" if ok else "FAILED"}')
+            return ok
+        except Exception as e:
+            self.log(f'Nav2 recovery error: {e}')
+            return False
+
+    def query_nav2_lifecycle(self) -> dict:
+        """Return {node_name: state_label} for the 8 Nav2 managed nodes.
+
+        Uses one bash subprocess per node — unavoidable, since each
+        get_state is its own service call. The lifecycle list mirrors
+        scripts/nav2_launch.py's `lifecycle_nodes` exactly.
+        """
+        import re
+        nodes = ['/map_server', '/amcl', '/controller_server',
+                 '/planner_server', '/behavior_server', '/velocity_smoother',
+                 '/waypoint_follower', '/bt_navigator']
+        result = {n: 'unknown' for n in nodes}
+        env_prefix = 'source ~/robots/rovac/config/ros2_env.sh 2>/dev/null; '
+        label_re = re.compile(r"label='([a-z]+)'")
+        for n in nodes:
+            try:
+                r = subprocess.run(
+                    ['bash', '-c',
+                     f'{env_prefix} timeout 3 ros2 service call '
+                     f'{n}/get_state lifecycle_msgs/srv/GetState 2>/dev/null'],
+                    capture_output=True, text=True, timeout=5
+                )
+                m = label_re.search(r.stdout)
+                if m:
+                    result[n] = m.group(1)
+            except Exception:
+                pass
+        return result
+
+    def list_maps(self) -> list:
+        """Find saved Nav2 maps in ~/maps."""
+        maps_dir = os.path.expanduser('~/maps')
+        if not os.path.isdir(maps_dir):
+            return []
+        return sorted(
+            os.path.join(maps_dir, f)
+            for f in os.listdir(maps_dir)
+            if f.endswith('.yaml')
+        )
+
     def save_map(self, name: str) -> bool:
-        """Save SLAM map using ros2 service call."""
-        maps_dir = os.path.join(ROVAC_DIR, 'maps')
+        maps_dir = os.path.expanduser('~/maps')
         os.makedirs(maps_dir, exist_ok=True)
         filepath = os.path.join(maps_dir, name)
         try:
-            result = subprocess.run(
-                ['ros2', 'service', 'call', '/slam_toolbox/save_map',
-                 'slam_toolbox/srv/SaveMap',
-                 f'{{"name": {{"data": "{filepath}"}}}}'
-                 ],
-                capture_output=True, text=True, timeout=15
+            r = subprocess.run(
+                ['ros2', 'run', 'nav2_map_server', 'map_saver_cli',
+                 '-f', filepath,
+                 '--ros-args', '-p', 'map_subscribe_transient_local:=true'],
+                capture_output=True, text=True, timeout=20
             )
-            if result.returncode == 0:
-                self.log(f'Map saved to {filepath}')
-                return True
-            else:
-                self.log(f'Map save failed: {result.stderr}')
-                return False
+            ok = r.returncode == 0
+            self.log(f'Map save "{name}": {"OK" if ok else "FAILED"}')
+            return ok
         except Exception as e:
             self.log(f'Map save error: {e}')
             return False
