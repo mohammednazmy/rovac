@@ -23,11 +23,22 @@ class ObstacleAvoidanceNode(Node):
 
     # Sensor mounting positions relative to base_link (meters).
     # Measured 2026-04-20 after physical mounting on Yahboom G1 Tank chassis.
+    #
+    # min_valid: per-sensor floor for accepting a reading. Anything below
+    # this is filtered out (treated as no obstacle). The front sensor sits
+    # 4cm above the floor with a 30° forward cone; geometrically the floor
+    # enters its cone at ~14cm, so any reading <13cm is floor-bounce, not
+    # a real obstacle. Without this filter the floor reading triggered
+    # permanent emergency stop. Tune per-sensor based on its mount.
     SENSOR_CONFIG = {
-        "front": {"pos": (0.250, 0.0, 0.04), "dir": (1.0, 0.0, 0.0)},
-        "rear":  {"pos": (-0.115, 0.0, 0.04), "dir": (-1.0, 0.0, 0.0)},
-        "left":  {"pos": (0.0, 0.067, 0.04), "dir": (0.0, 1.0, 0.0)},
-        "right": {"pos": (0.0, -0.067, 0.04), "dir": (0.0, -1.0, 0.0)},
+        "front": {"pos": (0.250, 0.0, 0.04), "dir": (1.0, 0.0, 0.0),
+                  "min_valid": 0.13},
+        "rear":  {"pos": (-0.115, 0.0, 0.04), "dir": (-1.0, 0.0, 0.0),
+                  "min_valid": 0.05},
+        "left":  {"pos": (0.0, 0.067, 0.04), "dir": (0.0, 1.0, 0.0),
+                  "min_valid": 0.05},
+        "right": {"pos": (0.0, -0.067, 0.04), "dir": (0.0, -1.0, 0.0),
+                  "min_valid": 0.05},
     }
 
     def __init__(self):
@@ -95,9 +106,13 @@ class ObstacleAvoidanceNode(Node):
 
     def _safety_check(self):
         """Periodic safety evaluation — publish emergency stop if needed."""
-        # Check ultrasonic emergency stop
-        valid_ranges = [r for r in self.us_ranges.values()
-                        if 0 < r < float("inf")]
+        # Apply per-sensor min_valid filter so geometric artifacts (e.g.
+        # floor-bounce on the front sensor) don't trip emergency stop.
+        valid_ranges = []
+        for name, r in self.us_ranges.items():
+            min_valid = self.SENSOR_CONFIG[name].get("min_valid", 0.0)
+            if min_valid <= r < float("inf"):
+                valid_ranges.append(r)
         min_range = min(valid_ranges) if valid_ranges else float("inf")
         us_emergency = min_range < self.emergency_stop_dist
 
@@ -125,7 +140,10 @@ class ObstacleAvoidanceNode(Node):
 
         for name, config in self.SENSOR_CONFIG.items():
             range_m = self.us_ranges[name]
-            if range_m <= 0 or range_m >= 4.0:
+            min_valid = config.get("min_valid", 0.0)
+            # Same filter as _safety_check — don't seed costmap with
+            # geometric artifacts that would create phantom obstacles.
+            if range_m < min_valid or range_m >= 4.0:
                 continue
 
             pos = config["pos"]

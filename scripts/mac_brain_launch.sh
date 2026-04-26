@@ -132,12 +132,94 @@ kill_stale_instances() {
     if [ -n "$pids_8765" ]; then
         log_warn "Port 8765 held by PID(s) $pids_8765 — killing stale foxglove"
     fi
+    # Include every Nav2 lifecycle component — leaving a stale planner_server
+    # or bt_navigator behind is what causes "lifecycle stuck inactive" on
+    # the next boot, because the new instance can't bind the same node name
+    # while the zombie is still up.
     local pattern="foxglove_bridge|ekf_node|slam_toolbox|nav2_bringup"
+    pattern="$pattern|nav2_amcl|amcl"
+    pattern="$pattern|controller_server|planner_server|bt_navigator"
+    pattern="$pattern|behavior_server|smoother_server|velocity_smoother"
+    pattern="$pattern|waypoint_follower|lifecycle_manager|nav2_map_server|map_server"
+    pattern="$pattern|coverage_node|coverage_tracker"
     if pgrep -f "$pattern" >/dev/null 2>&1; then
         pkill -TERM -f "$pattern" 2>/dev/null || true
         sleep 1
         pkill -KILL -f "$pattern" 2>/dev/null || true
     fi
+}
+
+# Wait until a topic is publishing at >= min_hz, with a timeout. Returns 0
+# on success, 1 on timeout. Use this instead of fixed `sleep N` — it adapts
+# to slow boot conditions (cold ROS daemon, DDS discovery delay).
+wait_for_topic() {
+    local topic="$1"
+    local timeout_s="${2:-30}"
+    local min_hz="${3:-1.0}"
+    log_info "Waiting up to ${timeout_s}s for $topic (>= ${min_hz} Hz)..."
+    local deadline=$((SECONDS + timeout_s))
+    while [ $SECONDS -lt $deadline ]; do
+        # `topic hz` measures over a 5s window, so cap our probe at 4s and
+        # bail early if it returns rate. The grep handles "average rate: X.YZ".
+        local rate
+        rate=$(timeout 4 ros2 topic hz "$topic" 2>&1 \
+                | grep -oE 'average rate: [0-9.]+' \
+                | head -1 | awk '{print $3}')
+        if [ -n "$rate" ] && \
+           [ "$(awk -v r="$rate" -v m="$min_hz" 'BEGIN{print (r>=m)}')" = "1" ]; then
+            log_info "  $topic publishing at ${rate} Hz — OK"
+            return 0
+        fi
+        sleep 1
+    done
+    log_error "Timed out waiting for $topic"
+    return 1
+}
+
+# After Nav2 launches, every lifecycle node must reach 'active' or no
+# action server will accept goals. Poll until they all are, or recover
+# automatically. The first cold-start often hits a race where one node
+# misses the activation window — RESET+STARTUP fixes it deterministically.
+verify_and_recover_nav2() {
+    local timeout_s="${1:-25}"
+    local nav_nodes=(/amcl /controller_server /planner_server /bt_navigator
+                     /behavior_server /velocity_smoother /map_server)
+    log_info "Verifying Nav2 lifecycle state (up to ${timeout_s}s)..."
+    local deadline=$((SECONDS + timeout_s))
+    local all_active=false
+    while [ $SECONDS -lt $deadline ]; do
+        all_active=true
+        for n in "${nav_nodes[@]}"; do
+            local state
+            state=$(timeout 3 ros2 service call ${n}/get_state \
+                      lifecycle_msgs/srv/GetState 2>&1 \
+                      | grep -oE "label='[a-z]+'" | cut -d"'" -f2)
+            if [ "$state" != "active" ]; then
+                all_active=false
+                break
+            fi
+        done
+        if [ "$all_active" = "true" ]; then
+            log_info "  All Nav2 nodes active — OK"
+            return 0
+        fi
+        sleep 2
+    done
+    # We hit the timeout with at least one node not active. Try recovery.
+    log_warn "Some Nav2 nodes did not reach 'active'. Attempting RESET+STARTUP recovery..."
+    timeout 8 ros2 service call \
+        /lifecycle_manager_navigation/manage_nodes \
+        nav2_msgs/srv/ManageLifecycleNodes "{command: 3}" >/dev/null 2>&1 || true
+    sleep 1
+    if timeout 20 ros2 service call \
+        /lifecycle_manager_navigation/manage_nodes \
+        nav2_msgs/srv/ManageLifecycleNodes "{command: 0}" 2>&1 \
+        | grep -q "success=True"; then
+        log_info "  Recovery succeeded — Nav2 fully active"
+        return 0
+    fi
+    log_error "Nav2 recovery failed. Try: tools/nav2_recover.py for diagnostics"
+    return 1
 }
 
 # ── Pre-flight checks ──────────────────────────────────────────────
@@ -215,7 +297,15 @@ case "$MODE" in
         log_info "Starting EKF sensor fusion (wheel odom + BNO055 IMU)..."
         ros2 launch $HOME/robots/rovac/scripts/ekf_launch.py &
         EKF_PID=$!
-        sleep 2  # Let EKF publish TF before AMCL starts looking for it
+
+        # Wait for EKF to actually be publishing — the old `sleep 2` was a
+        # fixed guess that broke whenever DDS discovery or EKF init was slow,
+        # which is what caused Nav2 lifecycle nodes to fail activation.
+        if ! wait_for_topic /odometry/filtered 30 15.0; then
+            log_error "EKF never started publishing /odometry/filtered."
+            log_error "Nav2 will not function correctly. Aborting."
+            exit 1
+        fi
 
         # NOTE: RoboStack doesn't package nav2_bringup for macOS (osx-arm64),
         # so we use our own launch file that wires up the individual Nav2
@@ -225,6 +315,13 @@ case "$MODE" in
             map:="$MAP_FILE" \
             params_file:=$HOME/robots/rovac/config/nav2_params.yaml \
             use_sim_time:=false &
+
+        # Verify all Nav2 lifecycle nodes reach 'active'. This is the actual
+        # readiness signal — without it, /navigate_to_pose silently rejects
+        # goals because bt_navigator never came up. Auto-recovers via
+        # RESET+STARTUP if the manager got wedged on the first activation.
+        verify_and_recover_nav2 25 || \
+            log_warn "Nav2 may not be fully ready — coverage runs may stall"
 
         log_info "Starting Foxglove Bridge..."
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
