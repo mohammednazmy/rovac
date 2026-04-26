@@ -21,6 +21,8 @@ publish directly to /cmd_vel.
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
+from std_msgs.msg import String
 
 
 class CmdVelMux(Node):
@@ -29,6 +31,18 @@ class CmdVelMux(Node):
 
         # Publisher to final cmd_vel
         self.cmd_pub = self.create_publisher(Twist, "cmd_vel", 10)
+
+        # Active-source publisher — latched, so any subscriber gets the
+        # current state on connect. Used by the Command Center's Coverage
+        # panel to show "active source: NAV" without scraping logs.
+        active_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+        self.active_pub = self.create_publisher(
+            String, "cmd_vel_mux/active", active_qos)
 
         # Subscribers — human inputs (teleop + joy) at highest priority
         self.teleop_sub = self.create_subscription(
@@ -98,6 +112,31 @@ class CmdVelMux(Node):
         self.last_nav_time = self.get_clock().now()
         self._nav_ever_received = True
 
+    def _set_active(self, source: str):
+        """Update active source label, log transitions, publish to topic."""
+        if self._active_source == source:
+            return
+        self._active_source = source
+        msg = {
+            "teleop": ("TELEOP", "info"),
+            "joy": ("JOYSTICK", "info"),
+            "obstacle": ("OBSTACLE", "warn"),
+            "nav": ("NAV", "info"),
+            "idle": ("IDLE", "info"),
+        }.get(source, (source.upper(), "info"))
+        label, level = msg
+        log = self.get_logger()
+        line = f"Active source: {label}"
+        if level == "warn":
+            log.warn(line)
+        else:
+            log.info(line)
+        # Publish so any subscriber (Command Center) sees it without
+        # scraping logs.
+        m = String()
+        m.data = label
+        self.active_pub.publish(m)
+
     def publish_cmd(self):
         """Periodic command publication with priority logic."""
         now = self.get_clock().now()
@@ -110,41 +149,31 @@ class CmdVelMux(Node):
         # Priority 1: Keyboard teleop (human override — highest)
         if self._teleop_ever_received and teleop_elapsed < self.teleop_timeout:
             self.cmd_pub.publish(self.last_teleop_cmd)
-            if self._active_source != "teleop":
-                self._active_source = "teleop"
-                self.get_logger().info("Active source: TELEOP (human override)")
+            self._set_active("teleop")
             return
 
         # Priority 2: Joystick (human override)
         if self._joy_ever_received and joy_elapsed < self.joy_timeout:
             self.cmd_pub.publish(self.last_joy_cmd)
-            if self._active_source != "joy":
-                self._active_source = "joy"
-                self.get_logger().info("Active source: JOYSTICK (human override)")
+            self._set_active("joy")
             return
 
         # Priority 3: Obstacle avoidance (only when human is NOT driving)
         if self._obstacle_ever_received and obstacle_elapsed < self.obstacle_timeout:
             self.cmd_pub.publish(self.last_obstacle_cmd)
-            if self._active_source != "obstacle":
-                self._active_source = "obstacle"
-                self.get_logger().warn("Active source: OBSTACLE avoidance")
+            self._set_active("obstacle")
             return
 
         # Priority 4: Autonomous navigation (only if fresh)
         if self._nav_ever_received and nav_elapsed < self.nav_timeout:
             self.cmd_pub.publish(self.last_nav_cmd)
-            if self._active_source != "nav":
-                self._active_source = "nav"
-                self.get_logger().info("Active source: NAVIGATION")
+            self._set_active("nav")
             return
 
         # No active source — don't publish anything.
         # The motor controller has its own watchdog (500ms cmd_vel timeout)
         # that safely stops the motors when commands stop arriving.
-        if self._active_source != "idle":
-            self._active_source = "idle"
-            self.get_logger().info("Active source: IDLE (all timed out)")
+        self._set_active("idle")
 
 
 def main(args=None):

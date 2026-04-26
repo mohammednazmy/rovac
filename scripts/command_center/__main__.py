@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """ROVAC Command Center — unified TUI for robot control and monitoring."""
 
-import sys
 import argparse
+import os
+import signal
+import sys
 
 
 def main():
@@ -20,7 +22,6 @@ def main():
         sys.exit(1)
 
     # Check rclpy
-    ros_available = True
     if not args.no_ros:
         try:
             import rclpy  # noqa: F401
@@ -28,7 +29,6 @@ def main():
             print('Warning: rclpy not found. Source ROS2 environment first:')
             print('  conda activate ros_jazzy && source ~/robots/rovac/config/ros2_env.sh')
             print('Continuing in --no-ros mode...')
-            ros_available = False
             args.no_ros = True
 
     from .app import RovacCommandCenter
@@ -37,6 +37,22 @@ def main():
         pi_host=args.pi_host,
         pi_user=args.pi_user,
     )
+
+    # Last-resort Ctrl-C handler. Textual normally captures keystrokes
+    # in raw mode (so the OS doesn't see Ctrl-C), but if the UI thread
+    # is hung for any reason, this gives the user an escape hatch via
+    # the controlling TTY's signal — we re-enable SIGINT to terminate
+    # the process if Textual hasn't intercepted it.
+    def _emergency_exit(_signum, _frame):
+        try:
+            app.exit()
+        except Exception:
+            pass
+        # Force-exit if the UI didn't unwind
+        os._exit(130)
+    signal.signal(signal.SIGINT, _emergency_exit)
+    signal.signal(signal.SIGTERM, _emergency_exit)
+
     app.run()
 
 

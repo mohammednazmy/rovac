@@ -363,7 +363,21 @@ class RovacCommandCenter(App):
         tabs.active = f"tab-{tab_id}"
 
     def action_quit_app(self) -> None:
-        self.pm.stop_all()
-        if self.ros:
-            self.ros.stop()
+        """Fast quit. SSH-based cleanup is best-effort and runs in background
+        threads that we let the OS reap when the process dies. We do NOT
+        wait for them — that's what made Ctrl-Q hang previously."""
+        try:
+            self.pm.stop()  # stops the background updater thread
+        except Exception:
+            pass
+        try:
+            if self.ros:
+                self.ros.stop()
+        except Exception:
+            pass
+        # Fire-and-forget local-process termination
+        try:
+            self.pm.stop_all()
+        except Exception:
+            pass
         self.exit()

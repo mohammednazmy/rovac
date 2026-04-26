@@ -14,6 +14,8 @@ import os
 import signal
 import socket
 import subprocess
+import threading
+import time
 
 ROVAC_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -72,6 +74,42 @@ class ProcessManager:
         self._stopped_map_tf = False
         self._motor_tf_disabled = False
 
+        # ── Background-update cache ────────────────────────────────────
+        # SSH calls and `ros2 service call get_state` each take 0.3-3s.
+        # Doing them on the UI thread freezes Textual for that whole time.
+        # Solution: a single daemon thread refreshes both caches every 5s;
+        # UI reads the snapshot instantly under a tiny lock.
+        self._cache_lock = threading.Lock()
+        self._cached_pi_services: dict = {}
+        self._cached_nav2_lifecycle: dict = {}
+        self._cached_foxglove_alive: bool = False
+        self._stop_updater = threading.Event()
+        self._updater = threading.Thread(target=self._update_loop, daemon=True)
+        self._updater.start()
+
+    def stop(self):
+        """Stop the background updater. Call before exiting."""
+        self._stop_updater.set()
+
+    def _update_loop(self):
+        """Refresh expensive caches in the background. Runs forever."""
+        while not self._stop_updater.is_set():
+            try:
+                pi = self._fetch_pi_services_blocking()
+            except Exception:
+                pi = {}
+            try:
+                nav = self._fetch_nav2_lifecycle_blocking()
+            except Exception:
+                nav = {}
+            fox = self._port_listening(8765)
+            with self._cache_lock:
+                self._cached_pi_services = pi
+                self._cached_nav2_lifecycle = nav
+                self._cached_foxglove_alive = fox
+            # Sleep 5s, but wake up early on shutdown
+            self._stop_updater.wait(5.0)
+
     # ── Generic local process management ───────────────────────────────
 
     def _start_process(self, name: str, cmd: list) -> bool:
@@ -107,10 +145,104 @@ class ProcessManager:
         self.processes.pop(name, None)
 
     def stop_all(self):
+        """Best-effort cleanup. SSH steps are async — caller doesn't wait."""
         for name in list(self.processes.keys()):
             self._stop_process(name)
         self._restore_pi_motor_tf()
         self._start_pi_map_tf()
+
+    def auto_start_full_stack(self, map_file: str, on_step=None):
+        """One-shot: bring up EKF → wait for /odometry/filtered → Nav2 →
+        verify lifecycle → Foxglove → tracker. Runs fully in background.
+
+        on_step(step_label, status) is called for UI progress updates,
+        where status is 'pending' | 'ok' | 'failed'.
+        """
+        def report(label, status):
+            if on_step:
+                try:
+                    on_step(label, status)
+                except Exception:
+                    pass
+            self.log(f'auto-start: {label} = {status}')
+
+        def worker():
+            # EKF
+            report('EKF', 'pending')
+            self._disable_pi_motor_tf()  # async, fire-and-forget
+            ok = self._start_process('ekf', EKF_CMD)
+            report('EKF', 'ok' if ok else 'failed')
+            if not ok:
+                return
+
+            # Wait up to 25s for /odometry/filtered to be flowing.
+            report('odometry/filtered ≥15Hz', 'pending')
+            ok = self._wait_for_topic('/odometry/filtered', 25.0, 15.0)
+            report('odometry/filtered ≥15Hz', 'ok' if ok else 'failed')
+            if not ok:
+                return
+
+            # Nav2
+            report('Nav2', 'pending')
+            self._stop_pi_map_tf()  # async
+            ok = self._start_process('nav2', NAV2_CMD_TEMPLATE + [f'map:={map_file}'])
+            report('Nav2', 'ok' if ok else 'failed')
+            if not ok:
+                return
+
+            # Wait up to 25s for lifecycle to come up; auto-recover if not.
+            report('Nav2 lifecycle (8 active)', 'pending')
+            ok = False
+            for _ in range(12):  # ~24s
+                lc = self._fetch_nav2_lifecycle_blocking()
+                if lc and all(s == 'active' for s in lc.values()):
+                    ok = True
+                    break
+                time.sleep(2)
+            if not ok:
+                report('Nav2 lifecycle', 'recovering')
+                self.recover_nav2_lifecycle()  # fire-and-forget
+                # Re-poll once after recovery
+                time.sleep(8)
+                lc = self._fetch_nav2_lifecycle_blocking()
+                ok = bool(lc) and all(s == 'active' for s in lc.values())
+            report('Nav2 lifecycle (8 active)', 'ok' if ok else 'failed')
+
+            # Foxglove
+            if not self._port_listening(8765):
+                report('Foxglove bridge', 'pending')
+                ok2 = self._start_process('foxglove', FOXGLOVE_CMD)
+                report('Foxglove bridge', 'ok' if ok2 else 'failed')
+
+            # Tracker
+            report('Coverage tracker', 'pending')
+            ok3 = self._start_process('tracker', COVERAGE_TRACKER_CMD)
+            report('Coverage tracker', 'ok' if ok3 else 'failed')
+
+            report('READY for coverage', 'ok')
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _wait_for_topic(self, topic: str, timeout_s: float, min_hz: float) -> bool:
+        """Poll `ros2 topic hz` until the topic publishes at >= min_hz."""
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline and not self._stop_updater.is_set():
+            try:
+                r = subprocess.run(
+                    ['bash', '-c',
+                     'source ~/robots/rovac/config/ros2_env.sh 2>/dev/null; '
+                     f'timeout 4 ros2 topic hz {topic} 2>&1 | '
+                     "grep -oE 'average rate: [0-9.]+' | head -1"],
+                    capture_output=True, text=True, timeout=6
+                )
+                token = r.stdout.strip().split()
+                if len(token) >= 3:
+                    rate = float(token[-1])
+                    if rate >= min_hz:
+                        return True
+            except Exception:
+                pass
+            time.sleep(1)
+        return False
 
     def get_status(self) -> dict:
         result = {}
@@ -204,6 +336,8 @@ class ProcessManager:
     # ── Pi service control via SSH ─────────────────────────────────────
 
     def _ssh(self, cmd: str, timeout: int = 5) -> tuple:
+        """Synchronous SSH. NEVER call from the UI thread. Use ssh_async()
+        when triggered by a keypress, or use the cached state queries."""
         try:
             result = subprocess.run(
                 ['ssh', '-o', 'ConnectTimeout=3', '-o', 'BatchMode=yes',
@@ -214,16 +348,34 @@ class ProcessManager:
         except Exception as e:
             return False, str(e)
 
+    def _ssh_async(self, cmd: str, on_done=None):
+        """Fire SSH in a worker thread; invoke on_done(ok, stdout) when finished.
+        UI thread returns immediately. Used by action handlers that don't
+        need a blocking result."""
+        def worker():
+            ok, out = self._ssh(cmd, timeout=8)
+            if on_done:
+                try:
+                    on_done(ok, out)
+                except Exception:
+                    pass
+        threading.Thread(target=worker, daemon=True).start()
+
     def pi_ssh_ok(self) -> bool:
+        """Cheap synchronous check — only call from background thread."""
         ok, _ = self._ssh('true', timeout=4)
         return ok
 
-    def pi_service_action(self, service: str, action: str) -> bool:
-        ok, _ = self._ssh(f'sudo systemctl {action} {service}')
-        self.log(f'Pi {action} {service}: {"OK" if ok else "FAILED"}')
-        return ok
+    def pi_service_action(self, service: str, action: str):
+        """Async — start/stop/restart Pi service. Logs result when done."""
+        self._ssh_async(
+            f'sudo systemctl {action} {service}',
+            lambda ok, _out: self.log(
+                f'Pi {action} {service}: {"OK" if ok else "FAILED"}'),
+        )
 
-    def pi_all_service_status(self) -> dict:
+    def _fetch_pi_services_blocking(self) -> dict:
+        """Single SSH call → all 11 service statuses. Background thread only."""
         cmd = ' && '.join(
             f'echo "{svc}:$(systemctl is-active {svc})"'
             for svc in PI_SERVICES
@@ -238,35 +390,58 @@ class ProcessManager:
                 result[svc] = status.strip()
         return result
 
+    def pi_all_service_status(self) -> dict:
+        """UI-safe: returns the latest cached snapshot from the background
+        updater. Empty dict before the first refresh completes."""
+        with self._cache_lock:
+            return dict(self._cached_pi_services)
+
+    def foxglove_bridge_alive(self) -> bool:
+        """UI-safe: cached port-8765-listening check."""
+        with self._cache_lock:
+            return self._cached_foxglove_alive
+
     def _stop_pi_map_tf(self):
-        ok, out = self._ssh('systemctl is-active rovac-edge-map-tf')
-        if out.strip() == 'active':
-            self._ssh('sudo systemctl stop rovac-edge-map-tf')
-            self._stopped_map_tf = True
-            self.log('Stopped Pi static map->odom TF (SLAM/Nav2 owns it now)')
+        """Async: stop static map->odom TF (conflicts with SLAM)."""
+        # Read state from cache (background thread already polled)
+        with self._cache_lock:
+            current = self._cached_pi_services.get('rovac-edge-map-tf', 'unknown')
+        if current != 'active':
+            return
+        def on_done(ok, _out):
+            if ok:
+                self._stopped_map_tf = True
+                self.log('Stopped Pi static map->odom TF')
+        self._ssh_async('sudo systemctl stop rovac-edge-map-tf', on_done)
 
     def _start_pi_map_tf(self):
-        if self._stopped_map_tf:
-            self._ssh('sudo systemctl start rovac-edge-map-tf')
-            self._stopped_map_tf = False
-            self.log('Re-enabled Pi static map->odom TF')
+        """Async: re-enable static map->odom TF on SLAM exit."""
+        if not self._stopped_map_tf:
+            return
+        def on_done(ok, _out):
+            if ok:
+                self._stopped_map_tf = False
+                self.log('Re-enabled Pi static map->odom TF')
+        self._ssh_async('sudo systemctl start rovac-edge-map-tf', on_done)
 
     def _disable_pi_motor_tf(self):
-        """Tell motor_driver_node to stop publishing odom→base_link TF.
-        EKF takes over; otherwise we'd have two publishers fighting."""
+        """Async: tell motor_driver to stop publishing odom→base_link TF
+        (EKF takes over). Best-effort — UI never blocks on this."""
         env_prefix = (
             'source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && '
             'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && '
             'export CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml'
         )
-        ok, _ = self._ssh(
+        def on_done(ok, _out):
+            if ok:
+                self._motor_tf_disabled = True
+                self.log('Disabled motor_driver TF (EKF owns odom->base_link)')
+        self._ssh_async(
             f'{env_prefix} && ros2 param set /motor_driver_node publish_tf false',
-            timeout=8)
-        if ok:
-            self._motor_tf_disabled = True
-            self.log('Disabled motor_driver TF (EKF will publish odom->base_link)')
+            on_done)
 
     def _restore_pi_motor_tf(self):
+        """Async: re-enable motor_driver TF publishing."""
         if not self._motor_tf_disabled:
             return
         env_prefix = (
@@ -274,73 +449,67 @@ class ProcessManager:
             'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && '
             'export CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml'
         )
-        self._ssh(
+        def on_done(ok, _out):
+            if ok:
+                self._motor_tf_disabled = False
+                self.log('Re-enabled motor_driver TF publishing')
+        self._ssh_async(
             f'{env_prefix} && ros2 param set /motor_driver_node publish_tf true',
-            timeout=8)
-        self._motor_tf_disabled = False
-        self.log('Re-enabled motor_driver TF publishing')
+            on_done)
 
     # ── Incident-specific recovery primitives ──────────────────────────
 
-    def kill_zombie_teleop(self) -> int:
-        """Kill ALL keyboard_teleop processes locally and on Pi.
-
-        Returns count killed across both. After this, /cmd_vel_teleop
-        publisher count should be 0, freeing the mux to forward Nav2.
-        """
-        n = 0
-        # Local
-        try:
-            r = subprocess.run(['pgrep', '-f', 'keyboard_teleop.py'],
-                               capture_output=True, text=True, timeout=3)
-            for pid in r.stdout.strip().split('\n'):
-                if pid.strip().isdigit() and int(pid) != os.getpid():
-                    subprocess.run(['kill', '-9', pid.strip()], timeout=2)
-                    n += 1
-        except Exception:
-            pass
-        # Remote
-        ok, out = self._ssh(
-            "pkill -9 -f keyboard_teleop.py 2>/dev/null; "
-            "pkill -9 -f 'ros2 topic pub.*cmd_vel_teleop' 2>/dev/null; "
-            "echo done", timeout=5)
-        if ok:
+    def kill_zombie_teleop(self):
+        """Async: kill ALL keyboard_teleop processes locally and on Pi.
+        UI returns immediately; result logged when done."""
+        def worker():
+            n = 0
+            # Local first
+            try:
+                r = subprocess.run(['pgrep', '-f', 'keyboard_teleop.py'],
+                                   capture_output=True, text=True, timeout=3)
+                for pid in r.stdout.strip().split('\n'):
+                    if pid.strip().isdigit() and int(pid) != os.getpid():
+                        subprocess.run(['kill', '-9', pid.strip()], timeout=2)
+                        n += 1
+            except Exception:
+                pass
+            # Remote
+            self._ssh(
+                "pkill -9 -f keyboard_teleop.py 2>/dev/null; "
+                "pkill -9 -f 'ros2 topic pub.*cmd_vel_teleop' 2>/dev/null; "
+                "echo done", timeout=5)
             self.log(f'Killed {n} local + Pi-side teleop processes')
-        return n
+        threading.Thread(target=worker, daemon=True).start()
 
-    def recover_nav2_lifecycle(self) -> bool:
-        """RESET → STARTUP via lifecycle_manager service.
-        Same primitive nav2_recover.py uses; convenient one-call form."""
-        env_prefix = (
-            'source ~/robots/rovac/config/ros2_env.sh 2>/dev/null; '
-        )
-        cmd_reset = (
-            f'ros2 service call /lifecycle_manager_navigation/manage_nodes '
-            f'nav2_msgs/srv/ManageLifecycleNodes "{{command: 3}}"'
-        )
-        cmd_startup = (
-            f'ros2 service call /lifecycle_manager_navigation/manage_nodes '
-            f'nav2_msgs/srv/ManageLifecycleNodes "{{command: 0}}"'
-        )
-        try:
-            r1 = subprocess.run(['bash', '-c', f'{env_prefix} timeout 10 {cmd_reset}'],
-                                capture_output=True, text=True, timeout=15)
-            r2 = subprocess.run(['bash', '-c', f'{env_prefix} timeout 25 {cmd_startup}'],
-                                capture_output=True, text=True, timeout=30)
-            ok = ('success=True' in r1.stdout and 'success=True' in r2.stdout)
-            self.log(f'Nav2 RESET+STARTUP: {"OK" if ok else "FAILED"}')
-            return ok
-        except Exception as e:
-            self.log(f'Nav2 recovery error: {e}')
-            return False
+    def recover_nav2_lifecycle(self):
+        """Async: RESET → STARTUP via lifecycle_manager service."""
+        def worker():
+            env_prefix = 'source ~/robots/rovac/config/ros2_env.sh 2>/dev/null; '
+            cmd_reset = (
+                f'{env_prefix} timeout 10 ros2 service call '
+                f'/lifecycle_manager_navigation/manage_nodes '
+                f'nav2_msgs/srv/ManageLifecycleNodes "{{command: 3}}"'
+            )
+            cmd_startup = (
+                f'{env_prefix} timeout 25 ros2 service call '
+                f'/lifecycle_manager_navigation/manage_nodes '
+                f'nav2_msgs/srv/ManageLifecycleNodes "{{command: 0}}"'
+            )
+            try:
+                r1 = subprocess.run(['bash', '-c', cmd_reset],
+                                    capture_output=True, text=True, timeout=15)
+                r2 = subprocess.run(['bash', '-c', cmd_startup],
+                                    capture_output=True, text=True, timeout=30)
+                ok = ('success=True' in r1.stdout
+                      and 'success=True' in r2.stdout)
+                self.log(f'Nav2 RESET+STARTUP: {"OK" if ok else "FAILED"}')
+            except Exception as e:
+                self.log(f'Nav2 recovery error: {e}')
+        threading.Thread(target=worker, daemon=True).start()
 
-    def query_nav2_lifecycle(self) -> dict:
-        """Return {node_name: state_label} for the 8 Nav2 managed nodes.
-
-        Uses one bash subprocess per node — unavoidable, since each
-        get_state is its own service call. The lifecycle list mirrors
-        scripts/nav2_launch.py's `lifecycle_nodes` exactly.
-        """
+    def _fetch_nav2_lifecycle_blocking(self) -> dict:
+        """Background thread only — runs 8 sequential service calls."""
         import re
         nodes = ['/map_server', '/amcl', '/controller_server',
                  '/planner_server', '/behavior_server', '/velocity_smoother',
@@ -349,12 +518,14 @@ class ProcessManager:
         env_prefix = 'source ~/robots/rovac/config/ros2_env.sh 2>/dev/null; '
         label_re = re.compile(r"label='([a-z]+)'")
         for n in nodes:
+            if self._stop_updater.is_set():
+                return result  # bail early on shutdown
             try:
                 r = subprocess.run(
                     ['bash', '-c',
-                     f'{env_prefix} timeout 3 ros2 service call '
+                     f'{env_prefix} timeout 2 ros2 service call '
                      f'{n}/get_state lifecycle_msgs/srv/GetState 2>/dev/null'],
-                    capture_output=True, text=True, timeout=5
+                    capture_output=True, text=True, timeout=4
                 )
                 m = label_re.search(r.stdout)
                 if m:
@@ -362,6 +533,11 @@ class ProcessManager:
             except Exception:
                 pass
         return result
+
+    def query_nav2_lifecycle(self) -> dict:
+        """UI-safe: returns the latest cached snapshot."""
+        with self._cache_lock:
+            return dict(self._cached_nav2_lifecycle)
 
     def list_maps(self) -> list:
         """Find saved Nav2 maps in ~/maps."""

@@ -88,6 +88,8 @@ class CoveragePanel(Widget):
         with Container(classes="panel-box-cyan") as c:
             c.border_title = "Actions"
             yield Static(
+                " [bold yellow]A[/] AUTO-START full stack (EKF→Nav2→Foxglove→Tracker)\n"
+                "\n"
                 " [bold]e[/] start EKF       "
                 "[bold]n[/] start Nav2       "
                 "[bold]f[/] toggle Foxglove\n"
@@ -104,7 +106,9 @@ class CoveragePanel(Widget):
     # ── Key dispatch ──────────────────────────────────────────────────
 
     def process_key(self, key: str) -> bool:
-        if key == "e":
+        if key in ("a", "A"):
+            self._auto_start()
+        elif key == "e":
             self._start_ekf()
         elif key == "n":
             self._start_nav2()
@@ -122,13 +126,67 @@ class CoveragePanel(Widget):
             self._kill_teleop()
         elif key == "s":
             self._save_map()
-        elif key == "X" or key == "shift+x":
+        elif key in ("X", "shift+x"):
             self._kill_all()
         else:
             return False
         return True
 
     # ── Action handlers ───────────────────────────────────────────────
+
+    def _auto_start(self):
+        """Run the full bring-up sequence in the background."""
+        try:
+            map_path = self.query_one("#cov-map-input", Input).value.strip()
+        except Exception:
+            map_path = ""
+        import os
+        if not map_path:
+            # Pick the most recently modified map yaml
+            maps = self.app.pm.list_maps()
+            if maps:
+                map_path = max(maps, key=os.path.getmtime)
+                try:
+                    self.query_one("#cov-map-input", Input).value = map_path
+                except Exception:
+                    pass
+            else:
+                self._show_result("[red]No map yaml found in ~/maps. SLAM first, then save.[/]")
+                return
+        map_path = os.path.expanduser(map_path)
+        if not os.path.exists(map_path):
+            self._show_result(f"[red]Map not found: {map_path}[/]")
+            return
+
+        # Track step progress in a class-level deque so update_state can
+        # render it. Bound size keeps display tidy.
+        self._auto_steps = []
+        def on_step(label, status):
+            symbol = {"pending": "[yellow]…[/]",
+                      "ok": "[green]✓[/]",
+                      "failed": "[red]✗[/]",
+                      "recovering": "[yellow]↻[/]"}.get(status, "•")
+            # Replace existing entry for the label, or append
+            for i, (lbl, _) in enumerate(self._auto_steps):
+                if lbl == label:
+                    self._auto_steps[i] = (label, symbol)
+                    break
+            else:
+                self._auto_steps.append((label, symbol))
+            self._refresh_auto_status()
+
+        self._show_result(f"[green]Auto-starting full stack with map: {map_path}[/]")
+        self.app.pm.auto_start_full_stack(map_path, on_step=on_step)
+
+    def _refresh_auto_status(self):
+        if not getattr(self, "_auto_steps", None):
+            return
+        lines = [f"  {sym} {lbl}" for lbl, sym in self._auto_steps]
+        try:
+            self.query_one("#cov-result", Static).update(
+                "[bold]Auto-start progress:[/]\n" + "\n".join(lines))
+        except Exception:
+            pass
 
     def _start_ekf(self):
         if self.app.pm.start_ekf():
@@ -267,9 +325,28 @@ class CoveragePanel(Widget):
             ("Tracker",   "tracker"),
             ("Coverage",  "coverage"),
         ]
+        # Cross-check Foxglove against actual port-listening cache —
+        # process_status's "running" can lie if the bridge crashed
+        # but Popen still has a record of it.
+        try:
+            port_alive = self.app.pm.foxglove_bridge_alive()
+        except Exception:
+            port_alive = False
+
         lines = []
         for label, key in rows:
             st = proc_status.get(key, "stopped")
+            # Special handling for Foxglove: trust the port check
+            if key == "foxglove":
+                if port_alive:
+                    lines.append(f"{GREEN_DOT} {label:<10} [dim]listening :8765[/]")
+                elif st == "running":
+                    lines.append(f"{YELLOW_DOT} {label:<10} [yellow]process up, port DOWN[/]")
+                elif st.startswith("exited"):
+                    lines.append(f"{RED_DOT} {label:<10} [red]{st}[/]")
+                else:
+                    lines.append(f"{GRAY_DOT} {label:<10} [dim]stopped[/]")
+                continue
             if st == "running":
                 lines.append(f"{GREEN_DOT} {label:<10} [dim]running[/]")
             elif st == "running (external)":
@@ -343,20 +420,38 @@ class CoveragePanel(Widget):
             pass
 
     def _update_progress(self, state: dict, proc_status: dict):
-        if proc_status.get("coverage") not in ("running", "running (external)"):
-            text = "[dim]coverage_node not running[/]"
+        wp_total = state.get("coverage_total", 0)
+        cov_pct = state.get("coverage_pct", 0.0)
+        visited = state.get("coverage_visited_cells", 0)
+        free = state.get("coverage_free_cells", 0)
+
+        if (proc_status.get("coverage") not in ("running", "running (external)")
+                and wp_total == 0):
+            text = "[dim]coverage_node not running, no plan yet[/]"
         else:
-            wp_done = state.get("coverage_waypoint", 0)
-            wp_total = state.get("coverage_total", 0)
-            cov_pct = state.get("coverage_pct", 0.0)
             text = (
-                f"Waypoint:  {wp_done} / {wp_total}\n"
-                f"Floor visited: {cov_pct:.1f}%"
+                f"Plan size:    {wp_total} waypoints\n"
+                f"Visited:      {visited} / {free} cells\n"
+                f"Floor cover:  [bold]{cov_pct:.1f}%[/]"
             )
         try:
             self.query_one("#cov-progress", Static).update(text)
         except Exception:
             pass
+
+    def on_mount(self):
+        """Pre-fill map input with the most recently modified map yaml."""
+        import os
+        try:
+            maps = self.app.pm.list_maps()
+        except Exception:
+            maps = []
+        if maps:
+            latest = max(maps, key=lambda p: os.path.getmtime(p))
+            try:
+                self.query_one("#cov-map-input", Input).value = latest
+            except Exception:
+                pass
 
     def _update_alerts(self, state: dict, proc_status: dict):
         alerts = []
@@ -373,6 +468,17 @@ class CoveragePanel(Widget):
             alerts.append(
                 f"[red]✗ /cmd_vel_joy publishing at {joy_hz:.0f} Hz — "
                 "ps2 controller may be active.[/]"
+            )
+
+        # Foxglove bridge dead — Foxglove client will show no data
+        try:
+            fox_alive = self.app.pm.foxglove_bridge_alive()
+        except Exception:
+            fox_alive = False
+        if not fox_alive:
+            alerts.append(
+                "[yellow]⚠ Foxglove bridge port :8765 not listening — "
+                "Foxglove client won't receive data. Press [bold]f[/] to start.[/]"
             )
 
         # Nav2 lifecycle stuck

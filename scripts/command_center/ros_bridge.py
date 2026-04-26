@@ -269,6 +269,36 @@ class RosBridge:
                 lambda _msg: self._tick_pipeline('cmd_vel'),
                 reliable_qos)
 
+            # Mux active source — published by Pi cmd_vel_mux at 1Hz.
+            mux_qos = QoSProfile(
+                reliability=ReliabilityPolicy.RELIABLE,
+                history=HistoryPolicy.KEEP_LAST, depth=1,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            )
+            self._node.create_subscription(
+                String, '/cmd_vel_mux/active',
+                self._on_mux_active, mux_qos)
+
+            # Coverage planner publishes /coverage_path (waypoint count)
+            # transient_local so we always get the latest plan.
+            from nav_msgs.msg import Path
+            cov_qos = QoSProfile(
+                reliability=ReliabilityPolicy.RELIABLE,
+                history=HistoryPolicy.KEEP_LAST, depth=1,
+                durability=DurabilityPolicy.VOLATILE,
+            )
+            self._node.create_subscription(
+                Path, '/coverage_path',
+                self._on_coverage_path, cov_qos)
+            visited_qos = QoSProfile(
+                reliability=ReliabilityPolicy.RELIABLE,
+                history=HistoryPolicy.KEEP_LAST, depth=1,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            )
+            self._node.create_subscription(
+                OccupancyGrid, '/coverage/visited',
+                self._on_coverage_visited, visited_qos)
+
             # Phone sensor topics (via rosbridge WebSocket on Pi :9090)
             from sensor_msgs.msg import Imu, NavSatFix, CompressedImage
             self._hz['phone_imu'] = HzTracker()
@@ -338,11 +368,14 @@ class RosBridge:
 
     def _on_map(self, msg):
         self._hz['map'].tick()
+        # Count free cells once per /map update for the coverage % denominator
+        free_cells = sum(1 for v in msg.data if v == 0)
         with self.lock:
             self.state['map_hz'] = self._hz['map'].hz()
             self.state['map_width'] = msg.info.width
             self.state['map_height'] = msg.info.height
             self.state['map_resolution'] = msg.info.resolution
+            self.state['coverage_free_cells'] = free_cells
 
     def _on_diagnostics(self, msg):
         for status in msg.status:
@@ -382,6 +415,33 @@ class RosBridge:
         tracker.tick()
         with self.lock:
             self.state[f'{key}_hz'] = tracker.hz()
+
+    def _on_mux_active(self, msg):
+        """Pi mux publishes 'TELEOP', 'JOY', 'OBSTACLE', 'NAV', or 'IDLE'."""
+        with self.lock:
+            self.state['mux_active'] = msg.data
+
+    def _on_coverage_path(self, msg):
+        """Length of /coverage_path = total waypoints in current plan."""
+        with self.lock:
+            self.state['coverage_total'] = len(msg.poses)
+
+    def _on_coverage_visited(self, msg):
+        """OccupancyGrid where 100=visited, -1=untouched. Compute coverage %."""
+        try:
+            data = msg.data
+            visited = sum(1 for v in data if v == 100)
+            with self.lock:
+                self.state['coverage_visited_cells'] = visited
+                # Total free cells comes from /map (already tracked); fallback
+                # to non-(-1) cells if /map hasn't been received here yet.
+                free_total = self.state.get('coverage_free_cells', 0)
+                if free_total == 0:
+                    free_total = sum(1 for v in data if v != -1)
+                if free_total > 0:
+                    self.state['coverage_pct'] = 100.0 * visited / free_total
+        except Exception:
+            pass
 
     def _on_phone_imu(self, msg):
         self._hz['phone_imu'].tick()
