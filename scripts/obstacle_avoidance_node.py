@@ -45,7 +45,13 @@ class ObstacleAvoidanceNode(Node):
         super().__init__("obstacle_avoidance_node")
 
         # Parameters
-        self.declare_parameter("emergency_stop_distance", 0.15)
+        # emergency_stop_distance: 5cm = "about to physically touch". Reduced
+        # from 0.15m on 2026-04-27 — the old threshold was inside Nav2's
+        # comfortable wall-following envelope and caused permanent OBSTACLE
+        # mux-takeover during coverage runs. Tier 2 obstacle avoidance
+        # (route-around) now lives in Nav2 via /obstacle/points → costmap.
+        # This node is now strictly a "bumper of last resort".
+        self.declare_parameter("emergency_stop_distance", 0.05)
         self.declare_parameter("slow_down_distance", 0.40)
         self.declare_parameter("enable_costmap_points", True)
 
