@@ -177,20 +177,28 @@ class ProcessManager:
     # ── Generic local process management ───────────────────────────────
 
     def _start_process(self, name: str, cmd: list) -> bool:
-        """Spawn a process if not already running. Thread-safe:
-        the check-then-act is wrapped in self._proc_lock so concurrent
-        callers (rapid keypresses, auto-start macro + manual press)
-        can't double-spawn."""
+        """Spawn a process if not already running. Thread-safe.
+
+        Stdout AND stderr are redirected to /tmp/rovac_<name>.log so a
+        crash leaves an actionable trace instead of silently exiting
+        with code 1. Previously we wrote to DEVNULL, which is how the
+        'Executor is already spinning' bug in coverage_node hid for
+        weeks.
+        """
+        log_path = f'/tmp/rovac_{name}.log'
         with self._proc_lock:
             existing = self.processes.get(name)
             if existing is not None and existing.poll() is None:
                 self.log(f'{name} already running (PID {existing.pid})')
                 return True
             try:
+                # Open the log fresh each spawn — old contents would be
+                # confusing if the previous run crashed and left errors.
+                log_fd = open(log_path, 'w')
                 proc = subprocess.Popen(
                     cmd,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stdout=log_fd,
+                    stderr=subprocess.STDOUT,
                     preexec_fn=os.setsid,
                 )
                 self.processes[name] = proc
@@ -198,7 +206,7 @@ class ProcessManager:
             except Exception as e:
                 self.log(f'Failed to start {name}: {e}')
                 return False
-        self.log(f'Started {name} (PID {pid})')
+        self.log(f'Started {name} (PID {pid}, log: {log_path})')
         return True
 
     def _stop_process(self, name: str):

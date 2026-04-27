@@ -348,20 +348,20 @@ class CoverageNode(Node):
         )
 
     def _mux_preflight_ok(self) -> bool:
-        """Sample higher-priority mux inputs for 1s; refuse if anyone is alive.
+        """Check whether teleop/joy traffic has arrived since the node
+        started up. We CANNOT call rclpy.spin_once() inside this method —
+        the executor is already spinning in main() and would raise
+        'RuntimeError: Executor is already spinning'. (That bug was the
+        immediate cause of coverage_node exiting with code 1 the moment
+        the user pressed 'p' or 'r'.)
 
-        Returns True if /cmd_vel_teleop and /cmd_vel_joy are both silent.
-        Returns False (and logs an actionable error) otherwise.
+        Approach: by the time _tick fires (1 second after node startup
+        per create_timer(1.0, ...)), the subscriptions have had a full
+        second to receive any in-flight teleop traffic. The executor
+        delivers them on its own — we just read the counters.
         """
-        teleop_baseline = self._teleop_msgs_seen
-        joy_baseline = self._joy_msgs_seen
-        # Use the executor to actually receive messages during this window
-        # (we're inside the timer callback so spinning happens around us).
-        end_time = self.get_clock().now() + rclpy.duration.Duration(seconds=1.0)
-        while self.get_clock().now() < end_time:
-            rclpy.spin_once(self, timeout_sec=0.1)
-        teleop_count = self._teleop_msgs_seen - teleop_baseline
-        joy_count = self._joy_msgs_seen - joy_baseline
+        teleop_count = self._teleop_msgs_seen
+        joy_count = self._joy_msgs_seen
         if teleop_count == 0 and joy_count == 0:
             return True
 
