@@ -121,7 +121,8 @@ class CoveragePanel(Widget):
                 " [bold]c[/] calibrate IMU↔map (once when AMCL is on the right pose)\n"
                 " [bold]l[/] Nav2 RECOVER    "
                 "[bold]k[/] kill teleop       "
-                "[bold]s[/] save map\n"
+                "[bold]s[/] save map         "
+                "[bold]d[/] DIAGNOSTIC DUMP\n"
                 " [bold]X[/] kill EVERYTHING (Mac side, clean slate)",
                 id="cov-actions",
             )
@@ -162,6 +163,8 @@ class CoveragePanel(Widget):
             self._global_localize()
         elif key == "c":
             self._calibrate_imu_yaw()
+        elif key == "d":
+            self._dump_diagnostics()
         elif key == "s":
             self._save_map()
         else:
@@ -373,6 +376,36 @@ class CoveragePanel(Widget):
             )
         else:
             self._show_result("[red]/initialpose publish failed (see log)[/]")
+
+    def _dump_diagnostics(self):
+        """Write a comprehensive diagnostic snapshot to /tmp/rovac_diag_*.txt
+        that the user can share with the assistant. Solves the "I have to
+        screenshot 5 panels" problem — one file, everything in it."""
+        # Update result text optimistically while the worker runs (~10s)
+        self._show_result(
+            "[yellow]Collecting diagnostics… "
+            "(SSH + topic queries take ~10s)[/]")
+
+        def on_complete(filepath, ok):
+            # Called from worker thread — schedule UI update on main thread
+            def update():
+                if ok:
+                    self._show_result(
+                        f"[green]Dump complete:[/] [bold]{filepath}[/]\n"
+                        "[dim]Share with assistant: 'cat <path>' or "
+                        "paste contents into chat.[/]"
+                    )
+                else:
+                    self._show_result(
+                        f"[red]Dump failed (see log)[/]")
+            try:
+                self.app.call_from_thread(update)
+            except Exception:
+                pass
+
+        # Spawn the dump in a worker; don't block the UI
+        self.app.pm.dump_diagnostics(
+            ros_bridge=self.app.ros, callback=on_complete)
 
     def _calibrate_imu_yaw(self):
         """Snapshot the current AMCL yaw vs IMU yaw and save the offset.

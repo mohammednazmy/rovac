@@ -108,12 +108,17 @@ class ObstacleAvoidanceNode(Node):
         """Periodic safety evaluation — publish emergency stop if needed."""
         # Apply per-sensor min_valid filter so geometric artifacts (e.g.
         # floor-bounce on the front sensor) don't trip emergency stop.
+        # Track WHICH sensor produced min_range so the log message tells
+        # the user which physical sensor needs investigation.
         valid_ranges = []
         for name, r in self.us_ranges.items():
             min_valid = self.SENSOR_CONFIG[name].get("min_valid", 0.0)
             if min_valid <= r < float("inf"):
-                valid_ranges.append(r)
-        min_range = min(valid_ranges) if valid_ranges else float("inf")
+                valid_ranges.append((r, name))
+        if valid_ranges:
+            min_range, min_sensor = min(valid_ranges, key=lambda t: t[0])
+        else:
+            min_range, min_sensor = float("inf"), "none"
         us_emergency = min_range < self.emergency_stop_dist
 
         # Emergency stop on obstacle OR cliff
@@ -127,7 +132,8 @@ class ObstacleAvoidanceNode(Node):
                     throttle_duration_sec=2.0)
             else:
                 self.get_logger().warning(
-                    f"OBSTACLE at {min_range:.2f}m — emergency stop active",
+                    f"OBSTACLE at {min_range:.2f}m on {min_sensor.upper()} "
+                    f"sensor — emergency stop active",
                     throttle_duration_sec=2.0)
 
         # Publish obstacle points for costmap
