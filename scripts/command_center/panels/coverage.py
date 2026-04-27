@@ -103,7 +103,8 @@ class CoveragePanel(Widget):
                 "[bold]p[/] coverage PREVIEW  "
                 "[bold]r[/] coverage LIVE     "
                 "[bold]S[/] STOP coverage\n"
-                " [bold]l[/] Nav2 RECOVER    "
+                " [bold]i[/] AMCL init pose  "
+                "[bold]l[/] Nav2 RECOVER     "
                 "[bold]k[/] kill teleop       "
                 "[bold]s[/] save map\n"
                 " [bold]X[/] kill EVERYTHING (Mac side, clean slate)",
@@ -140,6 +141,8 @@ class CoveragePanel(Widget):
             self._recover_nav2()
         elif key == "k":
             self._kill_teleop()
+        elif key == "i":
+            self._publish_initial_pose()
         elif key == "s":
             self._save_map()
         else:
@@ -199,7 +202,10 @@ class CoveragePanel(Widget):
 
         self._show_result(
             f"[green]Auto-starting full stack with map: {map_path}[/]")
-        if not self.app.pm.auto_start_full_stack(map_path, on_step=on_step):
+        # Pass ros_bridge so the macro can publish /initialpose for AMCL
+        # at the end of bringup (was previously a separate manual step).
+        if not self.app.pm.auto_start_full_stack(
+                map_path, on_step=on_step, ros_bridge=self.app.ros):
             # Reentrancy guard fired — another auto-start is in flight.
             self._show_result(
                 "[yellow]Auto-start already in progress — wait for it to finish[/]")
@@ -293,6 +299,21 @@ class CoveragePanel(Widget):
                 "[green]No local teleop running; Pi cleanup dispatched anyway[/]"
             )
 
+    def _publish_initial_pose(self):
+        """Seed AMCL with /initialpose at origin (0,0,0). Without this,
+        AMCL refuses to publish map→odom TF and Nav2 won't navigate."""
+        if not self.app.ros:
+            self._show_result("[red]ROS bridge not connected[/]")
+            return
+        ok = self.app.ros.publish_initial_pose(0.0, 0.0, 0.0)
+        if ok:
+            self._show_result(
+                "[green]Published /initialpose at (0,0,0). "
+                "AMCL warnings should stop within ~1 sec.[/]"
+            )
+        else:
+            self._show_result("[red]/initialpose publish failed (see log)[/]")
+
     def _save_map(self):
         try:
             map_input = self.query_one("#cov-map-input", Input).value.strip()
@@ -363,7 +384,9 @@ class CoveragePanel(Widget):
         self._update_rosout_tail()
 
     def _update_rosout_tail(self):
-        """Render last ~8 WARN/ERROR/FATAL lines from /rosout."""
+        """Render last ~8 WARN/ERROR/FATAL entries from /rosout, with
+        consecutive-duplicate counts so a spammy AMCL doesn't drown out
+        single-shot errors from other nodes."""
         if not self.app.ros:
             return
         try:
@@ -380,10 +403,19 @@ class CoveragePanel(Widget):
             }
             recent = entries[-8:]
             lines = []
-            for level, node, msg in recent:
+            for entry in recent:
+                # Each entry is (level, node, text, count); be defensive
+                # to old 3-tuple format in case of mid-restart upgrade.
+                if len(entry) == 4:
+                    level, node, msg, count = entry
+                else:
+                    level, node, msg = entry
+                    count = 1
                 color = level_color.get(level, "white")
+                count_str = f" [dim](×{count})[/]" if count > 1 else ""
                 lines.append(
-                    f"[{color}]{level:<5}[/] [dim]{node[:22]:<22}[/] {msg}"
+                    f"[{color}]{level:<5}[/] "
+                    f"[dim]{node[:18]:<18}[/] {msg}{count_str}"
                 )
             text = "\n".join(lines)
         try:
@@ -407,11 +439,19 @@ class CoveragePanel(Widget):
         if not self._pi_cache:
             text = "[red]Pi unreachable[/]"
         else:
+            # Compact rendering: each service on ONE line. The previous
+            # `:<22` padding pushed the status off the right edge of the
+            # narrow column, wasting half the vertical space to wrapping.
+            # Now the dot color implicitly conveys 'active'; status text
+            # is shown only when NOT active (tells you the failure mode).
             lines = []
             for svc, status in self._pi_cache.items():
                 short = svc.replace("rovac-edge-", "")
-                dot = GREEN_DOT if status == "active" else RED_DOT
-                lines.append(f"{dot} {short:<22} [dim]{status}[/]")
+                if status == "active":
+                    lines.append(f"{GREEN_DOT} [green]{short}[/]")
+                else:
+                    lines.append(
+                        f"{RED_DOT} [red]{short}[/] [dim]({status})[/]")
             text = "\n".join(lines)
         try:
             self.query_one("#cov-pi-services", Static).update(text)

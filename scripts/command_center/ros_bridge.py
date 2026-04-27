@@ -80,6 +80,7 @@ class RosBridge:
 
         # Publishers (set after node creation)
         self._pub_cmd_vel = None
+        self._pub_initialpose = None  # lazy-created on first publish
 
     def start(self):
         """Start the ROS2 spin thread. Call this once."""
@@ -401,6 +402,57 @@ class RosBridge:
         # Don't overwrite cmd_vel_linear/angular which track what WE publish
         pass
 
+    def publish_initial_pose(self, x: float = 0.0, y: float = 0.0,
+                             yaw: float = 0.0,
+                             xy_covar: float = 0.5,
+                             yaw_covar: float = 0.25) -> bool:
+        """Publish a one-shot /initialpose for AMCL to seed itself.
+
+        AMCL refuses to publish map→odom TF (and therefore Nav2 refuses
+        to navigate) until /initialpose is set. This is the manual step
+        that previously had to be done via `ros2 topic pub` from a
+        terminal. Now exposed as a single call.
+
+        Default: (0, 0, 0) is the SLAM/map origin — usually where the
+        robot was when SLAM started, which is where it physically is
+        now if you ran rovac from rest.
+        """
+        if self._node is None:
+            return False
+        try:
+            from geometry_msgs.msg import PoseWithCovarianceStamped
+            from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+            # AMCL subscribes to /initialpose with reliable QoS
+            qos = QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.VOLATILE,
+            )
+            if self._pub_initialpose is None:
+                self._pub_initialpose = self._node.create_publisher(
+                    PoseWithCovarianceStamped, '/initialpose', qos)
+            msg = PoseWithCovarianceStamped()
+            msg.header.frame_id = 'map'
+            msg.header.stamp = self._node.get_clock().now().to_msg()
+            msg.pose.pose.position.x = float(x)
+            msg.pose.pose.position.y = float(y)
+            msg.pose.pose.position.z = 0.0
+            import math
+            msg.pose.pose.orientation.z = math.sin(yaw / 2.0)
+            msg.pose.pose.orientation.w = math.cos(yaw / 2.0)
+            cov = [0.0] * 36
+            cov[0]  = xy_covar   # x
+            cov[7]  = xy_covar   # y
+            cov[35] = yaw_covar  # yaw
+            msg.pose.covariance = cov
+            self._pub_initialpose.publish(msg)
+            self.add_log(f'Published /initialpose at ({x:.2f}, {y:.2f}, '
+                         f'yaw={math.degrees(yaw):.0f}°)')
+            return True
+        except Exception as e:
+            self.add_log(f'/initialpose publish failed: {e}')
+            return False
+
     def _tick_pipeline(self, key: str):
         """Update HZ for a cmd_vel pipeline topic. Used by Coverage panel."""
         tracker = self._hz.get(key)
@@ -417,19 +469,29 @@ class RosBridge:
 
     def _on_rosout(self, msg):
         """Capture Nav2/coverage_node/etc log messages for the Coverage
-        panel's live tail. We only keep WARN and above to avoid the
-        million INFO lines from active Nav2."""
-        # rcl_interfaces/msg/Log.level: 10=DEBUG, 20=INFO, 30=WARN, 40=ERROR, 50=FATAL
+        panel's live tail. WARN+ only — INFO is far too chatty.
+
+        Consecutive identical messages are deduped: AMCL spams the same
+        warning every 1s while waiting for /initialpose, which would
+        flood the 50-entry buffer with one repeated message. Instead,
+        we attach a count and bump it: '(×42) AMCL cannot publish ...'
+        """
         if msg.level < 30:
             return
         level_str = {30: 'WARN', 40: 'ERROR', 50: 'FATAL'}.get(msg.level, '?')
-        # name is e.g. "controller_server", "bt_navigator". Truncate
-        # message to keep tail panel tidy.
         text = (msg.msg or '').strip()
-        if len(text) > 110:
-            text = text[:107] + '...'
+        # Truncate aggressively — panel column is narrow
+        if len(text) > 80:
+            text = text[:77] + '...'
         with self.lock:
-            self._rosout_tail.append((level_str, msg.name, text))
+            if (self._rosout_tail
+                    and self._rosout_tail[-1][:3] == (level_str, msg.name, text)):
+                # Same message as last; bump the count instead of
+                # appending a new entry. Tuple is (level, node, text, count)
+                lvl, node, txt, count = self._rosout_tail[-1]
+                self._rosout_tail[-1] = (lvl, node, txt, count + 1)
+            else:
+                self._rosout_tail.append((level_str, msg.name, text, 1))
 
     def _on_coverage_path(self, msg):
         """Length of /coverage_path = total waypoints in current plan."""

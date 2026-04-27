@@ -256,7 +256,8 @@ class ProcessManager:
         self._restore_pi_motor_tf()
         self._start_pi_map_tf()
 
-    def auto_start_full_stack(self, map_file: str, on_step=None) -> bool:
+    def auto_start_full_stack(self, map_file: str, on_step=None,
+                              ros_bridge=None) -> bool:
         """One-shot: bring up EKF → wait for /odometry/filtered → /scan →
         Nav2 → verify lifecycle → Foxglove → tracker. Runs fully in
         background. Returns True if the macro was scheduled, False if
@@ -321,23 +322,42 @@ class ProcessManager:
                 if not ok:
                     return
 
-                # Wait up to 25s for lifecycle to come up; auto-recover if not.
+                # Wait up to 30s for lifecycle to come up; auto-recover if not.
                 report('Nav2 lifecycle (8 active)', 'pending')
                 ok = False
-                for _ in range(12):  # ~24s
+                for _ in range(15):  # ~30s
                     lc = self._fetch_nav2_lifecycle_blocking()
                     if lc and all(s == 'active' for s in lc.values()):
                         ok = True
                         break
                     time.sleep(2)
                 if not ok:
+                    # Recovery picks RESUME or STARTUP based on actual
+                    # states. Then we POLL until success or 60s timeout
+                    # — STARTUP can take 30-45s on a slow Mac; the old
+                    # 8s sleep was way too short.
                     report('Nav2 lifecycle', 'recovering')
-                    self.recover_nav2_lifecycle()  # fire-and-forget
-                    time.sleep(8)
-                    lc = self._fetch_nav2_lifecycle_blocking()
-                    ok = bool(lc) and all(s == 'active' for s in lc.values())
+                    self.recover_nav2_lifecycle()
+                    deadline = time.monotonic() + 60.0
+                    while time.monotonic() < deadline \
+                            and not self._stop_updater.is_set():
+                        time.sleep(3)
+                        lc = self._fetch_nav2_lifecycle_blocking()
+                        if lc and all(s == 'active' for s in lc.values()):
+                            ok = True
+                            break
                 report('Nav2 lifecycle (8 active)',
                        'ok' if ok else 'failed')
+
+                # Seed AMCL with /initialpose. Without this AMCL refuses
+                # to publish map→odom TF, which means Nav2 cannot accept
+                # goals — the actual reason "auto-start succeeded but
+                # nothing works" used to be a 5-minute mystery.
+                if ros_bridge is not None and ok:
+                    report('AMCL initial pose at (0,0,0)', 'pending')
+                    pose_ok = ros_bridge.publish_initial_pose(0.0, 0.0, 0.0)
+                    report('AMCL initial pose at (0,0,0)',
+                           'ok' if pose_ok else 'failed')
 
                 # Foxglove
                 if not self._port_listening(8765):
@@ -664,39 +684,76 @@ class ProcessManager:
         return n
 
     def recover_nav2_lifecycle(self) -> bool:
-        """Dispatch Nav2 RESET → STARTUP recovery in the background.
+        """Smart Nav2 lifecycle recovery, picking the right transition
+        based on observed node states. Dispatched in a background thread.
 
-        Returns True if the worker thread was scheduled (always True on a
-        live system; False only if we're shutting down). The actual
-        success/failure of the RESET+STARTUP sequence is logged when the
-        worker completes — the UI should show 'Recovery dispatched' and
-        watch the lifecycle indicators flip back to active.
+        Strategy (verified against nav2_lifecycle_manager source):
+          - If all 8 nodes are ACTIVE: nothing to do.
+          - If any are INACTIVE (most common stuck state — bringup got
+            partway, then stalled): RESUME (command 2) transitions all
+            inactive → active in one call. STARTUP alone DOES NOT work
+            here — it only configures+activates UNCONFIGURED nodes.
+          - If any are UNCONFIGURED (rare; usually after a manual reset):
+            STARTUP (command 0).
+          - Otherwise (errored / mixed): RESET (command 3) → wait → then
+            STARTUP. The full sledgehammer.
+
+        Returns True if the worker was scheduled.
         """
         if self._stop_updater.is_set():
             return False
 
-        def worker():
-            env_prefix = 'source ~/robots/rovac/config/ros2_env.sh 2>/dev/null; '
-            cmd_reset = (
-                f'{env_prefix} timeout 10 ros2 service call '
-                f'/lifecycle_manager_navigation/manage_nodes '
-                f'nav2_msgs/srv/ManageLifecycleNodes "{{command: 3}}"'
-            )
-            cmd_startup = (
-                f'{env_prefix} timeout 25 ros2 service call '
-                f'/lifecycle_manager_navigation/manage_nodes '
-                f'nav2_msgs/srv/ManageLifecycleNodes "{{command: 0}}"'
-            )
+        env_prefix = 'source ~/robots/rovac/config/ros2_env.sh 2>/dev/null; '
+        manage_call = (
+            f'{env_prefix} timeout {{timeout}} ros2 service call '
+            f'/lifecycle_manager_navigation/manage_nodes '
+            f'nav2_msgs/srv/ManageLifecycleNodes "{{{{command: {{cmd}}}}}}"'
+        )
+
+        def call(cmd_id: int, timeout_s: int) -> bool:
+            shell_cmd = manage_call.format(timeout=timeout_s, cmd=cmd_id)
             try:
-                r1 = subprocess.run(['bash', '-c', cmd_reset],
-                                    capture_output=True, text=True, timeout=15)
-                r2 = subprocess.run(['bash', '-c', cmd_startup],
-                                    capture_output=True, text=True, timeout=30)
-                ok = ('success=True' in r1.stdout
-                      and 'success=True' in r2.stdout)
-                self.log(f'Nav2 RESET+STARTUP: {"OK" if ok else "FAILED"}')
-            except Exception as e:
-                self.log(f'Nav2 recovery error: {e}')
+                r = subprocess.run(
+                    ['bash', '-c', shell_cmd],
+                    capture_output=True, text=True, timeout=timeout_s + 5,
+                )
+                return 'success=True' in r.stdout
+            except Exception:
+                return False
+
+        def worker():
+            states = self._fetch_nav2_lifecycle_blocking()
+            if not states:
+                self.log('Nav2 recovery: lifecycle_manager unreachable')
+                return
+            unique = set(states.values())
+
+            if unique == {'active'}:
+                self.log('Nav2 recovery: all 8 already active')
+                return
+
+            if 'inactive' in unique and 'unconfigured' not in unique:
+                # Common case — partial bringup left nodes inactive
+                self.log(f'Nav2 recovery: RESUME (states: {unique})')
+                ok = call(2, 25)
+                self.log(f'Nav2 RESUME: {"OK" if ok else "FAILED"}')
+                return
+
+            if unique <= {'unconfigured', 'inactive'}:
+                self.log(f'Nav2 recovery: STARTUP (states: {unique})')
+                ok = call(0, 30)
+                self.log(f'Nav2 STARTUP: {"OK" if ok else "FAILED"}')
+                return
+
+            # Errored / mixed — full sledgehammer
+            self.log(f'Nav2 recovery: RESET → STARTUP (states: {unique})')
+            if not call(3, 15):
+                self.log('Nav2 RESET failed — manager may be wedged')
+                return
+            time.sleep(2)
+            ok = call(0, 30)
+            self.log(f'Nav2 RESET+STARTUP: {"OK" if ok else "FAILED"}')
+
         threading.Thread(target=worker, daemon=True).start()
         return True
 
