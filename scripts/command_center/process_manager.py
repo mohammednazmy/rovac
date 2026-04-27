@@ -350,28 +350,63 @@ class ProcessManager:
                 report('Nav2 lifecycle (8 active)',
                        'ok' if ok else 'failed')
 
-                # AMCL initial pose. Three branches:
-                #  1) AMCL is ALREADY localized (e.g. survived from a
-                #     previous TUI session, or user already pressed 'i')
-                #     → don't reset it.
-                #  2) Caller passed initial_pose (from the panel inputs)
-                #     → use that. This is the user's actual location.
-                #  3) Fallback: (0, 0, 0) — only correct if the robot
-                #     is at the map origin.
+                # ── AUTO-LOCALIZATION HIERARCHY ──────────────────────────
+                # Decide what pose to seed AMCL with. Each branch is
+                # tried in order; the first one that has data wins.
+                #
+                #  1) AMCL is ALREADY localized — don't reset a known-
+                #     good pose. (Possible after the first session if
+                #     AMCL converged + we never killed the node.)
+                #
+                #  2) IMU CALIBRATED + last X/Y persisted — the magic
+                #     branch. The yaw is computed LIVE from BNO055
+                #     using the saved IMU↔map offset, so it's correct
+                #     even if the robot was rotated while powered off.
+                #     X/Y come from the last AMCL pose persisted at
+                #     previous shutdown — works if the robot starts
+                #     near where it last finished (e.g. dock).
+                #     Verify by waiting briefly for AMCL to converge;
+                #     if it doesn't, fall back to global localization.
+                #
+                #  3) Caller-supplied initial_pose tuple — user typed
+                #     coordinates in the panel. Use those verbatim.
+                #
+                #  4) Last resort: (0, 0, 0). Almost certainly wrong
+                #     for a vacuum robot; user must fix manually.
                 if ros_bridge is not None and ok:
                     if ros_bridge.is_amcl_localized():
                         report('AMCL initial pose (already localized)', 'ok')
                     else:
-                        x, y, yaw = initial_pose or (0.0, 0.0, 0.0)
+                        seed = self._choose_initial_pose(
+                            ros_bridge, initial_pose)
+                        x, y, yaw, source = seed
                         import math
-                        report(f'AMCL initial pose '
-                               f'({x:+.2f}, {y:+.2f}, '
-                               f'{math.degrees(yaw):+.0f}°)', 'pending')
+                        label = (f'AMCL initial pose '
+                                 f'({x:+.2f}, {y:+.2f}, '
+                                 f'{math.degrees(yaw):+.0f}°) [{source}]')
+                        report(label, 'pending')
                         pose_ok = ros_bridge.publish_initial_pose(x, y, yaw)
-                        report(f'AMCL initial pose '
-                               f'({x:+.2f}, {y:+.2f}, '
-                               f'{math.degrees(yaw):+.0f}°)',
-                               'ok' if pose_ok else 'failed')
+                        report(label, 'ok' if pose_ok else 'failed')
+
+                        # Wait briefly and verify AMCL converged. If
+                        # we used IMU-derived yaw, the X/Y might be
+                        # stale (robot moved since last shutdown);
+                        # fall back to global localization.
+                        if pose_ok and source == 'IMU+last_xy':
+                            report('AMCL convergence check', 'pending')
+                            converged = self._wait_for_amcl_convergence(
+                                ros_bridge, timeout_s=8.0,
+                                cov_threshold=0.10)
+                            if converged:
+                                report('AMCL convergence check', 'ok')
+                            else:
+                                report('AMCL convergence check',
+                                       'recovering')
+                                ros_bridge.trigger_global_localization()
+                                report(
+                                    'AMCL global localization '
+                                    '(drive robot to converge)',
+                                    'ok')
 
                 # Foxglove
                 if not self._port_listening(8765):
@@ -392,6 +427,62 @@ class ProcessManager:
 
         threading.Thread(target=worker, daemon=True).start()
         return True
+
+    @staticmethod
+    def _choose_initial_pose(ros_bridge, user_pose):
+        """Pick the best available pose seed for AMCL. Returns (x, y,
+        yaw_rad, source_label).
+
+        Hierarchy (best-automated → least-automated):
+          1. IMU calibrated → use last persisted X/Y + LIVE IMU yaw.
+             Source: 'IMU+last_xy'.
+          2. User passed a non-default pose → use that.
+             Source: 'user_input'.
+          3. Last persisted pose alone → use it.
+             Source: 'last_session'.
+          4. Origin fallback.
+             Source: 'origin'.
+        """
+        # Branch 1 — IMU branch
+        from .ros_bridge import RosBridge
+        imu_yaw_deg = ros_bridge.get_map_yaw_from_imu_deg()
+        if imu_yaw_deg is not None:
+            x, y, _ = RosBridge.load_persisted_pose()
+            import math
+            return (x, y, math.radians(imu_yaw_deg), 'IMU+last_xy')
+
+        # Branch 2 — user-supplied pose (non-default)
+        if user_pose is not None:
+            x, y, yaw = user_pose
+            if not (x == 0.0 and y == 0.0 and yaw == 0.0):
+                return (x, y, yaw, 'user_input')
+
+        # Branch 3 — last persisted, even without IMU calibration
+        x, y, yaw = RosBridge.load_persisted_pose()
+        if not (x == 0.0 and y == 0.0 and yaw == 0.0):
+            return (x, y, yaw, 'last_session')
+
+        # Branch 4 — fallback
+        return (0.0, 0.0, 0.0, 'origin')
+
+    @staticmethod
+    def _wait_for_amcl_convergence(ros_bridge, timeout_s: float = 8.0,
+                                   cov_threshold: float = 0.10) -> bool:
+        """Poll AMCL covariance after seeding. Returns True if cov_xx
+        AND cov_yy fall below cov_threshold within timeout_s, meaning
+        the particle filter has confidently converged on the seed.
+        Returns False if AMCL never publishes or stays loose."""
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            time.sleep(0.5)
+            with ros_bridge.lock:
+                if not ros_bridge.state.get('amcl_localized', False):
+                    continue
+                cov_xx = ros_bridge.state.get('amcl_cov_xx', 1.0)
+                cov_yy = ros_bridge.state.get('amcl_cov_yy', 1.0)
+            if cov_xx < cov_threshold and cov_yy < cov_threshold:
+                return True
+        return False
 
     def _wait_for_topic(self, topic: str, timeout_s: float, min_hz: float) -> bool:
         """Poll `ros2 topic hz` until the topic publishes at >= min_hz."""

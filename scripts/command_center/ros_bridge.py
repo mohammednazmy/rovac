@@ -141,25 +141,56 @@ class RosBridge:
         with self.lock:
             return list(self._logs)
 
-    # ── Pose persistence (survives between sessions) ────────────────
+    # ── Pose persistence + IMU↔map yaw calibration ──────────────────
+    #
+    # State file format (~/.rovac_state.json):
+    #   {
+    #     "last_pose":            {"x": float, "y": float, "yaw_rad": float},
+    #     "map_yaw_offset_deg":   float   # AMCL_yaw - IMU_yaw, in degrees,
+    #                                     # constant for a given map.
+    #   }
+    #
+    # The yaw offset is what makes auto-localization work without user
+    # input: BNO055 yaw is absolute (relative to magnetic north), so once
+    # calibrated, we can reconstruct the robot's heading in the map
+    # frame from the current IMU reading on EVERY startup, regardless
+    # of how the robot was rotated while powered off.
 
     _STATE_FILE = '~/.rovac_state.json'
 
     @classmethod
-    def load_persisted_pose(cls) -> tuple:
-        """Return (x, y, yaw_rad) from the last saved AMCL pose, or
-        (0.0, 0.0, 0.0) if no state file exists. Used to pre-fill the
-        Coverage panel pose inputs so the user doesn't re-enter every
-        session."""
+    def _read_state_file(cls) -> dict:
         import json
         import os as _os
         path = _os.path.expanduser(cls._STATE_FILE)
         if not _os.path.exists(path):
-            return (0.0, 0.0, 0.0)
+            return {}
         try:
             with open(path) as f:
-                data = json.load(f) or {}
-            pose = data.get('last_pose') or {}
+                return json.load(f) or {}
+        except Exception:
+            return {}
+
+    @classmethod
+    def _write_state_file(cls, updates: dict) -> bool:
+        import json
+        import os as _os
+        try:
+            path = _os.path.expanduser(cls._STATE_FILE)
+            current = cls._read_state_file()
+            current.update(updates)
+            with open(path, 'w') as f:
+                json.dump(current, f, indent=2)
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def load_persisted_pose(cls) -> tuple:
+        """Return (x, y, yaw_rad) from the last saved AMCL pose."""
+        data = cls._read_state_file()
+        pose = data.get('last_pose') or {}
+        try:
             return (
                 float(pose.get('x', 0.0)),
                 float(pose.get('y', 0.0)),
@@ -168,26 +199,98 @@ class RosBridge:
         except Exception:
             return (0.0, 0.0, 0.0)
 
+    @classmethod
+    def load_yaw_offset_deg(cls):
+        """Return the saved IMU↔map yaw offset in DEGREES, or None if
+        the user has never calibrated. Auto-localization picks the
+        IMU-derived yaw branch only when this returns a value."""
+        data = cls._read_state_file()
+        if 'map_yaw_offset_deg' not in data:
+            return None
+        try:
+            return float(data['map_yaw_offset_deg'])
+        except Exception:
+            return None
+
     def save_current_pose(self) -> bool:
-        """Persist the latest AMCL pose to disk so the next session
-        starts with the inputs pre-filled. Best-effort."""
-        import json
-        import os as _os
+        """Persist the latest AMCL pose so the next session pre-fills."""
         with self.lock:
             if not self.state.get('amcl_localized', False):
                 return False
             x = self.state.get('amcl_x', 0.0)
             y = self.state.get('amcl_y', 0.0)
             yaw_deg = self.state.get('amcl_yaw_deg', 0.0)
+        return self._write_state_file({
+            'last_pose': {
+                'x': x, 'y': y, 'yaw_rad': math.radians(yaw_deg)
+            }
+        })
+
+    def calibrate_yaw_offset(self) -> tuple:
+        """Compute the IMU↔map yaw offset from the current AMCL pose
+        and current BNO055 yaw, save it to the state file.
+
+        Returns (ok: bool, offset_deg: float, message: str). The message
+        is suitable for direct UI display.
+
+        Caller pre-conditions (validated):
+          - AMCL must be localized (we need a known map yaw)
+          - BNO055 must be publishing (we need a current IMU yaw)
+          - BNO055 calibration should ideally be 3/3 (we don't enforce
+            but warn — the message reflects calibration confidence).
+        """
+        with self.lock:
+            amcl_localized = self.state.get('amcl_localized', False)
+            amcl_yaw_deg = self.state.get('amcl_yaw_deg', 0.0)
+            bno_hz = self.state.get('bno055_imu_hz', 0.0)
+            bno_yaw_deg = self.state.get('bno055_orient_yaw', 0.0)
+            diag = self.state.get('diag_motor', {})
+        if not amcl_localized:
+            return (False, 0.0,
+                    "AMCL not localized — set initial pose first ('i' or 'I')")
+        if bno_hz <= 0:
+            return (False, 0.0,
+                    "BNO055 IMU not publishing — check rovac-edge-motor-driver")
+        offset_deg = amcl_yaw_deg - bno_yaw_deg
+        # Wrap to (-180, +180] so subsequent readings stay close
+        offset_deg = ((offset_deg + 180.0) % 360.0) - 180.0
+        if not self._write_state_file({'map_yaw_offset_deg': offset_deg}):
+            return (False, offset_deg, "Failed to save offset to disk")
+        # Magnetometer calibration quality (0=poor … 3=perfect)
         try:
-            path = _os.path.expanduser(self._STATE_FILE)
-            data = {'last_pose': {
-                'x': x, 'y': y, 'yaw_rad': math.radians(yaw_deg)}}
-            with open(path, 'w') as f:
-                json.dump(data, f)
-            return True
-        except Exception:
-            return False
+            mag_cal = int(diag.get('imu_cal_mag', '0'))
+        except (ValueError, TypeError):
+            mag_cal = 0
+        cal_warn = ""
+        if mag_cal < 2:
+            cal_warn = (f" [yellow]⚠ BNO055 mag cal = {mag_cal}/3 — "
+                        "rotate robot to improve yaw accuracy[/]")
+        return (True, offset_deg,
+                f"Calibration saved: offset = {offset_deg:+.1f}°. "
+                f"Future startups will auto-compute yaw from IMU.{cal_warn}")
+
+    def get_map_yaw_from_imu_deg(self):
+        """Compute the robot's CURRENT yaw in the map frame using the
+        latest BNO055 reading and the saved calibration offset.
+
+        Returns yaw_deg (float, normalized to (-180, +180]) or None if:
+          - The IMU isn't publishing (no current yaw)
+          - The user has never calibrated (no offset saved)
+        """
+        offset_deg = self.load_yaw_offset_deg()
+        if offset_deg is None:
+            return None
+        with self.lock:
+            bno_hz = self.state.get('bno055_imu_hz', 0.0)
+            if bno_hz <= 0:
+                return None
+            bno_yaw_deg = self.state.get('bno055_orient_yaw', 0.0)
+        yaw_deg = bno_yaw_deg + offset_deg
+        return ((yaw_deg + 180.0) % 360.0) - 180.0
+
+    def has_yaw_calibration(self) -> bool:
+        """True if the user has previously calibrated IMU↔map yaw."""
+        return self.load_yaw_offset_deg() is not None
 
     def get_rosout_tail(self) -> list:
         """Return recent (level, node, message) tuples from /rosout WARN+."""

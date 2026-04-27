@@ -118,6 +118,7 @@ class CoveragePanel(Widget):
                 "[bold]S[/] STOP coverage\n"
                 " [bold]i[/] init pose (X/Y/yaw fields)   "
                 "[bold]I[/] AMCL global localization (scatter)\n"
+                " [bold]c[/] calibrate IMU↔map (once when AMCL is on the right pose)\n"
                 " [bold]l[/] Nav2 RECOVER    "
                 "[bold]k[/] kill teleop       "
                 "[bold]s[/] save map\n"
@@ -159,6 +160,8 @@ class CoveragePanel(Widget):
             self._publish_initial_pose()
         elif key in ("I", "shift+i"):
             self._global_localize()
+        elif key == "c":
+            self._calibrate_imu_yaw()
         elif key == "s":
             self._save_map()
         else:
@@ -371,6 +374,33 @@ class CoveragePanel(Widget):
         else:
             self._show_result("[red]/initialpose publish failed (see log)[/]")
 
+    def _calibrate_imu_yaw(self):
+        """Snapshot the current AMCL yaw vs IMU yaw and save the offset.
+        After calibration, future startups can auto-compute the robot's
+        heading from the BNO055 magnetometer — no user input needed."""
+        if not self.app.ros:
+            self._show_result("[red]ROS bridge not connected[/]")
+            return
+        ok, offset, msg = self.app.ros.calibrate_yaw_offset()
+        color = "green" if ok else "red"
+        self._show_result(f"[{color}]{msg}[/]")
+        # If calibration succeeded, immediately re-compute the yaw input
+        # so the user can see the auto-derived value going forward.
+        if ok:
+            self._refresh_yaw_input_from_imu()
+
+    def _refresh_yaw_input_from_imu(self):
+        """Update the yaw input field from current IMU + saved offset."""
+        if not self.app.ros:
+            return
+        yaw_deg = self.app.ros.get_map_yaw_from_imu_deg()
+        if yaw_deg is None:
+            return
+        try:
+            self.query_one("#cov-pose-yaw", Input).value = f"{yaw_deg:.0f}"
+        except Exception:
+            pass
+
     def _global_localize(self):
         """Trigger AMCL global localization — scatters particles uniformly
         across the map. Use when you have NO IDEA where the robot is.
@@ -471,10 +501,16 @@ class CoveragePanel(Widget):
         self._update_rosout_tail()
 
     def _update_amcl_status(self, state: dict):
-        """Show AMCL localization status. Three states:
-          - red:   no /amcl_pose ever received → 'NOT LOCALIZED'
-          - yellow: stale (no update in >5s)   → 'STALE (Ns ago)'
-          - green: fresh                        → 'LOCALIZED at (x, y, yaw)'
+        """Show AMCL + IMU calibration state in two lines.
+
+        Line 1 — AMCL localization:
+          red:   no /amcl_pose ever received → 'NOT LOCALIZED'
+          yellow: stale (no update in >5s)   → 'STALE (Ns ago)'
+          green: fresh + tight cov           → 'LOCALIZED at (x,y,yaw)'
+
+        Line 2 — IMU↔map yaw calibration:
+          dim:   not calibrated → '○ IMU calibration: not set (press c)'
+          green: calibrated     → '● IMU yaw → map: ±N° (auto-yaw on)'
         """
         import time as _time
         localized = state.get("amcl_localized", False)
@@ -482,23 +518,43 @@ class CoveragePanel(Widget):
         age = _time.monotonic() - last if last > 0 else 1e9
 
         if not localized:
-            text = ("[red]○ AMCL: NOT LOCALIZED[/]  "
-                    "[dim](enter pose below + press 'i', "
-                    "or 'I' for global)[/]")
+            line1 = ("[red]○ AMCL: NOT LOCALIZED[/]  "
+                     "[dim](enter pose + 'i', 'I' global, "
+                     "or 'A' auto-start)[/]")
         elif age > 5:
-            text = (f"[yellow]● AMCL: STALE ({age:.0f}s since last update)[/]")
+            line1 = (f"[yellow]● AMCL: STALE "
+                     f"({age:.0f}s since last update)[/]")
         else:
             x = state.get("amcl_x", 0.0)
             y = state.get("amcl_y", 0.0)
             yaw = state.get("amcl_yaw_deg", 0.0)
             cov = state.get("amcl_cov_xx", 0.0)
-            # Tight cov (after a few scans) → high confidence
             confidence = "tight" if cov < 0.05 else "loose"
-            text = (f"[green]● AMCL LOCALIZED[/] at "
-                    f"({x:+.2f}, {y:+.2f}) yaw {yaw:+.0f}° "
-                    f"[dim]cov: {confidence}[/]")
+            line1 = (f"[green]● AMCL LOCALIZED[/] at "
+                     f"({x:+.2f}, {y:+.2f}) yaw {yaw:+.0f}° "
+                     f"[dim]cov: {confidence}[/]")
+
+        # IMU calibration state
+        if self.app.ros is not None:
+            offset_deg = self.app.ros.load_yaw_offset_deg()
+            imu_yaw_deg = self.app.ros.get_map_yaw_from_imu_deg()
+        else:
+            offset_deg = None
+            imu_yaw_deg = None
+
+        if offset_deg is None:
+            line2 = ("[dim]○ IMU calibration: not set "
+                     "(press 'c' once AMCL is localized)[/]")
+        elif imu_yaw_deg is None:
+            line2 = (f"[yellow]● IMU calibrated (offset {offset_deg:+.0f}°) "
+                     "but BNO055 not publishing[/]")
+        else:
+            line2 = (f"[green]● IMU yaw→map: {imu_yaw_deg:+.0f}°[/] "
+                     f"[dim](offset {offset_deg:+.0f}°, auto-yaw on)[/]")
+
         try:
-            self.query_one("#cov-amcl-status", Static).update(text)
+            self.query_one("#cov-amcl-status", Static).update(
+                f"{line1}\n{line2}")
         except Exception:
             pass
 
@@ -701,10 +757,23 @@ class CoveragePanel(Widget):
             pass
 
     def on_mount(self):
-        """Pre-fill map input with most recent map; pre-fill pose inputs
-        with the AMCL pose persisted from the previous session so the
-        user doesn't re-enter coordinates every launch."""
+        """Pre-fill UI from persisted state.
+
+        Pose pre-fill hierarchy (best automation first):
+          1. Map yaml: most recently modified file in ~/maps.
+          2. X / Y: last AMCL pose persisted to ~/.rovac_state.json.
+             (Robot likely starts at or near where it last shut down —
+              charging dock for vacuums.)
+          3. Yaw: if IMU↔map calibration exists AND BNO055 is publishing,
+             use IMU+offset (LIVE — reflects current robot orientation).
+             Else fall back to the persisted yaw.
+
+        The IMU branch is the magic that makes auto-localization work:
+        the user can rotate the robot while it's powered off, and the
+        next startup still computes the correct map yaw.
+        """
         import os
+        import math
         # Map yaml
         try:
             maps = self.app.pm.list_maps()
@@ -716,17 +785,56 @@ class CoveragePanel(Widget):
                 self.query_one("#cov-map-input", Input).value = latest
             except Exception:
                 pass
-        # Persisted pose (from ~/.rovac_state.json)
+
+        # Pose: persisted X/Y always; yaw from IMU if calibrated.
         try:
             from ..ros_bridge import RosBridge
             x, y, yaw_rad = RosBridge.load_persisted_pose()
-            import math
             self.query_one("#cov-pose-x", Input).value = f"{x:.2f}"
             self.query_one("#cov-pose-y", Input).value = f"{y:.2f}"
+            yaw_deg_default = math.degrees(yaw_rad)
+            if self.app.ros is not None:
+                imu_yaw_deg = self.app.ros.get_map_yaw_from_imu_deg()
+                if imu_yaw_deg is not None:
+                    yaw_deg_default = imu_yaw_deg
             self.query_one("#cov-pose-yaw", Input).value = \
-                f"{math.degrees(yaw_rad):.0f}"
+                f"{yaw_deg_default:.0f}"
         except Exception:
             pass
+
+        # Periodically refresh the yaw input from IMU+offset, but ONLY
+        # while AMCL isn't localized AND the user hasn't typed a value.
+        # This way, if the robot rotates physically (someone moves it
+        # before pressing 'A'), the seed yaw stays correct.
+        try:
+            self.set_interval(2.0, self._maybe_refresh_yaw_from_imu)
+        except Exception:
+            pass
+
+    def _maybe_refresh_yaw_from_imu(self):
+        """Auto-update the yaw input when AMCL isn't localized — keeps
+        the input synced with the BNO055 in case the user rotates the
+        robot before pressing 'A'. Skips if user is editing the field."""
+        if self.app.ros is None:
+            return
+        # If AMCL is already localized, the user shouldn't need to edit
+        # yaw — leave their value alone.
+        try:
+            if self.app.ros.is_amcl_localized():
+                return
+        except Exception:
+            pass
+        # If the user is currently focused on the yaw input, don't
+        # clobber what they're typing.
+        try:
+            from textual.widgets import Input as _Input
+            if (self.app.focused is not None
+                    and getattr(self.app.focused, 'id', '') == 'cov-pose-yaw'
+                    and isinstance(self.app.focused, _Input)):
+                return
+        except Exception:
+            pass
+        self._refresh_yaw_input_from_imu()
 
     def _update_alerts(self, state: dict, proc_status: dict):
         alerts = []
