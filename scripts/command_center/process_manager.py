@@ -323,47 +323,44 @@ class ProcessManager:
                 if not ok:
                     return
 
-                # Wait up to 30s for lifecycle to come up; auto-recover if not.
-                report('Nav2 lifecycle (8 active)', 'pending')
-                ok = False
-                for _ in range(15):  # ~30s
-                    lc = self._fetch_nav2_lifecycle_blocking()
-                    if lc and all(s == 'active' for s in lc.values()):
-                        ok = True
-                        break
-                    time.sleep(2)
-                if not ok:
-                    # Recovery picks RESUME or STARTUP based on actual
-                    # states. Then we POLL until success or 60s timeout
-                    # — STARTUP can take 30-45s on a slow Mac; the old
-                    # 8s sleep was way too short.
-                    report('Nav2 lifecycle', 'recovering')
-                    self.recover_nav2_lifecycle()
-                    deadline = time.monotonic() + 60.0
-                    while time.monotonic() < deadline \
-                            and not self._stop_updater.is_set():
-                        time.sleep(3)
-                        lc = self._fetch_nav2_lifecycle_blocking()
-                        if lc and all(s == 'active' for s in lc.values()):
-                            ok = True
-                            break
-                report('Nav2 lifecycle (8 active)',
-                       'ok' if ok else 'failed')
+                # CIRCULAR DEPENDENCY in Nav2 lifecycle:
+                #   - planner_server activate needs map → base_link TF
+                #   - map → base_link only exists once AMCL publishes
+                #     map → odom (after receiving /initialpose)
+                #   - AMCL gets /initialpose only AFTER we publish it
+                # If we wait for all 8 nodes active first (old behavior),
+                # planner_server hangs forever and the bringup stalls
+                # with controller_server active and the rest stuck.
+                # Fix: seed /initialpose as SOON as AMCL is configurable
+                # (not when all 8 are active), then the rest activate.
 
-                # ── Settle delay: let TF history populate ─────────
-                # Right after Nav2 lifecycle activates, AMCL is ready
-                # but EKF's odom→base_link TF history is shallow.
-                # Publishing /initialpose immediately triggers AMCL
-                # to look up the current odom→base_link transform —
-                # which may not yet exist with a stale-enough timestamp,
-                # giving "Failed to transform initial pose in time
-                # (Lookup would require extrapolation)" warnings.
-                # 3 seconds of EKF at 20 Hz = 60 TF messages buffered,
-                # enough for any reasonable lookup tolerance.
+                # Phase 1: wait until /amcl is active (15s timeout)
+                report('AMCL active (so we can seed)', 'pending')
+                amcl_active = False
+                for _ in range(15):
+                    lc = self._fetch_nav2_lifecycle_blocking()
+                    if lc.get('/amcl') == 'active':
+                        amcl_active = True
+                        break
+                    time.sleep(1.0)
+                report('AMCL active (so we can seed)',
+                       'ok' if amcl_active else 'failed')
+                if not amcl_active:
+                    # AMCL itself didn't come up — full recovery needed
+                    self.recover_nav2_lifecycle()
+                    time.sleep(5.0)
+
+                # Phase 2: 3s TF history settle so EKF's odom→base_link
+                # transform has populated TF history; otherwise AMCL
+                # gets "Failed to transform initial pose: extrapolation".
                 report('TF history settle (3s)', 'pending')
                 time.sleep(3.0)
                 report('TF history settle (3s)', 'ok')
 
+                # Phase 3: AMCL initial pose seed — MUST happen before
+                # the rest of lifecycle activates, because planner_server
+                # etc need map → base_link TF which only exists after
+                # AMCL is seeded.
                 # ── AUTO-LOCALIZATION HIERARCHY ──────────────────────────
                 # Decide what pose to seed AMCL with. Each branch is
                 # tried in order; the first one that has data wins.
@@ -402,38 +399,44 @@ class ProcessManager:
                         pose_ok = ros_bridge.publish_initial_pose(x, y, yaw)
                         report(label, 'ok' if pose_ok else 'failed')
 
-                        # Verify AMCL latched onto the seed. We only
-                        # need a SOMEWHAT-confident pose right after
-                        # publish — full convergence requires the
-                        # robot to drive, which we explicitly DON'T
-                        # do for the user.
-                        # Old version: 8s + cov<0.10. Way too strict.
-                        # AMCL initial cov is 0.5 by default; new
-                        # particles take 30-60s of motion to converge
-                        # below 0.1. Auto-globalizing after 8s threw
-                        # away the user's good seed.
-                        # New version: 20s + cov<0.5 (just verify the
-                        # seed didn't BLOW UP). If even that fails,
-                        # don't globalize — leave the seed and let
-                        # the user drive to converge.
-                        if pose_ok and source == 'IMU+last_xy':
-                            report('AMCL seed accepted '
-                                   '(cov < 0.5)', 'pending')
-                            converged = self._wait_for_amcl_convergence(
-                                ros_bridge, timeout_s=20.0,
-                                cov_threshold=0.5)
-                            if converged:
-                                report('AMCL seed accepted '
-                                       '(cov < 0.5)', 'ok')
-                            else:
-                                # Don't auto-globalize — that would
-                                # erase the user's seed. Just warn.
-                                report('AMCL seed accepted '
-                                       '(cov < 0.5)', 'failed')
-                                self.log(
-                                    'AMCL did not converge in 20s — '
-                                    'seed kept; drive the robot or '
-                                    "press 'I' for global localization")
+                        # Phase 4: wait for AMCL to publish map → odom TF.
+                        # This is the BLOCKER for planner_server activation.
+                        # AMCL takes 1-3 seconds after /initialpose to do
+                        # its first scan match and publish the TF.
+                        report('map → odom TF available', 'pending')
+                        tf_ok = self._wait_for_map_odom_tf(timeout_s=15.0)
+                        report('map → odom TF available',
+                               'ok' if tf_ok else 'failed')
+                        if not tf_ok:
+                            self.log(
+                                'AMCL never published map→odom TF after '
+                                'initial pose. Try "I" for global '
+                                'localization, or "i" to re-seed.')
+
+                # Phase 5: wait for the REST of lifecycle to activate.
+                # Now that map→odom TF exists, planner_server etc can
+                # activate. Auto-recover if any node is still stuck.
+                report('Nav2 lifecycle (8 active)', 'pending')
+                ok = False
+                for _ in range(15):  # ~30s
+                    lc = self._fetch_nav2_lifecycle_blocking()
+                    if lc and all(s == 'active' for s in lc.values()):
+                        ok = True
+                        break
+                    time.sleep(2)
+                if not ok:
+                    report('Nav2 lifecycle', 'recovering')
+                    self.recover_nav2_lifecycle()
+                    deadline = time.monotonic() + 60.0
+                    while time.monotonic() < deadline \
+                            and not self._stop_updater.is_set():
+                        time.sleep(3)
+                        lc = self._fetch_nav2_lifecycle_blocking()
+                        if lc and all(s == 'active' for s in lc.values()):
+                            ok = True
+                            break
+                report('Nav2 lifecycle (8 active)',
+                       'ok' if ok else 'failed')
 
                 # Foxglove
                 if not self._port_listening(8765):
@@ -491,6 +494,25 @@ class ProcessManager:
 
         # Branch 4 — fallback
         return (0.0, 0.0, 0.0, 'origin')
+
+    def _wait_for_map_odom_tf(self, timeout_s: float = 15.0) -> bool:
+        """Poll until tf2_echo can resolve map → base_link, or timeout.
+        AMCL publishes map → odom only after receiving /initialpose AND
+        completing a scan match against the loaded map. This is the
+        proof-of-life check for AMCL localization."""
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline and not self._stop_updater.is_set():
+            r = subprocess.run(
+                ['bash', '-c',
+                 'source ~/robots/rovac/config/ros2_env.sh 2>/dev/null;'
+                 ' timeout 3 ros2 run tf2_ros tf2_echo map base_link 2>&1 |'
+                 ' grep -m1 "Translation"'],
+                capture_output=True, text=True, timeout=6,
+            )
+            if 'Translation' in r.stdout:
+                return True
+            time.sleep(1.5)
+        return False
 
     @staticmethod
     def _wait_for_amcl_convergence(ros_bridge, timeout_s: float = 8.0,
