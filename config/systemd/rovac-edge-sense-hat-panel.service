@@ -1,0 +1,47 @@
+[Unit]
+Description=ROVAC Edge Sense HAT Panel (status display + joystick input)
+Wants=network-online.target
+After=network-online.target rovac-edge-mux.service rovac-edge-health.service
+PartOf=rovac-edge.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+
+# DDS Configuration
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rovac-edge-sense-hat-panel
+
+# Timeout settings
+TimeoutStartSec=30
+TimeoutStopSec=10
+
+# Lightweight node — minimal resources
+MemoryMax=128M
+CPUQuota=15%
+
+# Restart policy
+Restart=always
+RestartSec=5
+
+# Wait briefly so the mux + health services are publishing before we
+# start rendering and offering teleop input.
+ExecStartPre=/bin/sleep 8
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; [ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh; exec python3 /home/pi/robots/rovac/scripts/edge/sense_hat_panel_node.py'
+
+# On stop, blank the matrix so the robot doesn't sit lit-up after
+# `systemctl stop`. The Python signal handler does this too, but make it
+# unambiguous via a stop hook.
+ExecStopPost=-/usr/bin/python3 -c 'from sense_hat import SenseHat; SenseHat().clear()'
+
+[Install]
+WantedBy=rovac-edge.target

@@ -113,6 +113,9 @@ install_units() {
   remote_sudo_install "/etc/systemd/system/rovac-edge-ps2-joy.service" "$UNIT_DIR/rovac-edge-ps2-joy.service"
   remote_sudo_install "/etc/systemd/system/rovac-edge-ps2-mapper.service" "$UNIT_DIR/rovac-edge-ps2-mapper.service"
 
+  # Sense HAT panel (status display + on-robot joystick)
+  remote_sudo_install "/etc/systemd/system/rovac-edge-sense-hat-panel.service" "$UNIT_DIR/rovac-edge-sense-hat-panel.service"
+
   # EKF sensor fusion (disabled by default — run from Mac)
   remote_sudo_install "/etc/systemd/system/rovac-edge-ekf.service" "$UNIT_DIR/rovac-edge-ekf.service"
 
