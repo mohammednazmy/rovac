@@ -91,9 +91,10 @@ ESTOP_PUBLISH_HZ = 10.0
 
 
 # ── Teleop limits when joystick drives the robot ────────────────────────
-# Conservative: small physical joystick → fine nudges, not full speed.
-TELEOP_LINEAR_MAGNITUDE = 0.15   # m/s  (full speed = 0.57)
-TELEOP_ANGULAR_MAGNITUDE = 0.6   # rad/s (full speed = 6.5)
+# Top speed — Mohammed wants the HAT joystick to drive the robot at full
+# power. These match the documented robot maximums (CLAUDE.md).
+TELEOP_LINEAR_MAGNITUDE = 0.57   # m/s — full forward/backward
+TELEOP_ANGULAR_MAGNITUDE = 6.5   # rad/s — full left/right rotation
 
 # Health/connectivity thresholds
 MAC_DISCONNECT_TIMEOUT_S = 8.0   # consider Mac unreachable if no health msg in this window
@@ -129,6 +130,12 @@ class SenseHatPanel(Node):
 
         # Rainbow animation start time
         self._rainbow_start = time.time()
+
+        # Dirty-flag rendering: track the last frame we pushed to the
+        # matrix. Skip set_pixels() when the new frame matches — the
+        # ATTiny88 LED driver shows visible refresh artifacts otherwise.
+        # RAINBOW frames always change so the rainbow still animates.
+        self._last_rendered: Optional[List] = None
 
         # ── ROS interfaces ────────────────────────────────────────────
         self._teleop_pub = self.create_publisher(Twist, '/cmd_vel_teleop', 10)
@@ -349,7 +356,13 @@ class SenseHatPanel(Node):
         else:  # RAINBOW
             pixels = rainbow_frame(time.time() - self._rainbow_start)
 
-        self._hat.set_pixels(pixels)
+        # Only push to the LED matrix when the frame has changed — the
+        # I2C write can flicker visibly if called every tick on static
+        # content. RAINBOW frames change every tick so this is a no-op
+        # for the rainbow case.
+        if pixels != self._last_rendered:
+            self._hat.set_pixels(pixels)
+            self._last_rendered = pixels
 
     def _render_status(self, *, mode, motor_unhealthy, sensor_unhealthy,
                        mac_disconnected, cliff) -> List:
@@ -382,6 +395,7 @@ class SenseHatPanel(Node):
             # Stop motors if we were driving.
             self._publish_twist(0.0, 0.0)
             self._hat.clear()
+            self._last_rendered = None
         except Exception:
             pass
 

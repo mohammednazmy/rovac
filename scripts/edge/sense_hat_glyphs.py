@@ -60,71 +60,77 @@ PALETTE: Dict[str, RGB] = {
 
 
 # ── MODE GLYPHS ─────────────────────────────────────────────────────────
-# Each glyph is the central visual when in STATUS feature set. Corner
-# pixels (0, 7, 56, 63) are reserved for alarm-badge overlays — designs
-# stay inside the inner 6×6 area where possible.
+# Big letters, instantly readable from across the room. Each mode owns
+# a colour:
+#   I (warm white) = IDLE   — robot at rest, no commanded motion
+#   T (cyan)       = TELEOP — manual driving (any teleop source active)
+#   N (magenta)    = NAV    — Nav2 autonomous navigation requested
+#   S (teal)       = SLAM   — SLAM mapping requested
+#   X (red)        = ESTOP  — emergency stop locked in (10 Hz zero Twist)
+#
+# Corner pixels may be overwritten by alarm overlays (see alarm_overlay()):
+#   top-left red    = motor ESP32 unhealthy
+#   top-right red   = sensor ESP32 unhealthy
+#   bottom-left amb = Mac brain disconnected
+#   bottom-right red= cliff detected
+#
+# So if you see "T" with a red top-left dot, that means the robot is in
+# TELEOP mode AND the motor controller is reporting a fault.
 
 MODE_GLYPHS: Dict[str, List[str]] = {
-    # IDLE — soft glowing orb. Calm, "robot is awake and waiting".
     "IDLE": [
-        "........",
+        ".WWWWWW.",
+        ".WWWWWW.",
         "...WW...",
-        "..wWWw..",
-        ".wWWWWw.",
-        ".wWWWWw.",
-        "..wWWw..",
         "...WW...",
-        "........",
+        "...WW...",
+        "...WW...",
+        ".WWWWWW.",
+        ".WWWWWW.",
     ],
 
-    # TELEOP — a joystick: ball on stem above a base. Reads as
-    # "manual control / human in the loop".
     "TELEOP": [
-        "...CC...",
-        "..CCCC..",
-        "..CCCC...",
-        "...cc...",
-        "...cc...",
-        "..cccc..",
         ".CCCCCC.",
-        "C......C",
+        ".CCCCCC.",
+        "...CC...",
+        "...CC...",
+        "...CC...",
+        "...CC...",
+        "...CC...",
+        "...CC...",
     ],
 
-    # NAV — 4-point compass star. Reads as "navigating to a goal".
     "NAV": [
-        "...M....",
-        "..MMM...",
-        ".MMMMM..",
-        "MMMmMMMM",
-        ".MMMMM..",
-        "..MMM...",
-        ".M.M.M..",
-        "M.....M.",
+        ".M....M.",
+        ".MM...M.",
+        ".MMM..M.",
+        ".M.M..M.",
+        ".M..M.M.",
+        ".M..MMM.",
+        ".M...MM.",
+        ".M....M.",
     ],
 
-    # SLAM — concentric square rings (radar / map). Reads as "scanning,
-    # building a map of the world".
     "SLAM": [
-        "TTTTTTTT",
-        "T......T",
-        "T.tttt.T",
-        "T.t..t.T",
-        "T.t..t.T",
-        "T.tttt.T",
-        "T......T",
-        "TTTTTTTT",
+        ".TTTTTT.",
+        "TT....T.",
+        "TT......",
+        ".TTTTT..",
+        ".....TT.",
+        "......TT",
+        ".T....TT",
+        ".TTTTTT.",
     ],
 
-    # ESTOP — octagonal stop sign with a darker shoulder for depth.
     "ESTOP": [
-        "..rRRr..",
-        ".RRRRRR.",
-        "rRRRRRRr",
-        "RRRRRRRR",
-        "RRRRRRRR",
-        "rRRRRRRr",
-        ".RRRRRR.",
-        "..rRRr..",
+        "RR....RR",
+        ".RR..RR.",
+        "..RRRR..",
+        "...RR...",
+        "...RR...",
+        "..RRRR..",
+        ".RR..RR.",
+        "RR....RR",
     ],
 }
 

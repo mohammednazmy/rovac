@@ -111,8 +111,35 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 
 The panel's HAT joystick has 3 feature sets, cycled by center-click:
 - **STATUS** — mode glyph + corner-badge alarm overlays (motor/sensor ESP32 health, Mac connectivity, cliff detection). Up/Down cycles requested mode (publishes `mode_request`).
-- **TELEOP** — joystick directions drive robot via `/cmd_vel_teleop` (15 cm/s linear, 0.6 rad/s angular).
+- **TELEOP** — joystick directions drive robot at top speed via `/cmd_vel_teleop` (0.57 m/s linear, 6.5 rad/s angular — robot maximums).
 - **RAINBOW** — plasma-vortex animation, joystick disabled except center-click.
+
+#### Visual reference — what each LED display means
+
+**Mode letters (STATUS feature set, big letter on display):**
+
+| Letter | Colour | Meaning |
+|---|---|---|
+| **I** | warm white | IDLE — robot at rest, no commanded motion |
+| **T** | cyan | TELEOP — manual driving (any teleop source active) |
+| **N** | magenta | NAV — Nav2 autonomous navigation requested |
+| **S** | teal | SLAM — SLAM mapping requested |
+| **X** | red | ESTOP — emergency stop locked in (10 Hz zero Twist on `/cmd_vel_teleop`) |
+
+**Corner alarm badges (small dot in corner, overlays on top of letter):**
+
+| Position | Colour | Meaning |
+|---|---|---|
+| top-left | red | Motor ESP32 unhealthy (no diagnostics or `level != OK`) |
+| top-right | red | Sensor hub ESP32 unhealthy |
+| bottom-left | amber | Mac brain unreachable for >8s |
+| bottom-right | red | Cliff detected — `/sensors/cliff/detected = True` |
+
+**Example:** A cyan `T` with a red dot in the top-right corner = robot is in TELEOP mode but the sensor hub ESP32 is reporting a fault.
+
+**Other feature sets:**
+- **TELEOP feature set** displays a cyan arrow showing which direction the joystick is currently pressed (or a centered dot when released). This is *not* the same as `T`-letter STATUS mode — TELEOP feature set is the "I'm using the HAT joystick to drive right now" UI.
+- **RAINBOW feature set** is just a pretty animation; no diagnostic meaning.
 
 The Sense HAT IMU (LSM9DS1) is intentionally unused — the BNO055 on the ESP32 motor controller remains the sole IMU.
 

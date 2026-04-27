@@ -131,13 +131,13 @@ class TestModeCycle:
 
 
 class TestTeleopMagnitudes:
-    def test_linear_magnitude_below_max(self, panel_module):
-        """ROVAC max linear = 0.57 m/s. Joystick should be conservative."""
-        assert 0 < panel_module.TELEOP_LINEAR_MAGNITUDE < 0.57
+    def test_linear_magnitude_at_or_below_max(self, panel_module):
+        """ROVAC max linear = 0.57 m/s (CLAUDE.md). User wants top speed."""
+        assert 0 < panel_module.TELEOP_LINEAR_MAGNITUDE <= 0.57
 
-    def test_angular_magnitude_below_max(self, panel_module):
-        """ROVAC max angular = 6.5 rad/s."""
-        assert 0 < panel_module.TELEOP_ANGULAR_MAGNITUDE < 6.5
+    def test_angular_magnitude_at_or_below_max(self, panel_module):
+        """ROVAC max angular = 6.5 rad/s (CLAUDE.md)."""
+        assert 0 < panel_module.TELEOP_ANGULAR_MAGNITUDE <= 6.5
 
     def test_estop_publish_rate_is_reasonable(self, panel_module):
         """Below 5 Hz risks losing the mux race, above 50 Hz is wasteful."""
