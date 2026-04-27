@@ -53,7 +53,16 @@ python3 scripts/keyboard_teleop.py
 ./scripts/mac_brain_launch.sh foxglove
 
 # Edge status
-ssh pi@192.168.1.200 'sudo systemctl status rovac-edge-motor-driver rovac-edge-sensor-hub rovac-edge-rplidar-c1 rovac-edge-mux'
+ssh pi@192.168.1.200 'sudo systemctl status rovac-edge-motor-driver rovac-edge-sensor-hub rovac-edge-rplidar-c1 rovac-edge-mux rovac-edge-sense-hat-panel'
+
+# Sense HAT panel — verify on-robot status display + joystick is alive
+ssh pi@192.168.1.200 'sudo systemctl is-active rovac-edge-sense-hat-panel'
+ros2 topic echo /rovac/sense_hat/feature_set --once   # current feature set (STATUS/TELEOP/RAINBOW)
+
+# Trigger remote ESTOP from any machine on the bus (publishes 0 Twist at 10 Hz):
+ros2 topic pub --times 1 /rovac/sense_hat/mode_request std_msgs/String '{data: ESTOP}'
+# Release ESTOP:
+ros2 topic pub --times 1 /rovac/sense_hat/mode_request std_msgs/String '{data: IDLE}'
 ```
 
 ## Key ROS2 Topics
@@ -93,6 +102,19 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 | Topic | Type | Description |
 |-------|------|-------------|
 | `/scan` | LaserScan | RPLIDAR C1 DTOF (~500 pts, ~10 Hz) via USB on Pi |
+
+### Sense HAT Panel (on-robot status display + physical joystick on Pi GPIO)
+| Topic | Type | Description |
+|-------|------|-------------|
+| `/rovac/sense_hat/feature_set` | String | Current feature set: STATUS / TELEOP / RAINBOW (1 Hz) |
+| `/rovac/sense_hat/mode_request` | String | Requested robot mode: IDLE/TELEOP/NAV/SLAM/ESTOP. Subscribed by panel itself; ESTOP triggers continuous zero-Twist publishing at 10 Hz on `/cmd_vel_teleop` (highest mux priority) until cleared. Anyone on the bus can publish to ESTOP-lock the robot. |
+
+The panel's HAT joystick has 3 feature sets, cycled by center-click:
+- **STATUS** — mode glyph + corner-badge alarm overlays (motor/sensor ESP32 health, Mac connectivity, cliff detection). Up/Down cycles requested mode (publishes `mode_request`).
+- **TELEOP** — joystick directions drive robot via `/cmd_vel_teleop` (15 cm/s linear, 0.6 rad/s angular).
+- **RAINBOW** — plasma-vortex animation, joystick disabled except center-click.
+
+The Sense HAT IMU (LSM9DS1) is intentionally unused — the BNO055 on the ESP32 motor controller remains the sole IMU.
 
 ## Hardware
 
@@ -134,7 +156,9 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 │   ├── ps2_joy_mapper_node.py         # PS2 controller → /cmd_vel_joy
 │   ├── ekf_launch.py                  # EKF launch (used by mac_brain_launch.sh)
 │   └── edge/
-│       └── edge_health_node.py        # Pi health publisher to /rovac/edge/health
+│       ├── edge_health_node.py        # Pi health publisher to /rovac/edge/health
+│       ├── sense_hat_panel_node.py    # Sense HAT status display + joystick panel
+│       └── sense_hat_glyphs.py        # Sense HAT visual designs (palette, glyphs, rainbow)
 ├── config/
 │   ├── ros2_env.sh                    # ROS2 environment setup
 │   ├── cyclonedds_mac.xml             # Mac DDS config (peers with Pi)
@@ -154,6 +178,7 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 │       ├── rovac-edge-obstacle.service      # Obstacle avoidance (sensor hub)
 │       ├── rovac-edge-ps2-joy.service       # PS2 controller input
 │       ├── rovac-edge-ps2-mapper.service    # PS2 → velocity commands
+│       ├── rovac-edge-sense-hat-panel.service # Sense HAT panel (status display + joystick)
 │       ├── rovac-edge-ekf.service           # EKF (DISABLED — run from Mac)
 │       └── ...                              # stereo, webcam services
 ├── ros2_ws/src/
