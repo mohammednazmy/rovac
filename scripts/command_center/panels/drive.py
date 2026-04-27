@@ -130,9 +130,28 @@ class DrivePanel(Widget):
         self._refresh_controls_display()
 
     def _publish_tick(self) -> None:
-        """Continuous publish at 20Hz while driving."""
-        if self._driving and self.app.ros:
-            self.app.ros.publish_cmd_vel(self._target_linear, self._target_angular)
+        """Continuous publish at 20Hz while driving.
+
+        SELF-CANCELING: if both targets are zero OR _driving became False
+        by any path (tab switch, hold-timer, panel hide), this tick
+        stops the timer entirely. Without this safety, the timer kept
+        firing publish_cmd_vel(0,0) at 20Hz forever, which the mux
+        treats as 'TELEOP active' (priority 1) and silently overrode
+        Nav2 — the failure mode that caused 'A pressed but robot won't
+        move' in the live test.
+        """
+        zero_velocity = (abs(self._target_linear) < 1e-4
+                         and abs(self._target_angular) < 1e-4)
+        if not self._driving or zero_velocity:
+            # Self-destruct: stop the timer and don't publish.
+            if self._publish_timer is not None:
+                self._publish_timer.stop()
+                self._publish_timer = None
+            self._driving = False
+            return
+        if self.app.ros:
+            self.app.ros.publish_cmd_vel(
+                self._target_linear, self._target_angular)
 
     def _reset_hold_timer(self) -> None:
         """Reset the hold timeout — stops driving if no key arrives within window."""

@@ -329,15 +329,34 @@ class CoveragePanel(Widget):
             self._show_result("[red]Recovery couldn't start (manager shutting down?)[/]")
 
     def _kill_teleop(self):
+        # 1) Local Drive panel publish loop — the most common offender.
+        # The TUI itself publishes /cmd_vel_teleop while a Drive timer is
+        # alive; kill_zombie_teleop on the Pi can't kill that because it
+        # lives IN THIS PROCESS. Tap the Drive panel directly.
+        drive_stopped = False
+        try:
+            from .drive import DrivePanel
+            drive_panel = self.app.query_one(DrivePanel)
+            drive_panel._stop_driving()
+            # Also publish ONE explicit zero so any in-flight commands
+            # are immediately neutralized instead of waiting for the
+            # mux's 0.5s teleop_timeout.
+            if self.app.ros:
+                self.app.ros.publish_cmd_vel(0.0, 0.0)
+            drive_stopped = True
+        except Exception:
+            pass
+
+        # 2) Other teleop processes — keyboard_teleop.py on the Pi etc.
         n = self.app.pm.kill_zombie_teleop()
+
+        bits = []
+        if drive_stopped:
+            bits.append("Drive panel timer stopped")
         if n > 0:
-            self._show_result(
-                f"[green]Killed {n} local teleop process(es); Pi cleanup dispatched[/]"
-            )
-        else:
-            self._show_result(
-                "[green]No local teleop running; Pi cleanup dispatched anyway[/]"
-            )
+            bits.append(f"killed {n} local process(es)")
+        bits.append("Pi cleanup dispatched")
+        self._show_result("[green]" + "; ".join(bits) + "[/]")
 
     def _read_pose_inputs(self):
         """Pull X/Y/yaw from the input fields. Returns (x, y, yaw_rad) or
@@ -386,8 +405,34 @@ class CoveragePanel(Widget):
             "[yellow]Collecting diagnostics… "
             "(SSH + topic queries take ~10s)[/]")
 
+        # Snapshot TUI-internal state that lives in the panels rather
+        # than ros_bridge: which tab is active, Drive panel state,
+        # whether timers are alive. The dump writer doesn't have
+        # access to widgets directly, so we collect here and pass.
+        ui_state = {}
+        try:
+            from textual.widgets import TabbedContent
+            tabs = self.app.query_one(TabbedContent)
+            ui_state['active_tab'] = tabs.active
+        except Exception:
+            ui_state['active_tab'] = '?'
+        try:
+            from .drive import DrivePanel
+            dp = self.app.query_one(DrivePanel)
+            ui_state['drive'] = {
+                '_driving': getattr(dp, '_driving', None),
+                '_target_linear': getattr(dp, '_target_linear', None),
+                '_target_angular': getattr(dp, '_target_angular', None),
+                '_publish_timer_alive':
+                    getattr(dp, '_publish_timer', None) is not None,
+                '_hold_timer_alive':
+                    getattr(dp, '_hold_timer', None) is not None,
+                'gear': getattr(dp, 'gear', None),
+            }
+        except Exception:
+            ui_state['drive'] = '(panel not mounted)'
+
         def on_complete(filepath, ok):
-            # Called from worker thread — schedule UI update on main thread
             def update():
                 if ok:
                     self._show_result(
@@ -396,16 +441,15 @@ class CoveragePanel(Widget):
                         "paste contents into chat.[/]"
                     )
                 else:
-                    self._show_result(
-                        f"[red]Dump failed (see log)[/]")
+                    self._show_result("[red]Dump failed (see log)[/]")
             try:
                 self.app.call_from_thread(update)
             except Exception:
                 pass
 
-        # Spawn the dump in a worker; don't block the UI
         self.app.pm.dump_diagnostics(
-            ros_bridge=self.app.ros, callback=on_complete)
+            ros_bridge=self.app.ros, callback=on_complete,
+            ui_state=ui_state)
 
     def _calibrate_imu_yaw(self):
         """Snapshot the current AMCL yaw vs IMU yaw and save the offset.
