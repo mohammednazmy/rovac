@@ -350,6 +350,20 @@ class ProcessManager:
                 report('Nav2 lifecycle (8 active)',
                        'ok' if ok else 'failed')
 
+                # ── Settle delay: let TF history populate ─────────
+                # Right after Nav2 lifecycle activates, AMCL is ready
+                # but EKF's odom→base_link TF history is shallow.
+                # Publishing /initialpose immediately triggers AMCL
+                # to look up the current odom→base_link transform —
+                # which may not yet exist with a stale-enough timestamp,
+                # giving "Failed to transform initial pose in time
+                # (Lookup would require extrapolation)" warnings.
+                # 3 seconds of EKF at 20 Hz = 60 TF messages buffered,
+                # enough for any reasonable lookup tolerance.
+                report('TF history settle (3s)', 'pending')
+                time.sleep(3.0)
+                report('TF history settle (3s)', 'ok')
+
                 # ── AUTO-LOCALIZATION HIERARCHY ──────────────────────────
                 # Decide what pose to seed AMCL with. Each branch is
                 # tried in order; the first one that has data wins.
@@ -1098,6 +1112,34 @@ class ProcessManager:
                 _run("source ~/robots/rovac/config/ros2_env.sh 2>/dev/null;"
                      " timeout 5 ros2 topic info /cmd_vel_teleop --verbose"
                      " 2>&1 | head -30", timeout=8)))
+
+            # ── 6c. LIVE topic rates — replaces TUI cached rates which
+            # can be stale (HzTracker now decays at 3s but for a complete
+            # picture, run ros2 topic hz directly). Each is short to
+            # keep total dump time under 30s.
+            live_rates = []
+            for topic in ['/odom', '/scan', '/imu/data', '/odometry/filtered',
+                          '/cmd_vel', '/cmd_vel_smoothed', '/cmd_vel_teleop',
+                          '/tf', '/amcl_pose', '/map']:
+                rate = _run(
+                    f"source ~/robots/rovac/config/ros2_env.sh 2>/dev/null;"
+                    f" timeout 4 ros2 topic hz {topic} 2>&1 |"
+                    f" grep -oE 'average rate: [0-9.]+' | head -1",
+                    timeout=6).strip()
+                live_rates.append(f"  {topic:<25} {rate or '(no messages in 4s)'}")
+            sections.append(_section(
+                'LIVE topic rates (4s sample, replaces stale TUI cache)',
+                '\n'.join(live_rates)))
+
+            # ── 6d. TF chain — the most common Foxglove "map doesn't show"
+            # cause. Verify map → odom → base_link is fully connected.
+            tf_chain = _run(
+                "source ~/robots/rovac/config/ros2_env.sh 2>/dev/null;"
+                " timeout 5 ros2 run tf2_ros tf2_echo map base_link 2>&1 |"
+                " head -20", timeout=8)
+            sections.append(_section(
+                'TF chain: map → base_link (must succeed for Foxglove map)',
+                tf_chain))
 
             # ── 7. /tf_static contents ─────────────────────────────────
             sections.append(_section(

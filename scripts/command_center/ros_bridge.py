@@ -6,16 +6,28 @@ from collections import deque
 
 
 class HzTracker:
-    """Track message frequency using a sliding window of timestamps."""
+    """Track message frequency using a sliding window of timestamps.
 
-    def __init__(self, window_size=20):
+    Decays to 0 when no message has arrived in `max_age_s` seconds —
+    otherwise the rate would stay at its historical value forever even
+    after the publisher stops, leading to stale-rate confusion in
+    diagnostic dumps.
+    """
+
+    def __init__(self, window_size=20, max_age_s=3.0):
         self.times = deque(maxlen=window_size)
+        self.max_age_s = max_age_s
 
     def tick(self):
         self.times.append(time.monotonic())
 
     def hz(self) -> float:
         if len(self.times) < 2:
+            return 0.0
+        # If the most recent message is older than max_age_s, the
+        # publisher has stopped — report 0 instead of historical rate.
+        age = time.monotonic() - self.times[-1]
+        if age > self.max_age_s:
             return 0.0
         dt = self.times[-1] - self.times[0]
         if dt <= 0:
