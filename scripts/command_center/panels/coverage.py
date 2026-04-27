@@ -123,6 +123,7 @@ class CoveragePanel(Widget):
                 "[bold]k[/] kill teleop       "
                 "[bold]s[/] save map         "
                 "[bold]d[/] DIAGNOSTIC DUMP\n"
+                " [bold]T[/] TEST drive (2s forward burst — diagnoses pipeline)\n"
                 " [bold]X[/] kill EVERYTHING (Mac side, clean slate)",
                 id="cov-actions",
             )
@@ -165,6 +166,8 @@ class CoveragePanel(Widget):
             self._calibrate_imu_yaw()
         elif key == "d":
             self._dump_diagnostics()
+        elif key in ("T", "shift+t"):
+            self._test_drive()
         elif key == "s":
             self._save_map()
         else:
@@ -395,6 +398,41 @@ class CoveragePanel(Widget):
             )
         else:
             self._show_result("[red]/initialpose publish failed (see log)[/]")
+
+    def _test_drive(self):
+        """Diagnostic: publish 0.05 m/s forward for 2 seconds via the
+        ros_bridge publisher, bypassing the Drive panel entirely. If the
+        robot moves, the entire teleop→mux→motor pipeline works and the
+        problem is in the Drive panel UX. If it DOESN'T move, the issue
+        is in the publisher / mux / motors and the Drive panel is fine.
+
+        Robot will travel ~10cm forward — small enough to be safe on
+        a desk with the wheels off the floor."""
+        if not self.app.ros:
+            self._show_result("[red]ROS bridge not connected[/]")
+            return
+        self._show_result(
+            "[yellow]Test drive: 0.05 m/s forward for 2s "
+            "(robot should move ~10cm). "
+            "If nothing happens, the pipeline is broken below the TUI.[/]"
+        )
+        # Publish for 2 seconds at 20 Hz from a worker thread
+        import threading
+        import time as _time
+        def worker():
+            end_time = _time.monotonic() + 2.0
+            while _time.monotonic() < end_time:
+                try:
+                    self.app.ros.publish_cmd_vel(0.05, 0.0)
+                except Exception:
+                    break
+                _time.sleep(0.05)
+            # Stop
+            try:
+                self.app.ros.publish_cmd_vel(0.0, 0.0)
+            except Exception:
+                pass
+        threading.Thread(target=worker, daemon=True).start()
 
     def _dump_diagnostics(self):
         """Write a comprehensive diagnostic snapshot to /tmp/rovac_diag_*.txt

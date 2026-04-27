@@ -23,8 +23,13 @@ SPEED_PRESETS = [
 PUBLISH_HZ = 20
 PUBLISH_INTERVAL = 1.0 / PUBLISH_HZ
 
-# How long after last key press to stop (bridges macOS 300ms key repeat delay)
-HOLD_TIMEOUT = 0.4  # seconds
+# How long after last key press to stop. Was 0.4s — too short for
+# users who TAP rather than hold, and for terminals that don't auto-
+# repeat in TUI mode (most macOS terminals don't, since Textual puts
+# stdin in raw mode and disables OS key-repeat). 1.5s gives a single
+# tap a meaningful drive distance (~22cm at 0.15 m/s gear 2).
+# To stop sooner, press SPACE.
+HOLD_TIMEOUT = 1.5  # seconds
 
 
 def _range_color(distance: float) -> str:
