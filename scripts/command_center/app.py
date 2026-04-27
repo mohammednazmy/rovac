@@ -53,6 +53,14 @@ class RovacCommandCenter(App):
         width: 50;
         margin: 0 1;
     }
+    #cov-pose-row {
+        layout: horizontal;
+        height: auto;
+    }
+    #cov-pose-row > Input {
+        width: 1fr;
+        margin: 0 1;
+    }
 
     /* ── Shared panel styling ─────────────────────────── */
     .panel-box, .panel-box-green, .panel-box-blue,

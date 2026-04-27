@@ -257,7 +257,8 @@ class ProcessManager:
         self._start_pi_map_tf()
 
     def auto_start_full_stack(self, map_file: str, on_step=None,
-                              ros_bridge=None) -> bool:
+                              ros_bridge=None,
+                              initial_pose=None) -> bool:
         """One-shot: bring up EKF → wait for /odometry/filtered → /scan →
         Nav2 → verify lifecycle → Foxglove → tracker. Runs fully in
         background. Returns True if the macro was scheduled, False if
@@ -349,15 +350,28 @@ class ProcessManager:
                 report('Nav2 lifecycle (8 active)',
                        'ok' if ok else 'failed')
 
-                # Seed AMCL with /initialpose. Without this AMCL refuses
-                # to publish map→odom TF, which means Nav2 cannot accept
-                # goals — the actual reason "auto-start succeeded but
-                # nothing works" used to be a 5-minute mystery.
+                # AMCL initial pose. Three branches:
+                #  1) AMCL is ALREADY localized (e.g. survived from a
+                #     previous TUI session, or user already pressed 'i')
+                #     → don't reset it.
+                #  2) Caller passed initial_pose (from the panel inputs)
+                #     → use that. This is the user's actual location.
+                #  3) Fallback: (0, 0, 0) — only correct if the robot
+                #     is at the map origin.
                 if ros_bridge is not None and ok:
-                    report('AMCL initial pose at (0,0,0)', 'pending')
-                    pose_ok = ros_bridge.publish_initial_pose(0.0, 0.0, 0.0)
-                    report('AMCL initial pose at (0,0,0)',
-                           'ok' if pose_ok else 'failed')
+                    if ros_bridge.is_amcl_localized():
+                        report('AMCL initial pose (already localized)', 'ok')
+                    else:
+                        x, y, yaw = initial_pose or (0.0, 0.0, 0.0)
+                        import math
+                        report(f'AMCL initial pose '
+                               f'({x:+.2f}, {y:+.2f}, '
+                               f'{math.degrees(yaw):+.0f}°)', 'pending')
+                        pose_ok = ros_bridge.publish_initial_pose(x, y, yaw)
+                        report(f'AMCL initial pose '
+                               f'({x:+.2f}, {y:+.2f}, '
+                               f'{math.degrees(yaw):+.0f}°)',
+                               'ok' if pose_ok else 'failed')
 
                 # Foxglove
                 if not self._port_listening(8765):

@@ -64,6 +64,12 @@ class RosBridge:
             # cmd_vel being sent
             'cmd_vel_linear': 0.0, 'cmd_vel_angular': 0.0,
 
+            # AMCL — populated from /amcl_pose subscription
+            'amcl_localized': False,
+            'amcl_x': 0.0, 'amcl_y': 0.0, 'amcl_yaw_deg': 0.0,
+            'amcl_cov_xx': 0.0, 'amcl_cov_yy': 0.0, 'amcl_cov_yaw': 0.0,
+            'amcl_last_update': 0.0,
+
             # Connection
             'ros_connected': False,
             'topics_seen': [],
@@ -90,6 +96,11 @@ class RosBridge:
     def stop(self):
         """Shutdown the ROS2 node, publisher(s), and spin thread.
         Best-effort — failures here must not block app exit."""
+        # 0) Persist the current AMCL pose so next session starts pre-filled.
+        try:
+            self.save_current_pose()
+        except Exception:
+            pass
         # 1) Tear down explicit publishers/subscribers we hold references to
         try:
             if self._node and self._pub_cmd_vel is not None:
@@ -129,6 +140,54 @@ class RosBridge:
         """Return recent log entries as list of (timestamp_str, message)."""
         with self.lock:
             return list(self._logs)
+
+    # ── Pose persistence (survives between sessions) ────────────────
+
+    _STATE_FILE = '~/.rovac_state.json'
+
+    @classmethod
+    def load_persisted_pose(cls) -> tuple:
+        """Return (x, y, yaw_rad) from the last saved AMCL pose, or
+        (0.0, 0.0, 0.0) if no state file exists. Used to pre-fill the
+        Coverage panel pose inputs so the user doesn't re-enter every
+        session."""
+        import json
+        import os as _os
+        path = _os.path.expanduser(cls._STATE_FILE)
+        if not _os.path.exists(path):
+            return (0.0, 0.0, 0.0)
+        try:
+            with open(path) as f:
+                data = json.load(f) or {}
+            pose = data.get('last_pose') or {}
+            return (
+                float(pose.get('x', 0.0)),
+                float(pose.get('y', 0.0)),
+                float(pose.get('yaw_rad', 0.0)),
+            )
+        except Exception:
+            return (0.0, 0.0, 0.0)
+
+    def save_current_pose(self) -> bool:
+        """Persist the latest AMCL pose to disk so the next session
+        starts with the inputs pre-filled. Best-effort."""
+        import json
+        import os as _os
+        with self.lock:
+            if not self.state.get('amcl_localized', False):
+                return False
+            x = self.state.get('amcl_x', 0.0)
+            y = self.state.get('amcl_y', 0.0)
+            yaw_deg = self.state.get('amcl_yaw_deg', 0.0)
+        try:
+            path = _os.path.expanduser(self._STATE_FILE)
+            data = {'last_pose': {
+                'x': x, 'y': y, 'yaw_rad': math.radians(yaw_deg)}}
+            with open(path, 'w') as f:
+                json.dump(data, f)
+            return True
+        except Exception:
+            return False
 
     def get_rosout_tail(self) -> list:
         """Return recent (level, node, message) tuples from /rosout WARN+."""
@@ -281,6 +340,19 @@ class RosBridge:
             self._node.create_subscription(
                 OccupancyGrid, '/coverage/visited',
                 self._on_coverage_visited, visited_qos)
+
+            # AMCL pose — subscribed so we can show localization status
+            # in the Coverage panel and let auto-start decide whether
+            # the user needs to seed a pose.
+            from geometry_msgs.msg import PoseWithCovarianceStamped
+            amcl_qos = QoSProfile(
+                reliability=ReliabilityPolicy.RELIABLE,
+                history=HistoryPolicy.KEEP_LAST, depth=5,
+                durability=DurabilityPolicy.VOLATILE,
+            )
+            self._node.create_subscription(
+                PoseWithCovarianceStamped, '/amcl_pose',
+                self._on_amcl_pose, amcl_qos)
 
             # BNO055 IMU (the ONE remaining IMU after phone retirement)
             from sensor_msgs.msg import Imu
@@ -466,6 +538,74 @@ class RosBridge:
         """Pi mux publishes 'TELEOP', 'JOY', 'OBSTACLE', 'NAV', or 'IDLE'."""
         with self.lock:
             self.state['mux_active'] = msg.data
+
+    def _on_amcl_pose(self, msg):
+        """AMCL publishes its pose estimate after each scan match. Receiving
+        ANY message means AMCL has a valid localization — auto-start uses
+        this to skip re-seeding a pose that's already correct."""
+        import time as _time
+        q = msg.pose.pose.orientation
+        siny = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        yaw = math.atan2(siny, cosy)
+        # The covariance diag tells us how tight the localization is —
+        # right after seeding it's loose; after a few scans it tightens.
+        cov_xx = msg.pose.covariance[0]
+        cov_yy = msg.pose.covariance[7]
+        cov_yaw = msg.pose.covariance[35]
+        with self.lock:
+            self.state['amcl_x'] = msg.pose.pose.position.x
+            self.state['amcl_y'] = msg.pose.pose.position.y
+            self.state['amcl_yaw_deg'] = math.degrees(yaw)
+            self.state['amcl_cov_xx'] = cov_xx
+            self.state['amcl_cov_yy'] = cov_yy
+            self.state['amcl_cov_yaw'] = cov_yaw
+            self.state['amcl_last_update'] = _time.monotonic()
+            self.state['amcl_localized'] = True
+
+    def is_amcl_localized(self, max_age_s: float = 5.0) -> bool:
+        """Return True if AMCL has published a pose within the last
+        max_age_s seconds. Auto-start uses this to decide whether to
+        seed a fresh /initialpose."""
+        import time as _time
+        with self.lock:
+            if not self.state.get('amcl_localized', False):
+                return False
+            last = self.state.get('amcl_last_update', 0)
+        return (_time.monotonic() - last) <= max_age_s
+
+    def trigger_global_localization(self) -> bool:
+        """Call AMCL's /reinitialize_global_localization to scatter
+        particles uniformly across the map. Used as a fallback when
+        the user has no idea where the robot is — drive the robot
+        afterward and particles converge as the laser scan matches.
+
+        Returns True if dispatched. Async — service call runs in a
+        worker thread so the UI doesn't block on the AMCL response."""
+        if self._node is None:
+            return False
+        node = self._node
+
+        def worker():
+            try:
+                from std_srvs.srv import Empty
+                client = node.create_client(
+                    Empty, '/reinitialize_global_localization')
+                if not client.wait_for_service(timeout_sec=3.0):
+                    self.add_log(
+                        '/reinitialize_global_localization service unavailable')
+                    return
+                future = client.call_async(Empty.Request())
+                # We don't wait for the response — service is "fire and
+                # forget" semantically. The response just acknowledges.
+                _ = future
+                self.add_log(
+                    'AMCL global localization dispatched — drive the '
+                    'robot to converge particles')
+            except Exception as e:
+                self.add_log(f'Global localization error: {e}')
+        threading.Thread(target=worker, daemon=True).start()
+        return True
 
     def _on_rosout(self, msg):
         """Capture Nav2/coverage_node/etc log messages for the Coverage

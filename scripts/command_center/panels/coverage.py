@@ -70,18 +70,31 @@ class CoveragePanel(Widget):
                 c.border_title = "ALERTS"
                 yield Static("[dim]No alerts[/]", id="cov-alerts")
 
-        # Row 3 — coverage progress + map picker
+        # Row 3 — coverage progress + map picker + initial pose
         with Horizontal(id="cov-row-3"):
             with Container(classes="panel-box-blue") as c:
                 c.border_title = "Coverage Progress"
                 yield Static("[dim]Not running[/]", id="cov-progress")
             with Container(classes="panel-box-green") as c:
-                c.border_title = "Map / Save"
-                yield Static("Map for nav (yaml path):", id="cov-map-label")
+                c.border_title = "Map / Initial Pose"
+                yield Static("Map yaml:", id="cov-map-label")
                 yield Input(
                     placeholder="~/maps/livingroom.yaml",
                     id="cov-map-input",
                 )
+                yield Static(
+                    "[dim]○ AMCL: NOT LOCALIZED[/]",
+                    id="cov-amcl-status")
+                yield Static(
+                    "Initial pose (where the robot actually is):",
+                    id="cov-pose-label")
+                with Horizontal(id="cov-pose-row"):
+                    yield Input(value="0.0", placeholder="X (m)",
+                                id="cov-pose-x")
+                    yield Input(value="0.0", placeholder="Y (m)",
+                                id="cov-pose-y")
+                    yield Input(value="0", placeholder="Yaw (°)",
+                                id="cov-pose-yaw")
                 yield Static(" ", id="cov-result")
 
         # Row 4 — /rosout tail (WARN+ only)
@@ -103,8 +116,9 @@ class CoveragePanel(Widget):
                 "[bold]p[/] coverage PREVIEW  "
                 "[bold]r[/] coverage LIVE     "
                 "[bold]S[/] STOP coverage\n"
-                " [bold]i[/] AMCL init pose  "
-                "[bold]l[/] Nav2 RECOVER     "
+                " [bold]i[/] init pose (X/Y/yaw fields)   "
+                "[bold]I[/] AMCL global localization (scatter)\n"
+                " [bold]l[/] Nav2 RECOVER    "
                 "[bold]k[/] kill teleop       "
                 "[bold]s[/] save map\n"
                 " [bold]X[/] kill EVERYTHING (Mac side, clean slate)",
@@ -143,6 +157,8 @@ class CoveragePanel(Widget):
             self._kill_teleop()
         elif key == "i":
             self._publish_initial_pose()
+        elif key in ("I", "shift+i"):
+            self._global_localize()
         elif key == "s":
             self._save_map()
         else:
@@ -200,12 +216,30 @@ class CoveragePanel(Widget):
                     self._auto_steps.append((label, symbol))
             self._refresh_auto_status()
 
+        # Read the pose inputs so the macro publishes /initialpose at the
+        # USER'S stated location, not at (0,0,0). If the inputs aren't
+        # numeric, fall back to (0,0,0) but warn.
+        try:
+            initial_pose = self._read_pose_inputs()
+        except ValueError:
+            self._show_result(
+                "[yellow]Pose inputs aren't valid numbers — falling back "
+                "to (0,0,0). Fix them after the macro and press 'i'.[/]")
+            initial_pose = (0.0, 0.0, 0.0)
+
+        import math
+        x, y, yaw_rad = initial_pose
         self._show_result(
-            f"[green]Auto-starting full stack with map: {map_path}[/]")
+            f"[green]Auto-starting full stack with map: {map_path}\n"
+            f"  initial pose: ({x:+.2f}, {y:+.2f}) "
+            f"yaw {math.degrees(yaw_rad):+.0f}°[/]"
+        )
         # Pass ros_bridge so the macro can publish /initialpose for AMCL
-        # at the end of bringup (was previously a separate manual step).
+        # at the end of bringup, AND skip the publish if AMCL is already
+        # localized (survived from a previous session).
         if not self.app.pm.auto_start_full_stack(
-                map_path, on_step=on_step, ros_bridge=self.app.ros):
+                map_path, on_step=on_step, ros_bridge=self.app.ros,
+                initial_pose=initial_pose):
             # Reentrancy guard fired — another auto-start is in flight.
             self._show_result(
                 "[yellow]Auto-start already in progress — wait for it to finish[/]")
@@ -299,20 +333,72 @@ class CoveragePanel(Widget):
                 "[green]No local teleop running; Pi cleanup dispatched anyway[/]"
             )
 
+    def _read_pose_inputs(self):
+        """Pull X/Y/yaw from the input fields. Returns (x, y, yaw_rad) or
+        raises ValueError on bad input. Yaw input is in DEGREES (more
+        natural for humans); we convert to radians for /initialpose."""
+        import math
+        x_str = self.query_one("#cov-pose-x", Input).value.strip() or "0"
+        y_str = self.query_one("#cov-pose-y", Input).value.strip() or "0"
+        yaw_str = self.query_one("#cov-pose-yaw", Input).value.strip() or "0"
+        x = float(x_str)
+        y = float(y_str)
+        yaw_rad = math.radians(float(yaw_str))
+        return (x, y, yaw_rad)
+
     def _publish_initial_pose(self):
-        """Seed AMCL with /initialpose at origin (0,0,0). Without this,
-        AMCL refuses to publish map→odom TF and Nav2 won't navigate."""
+        """Seed AMCL with /initialpose using the values in the X/Y/yaw
+        inputs. Without this, AMCL refuses to publish map→odom TF and
+        Nav2 won't navigate. The inputs let the user enter the robot's
+        ACTUAL location (read off the map in Foxglove), not just (0,0,0)."""
         if not self.app.ros:
             self._show_result("[red]ROS bridge not connected[/]")
             return
-        ok = self.app.ros.publish_initial_pose(0.0, 0.0, 0.0)
+        try:
+            x, y, yaw_rad = self._read_pose_inputs()
+        except ValueError:
+            self._show_result(
+                "[red]Pose values must be numbers (X m, Y m, Yaw °)[/]")
+            return
+        import math
+        ok = self.app.ros.publish_initial_pose(x, y, yaw_rad)
         if ok:
             self._show_result(
-                "[green]Published /initialpose at (0,0,0). "
-                "AMCL warnings should stop within ~1 sec.[/]"
+                f"[green]Published /initialpose at "
+                f"({x:+.2f}, {y:+.2f}) yaw={math.degrees(yaw_rad):+.0f}°. "
+                f"AMCL should converge within ~1s.[/]"
             )
         else:
             self._show_result("[red]/initialpose publish failed (see log)[/]")
+
+    def _global_localize(self):
+        """Trigger AMCL global localization — scatters particles uniformly
+        across the map. Use when you have NO IDEA where the robot is.
+        Drive the robot afterward and particles converge as the LIDAR
+        scan matches the map. Takes 30-60s of driving to converge."""
+        if not self.app.ros:
+            self._show_result("[red]ROS bridge not connected[/]")
+            return
+        if self.app.ros.trigger_global_localization():
+            self._show_result(
+                "[yellow]AMCL global localization dispatched.\n"
+                "[dim]Drive the robot — particles converge as it moves. "
+                "30-60s typical until AMCL: LOCALIZED.[/]"
+            )
+        else:
+            self._show_result(
+                "[red]Global localization failed — is AMCL active?[/]")
+
+    def on_input_submitted(self, event):
+        """Pressing Enter in any pose input also publishes — saves the
+        user from having to leave the input + press 'i'."""
+        try:
+            from textual.widgets import Input
+            if isinstance(event.input, Input) and event.input.id in (
+                    "cov-pose-x", "cov-pose-y", "cov-pose-yaw"):
+                self._publish_initial_pose()
+        except Exception:
+            pass
 
     def _save_map(self):
         try:
@@ -380,8 +466,41 @@ class CoveragePanel(Widget):
         self._update_nav2_lifecycle()
         self._update_cmdvel(state)
         self._update_progress(state, proc_status)
+        self._update_amcl_status(state)
         self._update_alerts(state, proc_status)
         self._update_rosout_tail()
+
+    def _update_amcl_status(self, state: dict):
+        """Show AMCL localization status. Three states:
+          - red:   no /amcl_pose ever received → 'NOT LOCALIZED'
+          - yellow: stale (no update in >5s)   → 'STALE (Ns ago)'
+          - green: fresh                        → 'LOCALIZED at (x, y, yaw)'
+        """
+        import time as _time
+        localized = state.get("amcl_localized", False)
+        last = state.get("amcl_last_update", 0.0)
+        age = _time.monotonic() - last if last > 0 else 1e9
+
+        if not localized:
+            text = ("[red]○ AMCL: NOT LOCALIZED[/]  "
+                    "[dim](enter pose below + press 'i', "
+                    "or 'I' for global)[/]")
+        elif age > 5:
+            text = (f"[yellow]● AMCL: STALE ({age:.0f}s since last update)[/]")
+        else:
+            x = state.get("amcl_x", 0.0)
+            y = state.get("amcl_y", 0.0)
+            yaw = state.get("amcl_yaw_deg", 0.0)
+            cov = state.get("amcl_cov_xx", 0.0)
+            # Tight cov (after a few scans) → high confidence
+            confidence = "tight" if cov < 0.05 else "loose"
+            text = (f"[green]● AMCL LOCALIZED[/] at "
+                    f"({x:+.2f}, {y:+.2f}) yaw {yaw:+.0f}° "
+                    f"[dim]cov: {confidence}[/]")
+        try:
+            self.query_one("#cov-amcl-status", Static).update(text)
+        except Exception:
+            pass
 
     def _update_rosout_tail(self):
         """Render last ~8 WARN/ERROR/FATAL entries from /rosout, with
@@ -582,8 +701,11 @@ class CoveragePanel(Widget):
             pass
 
     def on_mount(self):
-        """Pre-fill map input with the most recently modified map yaml."""
+        """Pre-fill map input with most recent map; pre-fill pose inputs
+        with the AMCL pose persisted from the previous session so the
+        user doesn't re-enter coordinates every launch."""
         import os
+        # Map yaml
         try:
             maps = self.app.pm.list_maps()
         except Exception:
@@ -594,6 +716,17 @@ class CoveragePanel(Widget):
                 self.query_one("#cov-map-input", Input).value = latest
             except Exception:
                 pass
+        # Persisted pose (from ~/.rovac_state.json)
+        try:
+            from ..ros_bridge import RosBridge
+            x, y, yaw_rad = RosBridge.load_persisted_pose()
+            import math
+            self.query_one("#cov-pose-x", Input).value = f"{x:.2f}"
+            self.query_one("#cov-pose-y", Input).value = f"{y:.2f}"
+            self.query_one("#cov-pose-yaw", Input).value = \
+                f"{math.degrees(yaw_rad):.0f}"
+        except Exception:
+            pass
 
     def _update_alerts(self, state: dict, proc_status: dict):
         alerts = []
