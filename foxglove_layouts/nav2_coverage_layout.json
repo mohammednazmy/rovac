@@ -2,18 +2,18 @@
   "configById": {
     "3D!nav_view": {
       "cameraState": {
-        "perspective": false,
-        "distance": 12,
-        "phi": 0,
-        "thetaOffset": 90,
+        "perspective": true,
+        "distance": 8,
+        "phi": 60,
+        "thetaOffset": 0,
         "targetOffset": [0, 0, 0],
         "target": [0, 0, 0],
         "targetOrientation": [0, 0, 0, 1],
-        "fovy": 45,
-        "near": 0.01,
+        "fovy": 0.7853981633974483,
+        "near": 0.5,
         "far": 5000
       },
-      "followMode": "follow-pose",
+      "followMode": "follow-position",
       "followTf": "base_link",
       "scene": {
         "backgroundColor": "#1a1a2e",

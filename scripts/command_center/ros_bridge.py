@@ -104,11 +104,39 @@ class RosBridge:
         """Start the ROS2 spin thread. Call this once."""
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+        # Background tick that refreshes state[*_hz] from each tracker
+        # every second. Without this, the cached state values get set
+        # at message-arrival time and never update — so a topic that
+        # STOPS publishing keeps showing its historical rate.
+        # The decay logic in HzTracker.hz() only fires on .hz() calls,
+        # so we need a periodic caller.
+        self._stop_hz_refresh = threading.Event()
+        self._hz_refresh_thread = threading.Thread(
+            target=self._hz_refresh_loop, daemon=True)
+        self._hz_refresh_thread.start()
+
+    def _hz_refresh_loop(self):
+        """Periodically pull fresh hz from each tracker into state[*_hz]
+        so the cached values reflect HzTracker's stale-decay logic."""
+        while not self._stop_hz_refresh.is_set():
+            try:
+                with self.lock:
+                    for key, tracker in self._hz.items():
+                        self.state[f'{key}_hz'] = tracker.hz()
+            except Exception:
+                pass
+            self._stop_hz_refresh.wait(1.0)
 
     def stop(self):
         """Shutdown the ROS2 node, publisher(s), and spin thread.
         Best-effort — failures here must not block app exit."""
-        # 0) Persist the current AMCL pose so next session starts pre-filled.
+        # 0a) Stop the hz refresh background tick.
+        try:
+            if hasattr(self, '_stop_hz_refresh'):
+                self._stop_hz_refresh.set()
+        except Exception:
+            pass
+        # 0b) Persist the current AMCL pose so next session starts pre-filled.
         try:
             self.save_current_pose()
         except Exception:

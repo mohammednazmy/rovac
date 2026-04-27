@@ -711,13 +711,16 @@ class CoveragePanel(Widget):
             pass
 
     def _update_mac_procs(self, proc_status: dict):
+        # 'idle_label' shown when the proc is stopped — explains WHY
+        # so the user doesn't think auto-start failed when SLAM/Coverage
+        # are intentionally not running.
         rows = [
-            ("EKF",       "ekf"),
-            ("Nav2",      "nav2"),
-            ("Foxglove",  "foxglove"),
-            ("SLAM",      "slam"),
-            ("Tracker",   "tracker"),
-            ("Coverage",  "coverage"),
+            ("EKF",       "ekf",       "stopped"),
+            ("Nav2",      "nav2",      "stopped"),
+            ("Foxglove",  "foxglove",  "stopped"),
+            ("SLAM",      "slam",      "off (only used when mapping new rooms)"),
+            ("Tracker",   "tracker",   "stopped"),
+            ("Coverage",  "coverage",  "off (press 'p' preview / 'r' run)"),
         ]
         # Cross-check Foxglove against actual port-listening cache —
         # process_status's "running" can lie if the bridge crashed
@@ -728,7 +731,7 @@ class CoveragePanel(Widget):
             port_alive = False
 
         lines = []
-        for label, key in rows:
+        for label, key, idle_label in rows:
             st = proc_status.get(key, "stopped")
             # Special handling for Foxglove: trust the port check
             if key == "foxglove":
@@ -739,7 +742,7 @@ class CoveragePanel(Widget):
                 elif st.startswith("exited"):
                     lines.append(f"{RED_DOT} {label:<10} [red]{st}[/]")
                 else:
-                    lines.append(f"{GRAY_DOT} {label:<10} [dim]stopped[/]")
+                    lines.append(f"{GRAY_DOT} {label:<10} [dim]{idle_label}[/]")
                 continue
             if st == "running":
                 lines.append(f"{GREEN_DOT} {label:<10} [dim]running[/]")
@@ -748,7 +751,7 @@ class CoveragePanel(Widget):
             elif st.startswith("exited"):
                 lines.append(f"{RED_DOT} {label:<10} [red]{st}[/]")
             else:
-                lines.append(f"{GRAY_DOT} {label:<10} [dim]stopped[/]")
+                lines.append(f"{GRAY_DOT} {label:<10} [dim]{idle_label}[/]")
         try:
             self.query_one("#cov-mac-procs", Static).update("\n".join(lines))
         except Exception:
