@@ -38,10 +38,11 @@ RestartSec=5
 ExecStartPre=/bin/sleep 8
 ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; [ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh; exec python3 /home/pi/robots/rovac/scripts/edge/sense_hat_panel_node.py'
 
-# On stop, blank the matrix so the robot doesn't sit lit-up after
-# `systemctl stop`. The Python signal handler does this too, but make it
-# unambiguous via a stop hook.
-ExecStopPost=-/usr/bin/python3 -c 'from sense_hat import SenseHat; SenseHat().clear()'
+# On stop, blank the matrix via direct I2C so the robot doesn't sit
+# lit-up after `systemctl stop`. The Python signal handler does this
+# too, but make it unambiguous via a stop hook. Direct I2C bypasses
+# the broken kernel rpisense_fb path on Pi 5.
+ExecStopPost=-/usr/bin/python3 -c 'from smbus2 import SMBus, i2c_msg; b = SMBus(1); b.i2c_rdwr(i2c_msg.write(0x46, [0x00] + [0]*192)); b.close()'
 
 [Install]
 WantedBy=rovac-edge.target

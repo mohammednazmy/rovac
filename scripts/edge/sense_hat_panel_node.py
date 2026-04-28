@@ -62,6 +62,7 @@ from sense_hat_glyphs import (  # noqa: E402
     MODE_GLYPHS, ARROW_GLYPHS,
     render_glyph, rainbow_frame, alarm_overlay,
 )
+from sense_hat_direct import SenseHatDirect  # noqa: E402
 
 
 # ── Feature sets (cycled by joystick center-click) ──────────────────────
@@ -109,10 +110,15 @@ class SenseHatPanel(Node):
         super().__init__('sense_hat_panel')
 
         # ── Sense HAT init ────────────────────────────────────────────
+        # SenseHat library is used ONLY for the joystick callback —
+        # its set_pixels() goes through the broken kernel rpisense_fb
+        # path on Pi 5. LED output uses SenseHatDirect (direct I2C).
         self._hat = SenseHat()
-        self._hat.set_rotation(0)  # adjust if HAT is mounted rotated
-        self._hat.low_light = False  # always bright per design spec
-        self._hat.clear()
+        self._hat.set_rotation(0)
+        self._hat.low_light = False
+
+        self._led = SenseHatDirect()  # direct-I2C LED driver
+        self._led.clear()
 
         # ── State ─────────────────────────────────────────────────────
         self._lock = threading.Lock()
@@ -357,11 +363,11 @@ class SenseHatPanel(Node):
             pixels = rainbow_frame(time.time() - self._rainbow_start)
 
         # Only push to the LED matrix when the frame has changed — the
-        # I2C write can flicker visibly if called every tick on static
+        # I2C write would flicker visibly if called every tick on static
         # content. RAINBOW frames change every tick so this is a no-op
         # for the rainbow case.
         if pixels != self._last_rendered:
-            self._hat.set_pixels(pixels)
+            self._led.set_pixels(pixels)
             self._last_rendered = pixels
 
     def _render_status(self, *, mode, motor_unhealthy, sensor_unhealthy,
@@ -392,9 +398,9 @@ class SenseHatPanel(Node):
 
     def shutdown(self):
         try:
-            # Stop motors if we were driving.
             self._publish_twist(0.0, 0.0)
-            self._hat.clear()
+            self._led.clear()
+            self._led.close()
             self._last_rendered = None
         except Exception:
             pass
