@@ -38,6 +38,9 @@ def panel_module(monkeypatch):
         "geometry_msgs.msg": types.ModuleType("geometry_msgs.msg"),
         "diagnostic_msgs.msg": types.ModuleType("diagnostic_msgs.msg"),
         "sense_hat": types.ModuleType("sense_hat"),
+        "sense_hat.stick": types.ModuleType("sense_hat.stick"),
+        "sense_hat_direct": types.ModuleType("sense_hat_direct"),
+        "smbus2": types.ModuleType("smbus2"),
     }
 
     class _StubNode:
@@ -71,15 +74,17 @@ def panel_module(monkeypatch):
     stubs["diagnostic_msgs.msg"].DiagnosticArray = type(  # type: ignore
         "DiagnosticArray", (), {})
 
-    class _Stick:
+    class _SenseStick:
         direction_any = None
+        def close(self): pass
+    stubs["sense_hat.stick"].SenseStick = _SenseStick  # type: ignore
 
-    class _SenseHat:
-        def __init__(self): self.stick = _Stick(); self.low_light = False
-        def set_rotation(self, *a, **kw): pass
-        def clear(self, *a, **kw): pass
+    class _SenseHatDirect:
+        def __init__(self, *a, **kw): pass
         def set_pixels(self, *a, **kw): pass
-    stubs["sense_hat"].SenseHat = _SenseHat  # type: ignore
+        def clear(self, *a, **kw): pass
+        def close(self): pass
+    stubs["sense_hat_direct"].SenseHatDirect = _SenseHatDirect  # type: ignore
 
     for name, mod in stubs.items():
         monkeypatch.setitem(sys.modules, name, mod)

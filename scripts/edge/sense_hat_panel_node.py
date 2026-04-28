@@ -48,9 +48,13 @@ from std_msgs.msg import Bool, String
 from geometry_msgs.msg import Twist
 from diagnostic_msgs.msg import DiagnosticArray
 
-# Sense HAT library — lives in the Pi system Python (apt: sense-hat).
+# Sense HAT joystick — we use SenseStick directly (it talks to
+# /dev/input/event*, not the framebuffer). The full SenseHat()
+# constructor refuses to init when rpisense_fb is blacklisted, but
+# we don't need the rest of the library — LED output goes through
+# SenseHatDirect (direct I2C).
 try:
-    from sense_hat import SenseHat
+    from sense_hat.stick import SenseStick
 except ImportError:
     print("FATAL: sense_hat library not installed. Run: sudo apt install sense-hat",
           file=sys.stderr)
@@ -110,15 +114,12 @@ class SenseHatPanel(Node):
         super().__init__('sense_hat_panel')
 
         # ── Sense HAT init ────────────────────────────────────────────
-        # SenseHat library is used ONLY for the joystick callback —
-        # its set_pixels() goes through the broken kernel rpisense_fb
-        # path on Pi 5. LED output uses SenseHatDirect (direct I2C).
-        self._hat = SenseHat()
-        self._hat.set_rotation(0)
-        self._hat.low_light = False
-
-        self._led = SenseHatDirect()  # direct-I2C LED driver
+        # LED output via direct I2C (rpisense_fb kernel driver is
+        # blacklisted because its framebuffer→I2C update path is
+        # broken on Pi 5). Joystick via SenseStick → /dev/input.
+        self._led = SenseHatDirect()
         self._led.clear()
+        self._stick = SenseStick()
 
         # ── State ─────────────────────────────────────────────────────
         self._lock = threading.Lock()
@@ -167,7 +168,7 @@ class SenseHatPanel(Node):
             self._on_mode_request, 10)
 
         # ── Joystick callback (sense_hat dispatches in its own thread) ─
-        self._hat.stick.direction_any = self._on_joystick
+        self._stick.direction_any = self._on_joystick
 
         # ── Render timer ──────────────────────────────────────────────
         self._render_timer = self.create_timer(1.0 / RENDER_HZ, self._render)
