@@ -75,19 +75,19 @@ class TestGlyphs:
             assert len(sg.render_glyph(pattern)) == 64, name
 
     def test_render_glyph_pads_short_rows_with_off(self):
-        pattern = ["W", "WW", "", "."]  # all sub-8 length
+        pattern = ["G", "GG", "", "."]  # all sub-8 length
         out = sg.render_glyph(pattern)
         assert len(out) == 64
-        # Row 0 row[0] = 'W', remaining 7 chars are off
-        assert out[0] == sg.PALETTE["W"]
+        # Row 0 row[0] = 'G', remaining 7 chars are off
+        assert out[0] == sg.PALETTE["G"]
         assert all(out[i] == sg.PALETTE["."] for i in range(1, 8))
 
     def test_render_glyph_truncates_long_rows(self):
-        pattern = ["W" * 16] + [""] * 7  # row 0 has 16 chars
+        pattern = ["G" * 16] + [""] * 7  # row 0 has 16 chars
         out = sg.render_glyph(pattern)
         assert len(out) == 64
         for i in range(8):
-            assert out[i] == sg.PALETTE["W"]
+            assert out[i] == sg.PALETTE["G"]
 
     def test_render_glyph_unknown_chars_render_off(self):
         pattern = ["?" * 8] + [""] * 7
@@ -96,10 +96,10 @@ class TestGlyphs:
 
     def test_render_glyph_handles_short_pattern(self):
         """Patterns with <8 rows pad with off-rows."""
-        out = sg.render_glyph(["WWWWWWWW"])  # 1 row
+        out = sg.render_glyph(["GGGGGGGG"])  # 1 row
         assert len(out) == 64
         for i in range(8):
-            assert out[i] == sg.PALETTE["W"]
+            assert out[i] == sg.PALETTE["G"]
         for i in range(8, 64):
             assert out[i] == sg.PALETTE["."]
 
@@ -111,15 +111,15 @@ class TestGlyphs:
             assert lit > 0, f"glyph {name} is entirely off"
 
     def test_glyphs_use_their_intended_palette_family(self):
-        """IDLE uses W*, TELEOP uses C*, NAV uses M*, SLAM uses T*,
-        ESTOP uses R*. This catches accidental copy-paste between
-        glyph designs."""
+        """Each mode owns a single colour family — green/amber/blue/
+        violet/red. This catches accidental copy-paste between glyph
+        designs."""
         family_keys = {
-            "IDLE": {"W", "w"},
-            "TELEOP": {"C", "c"},
-            "NAV": {"M", "m"},
-            "SLAM": {"T", "t"},
-            "ESTOP": {"R", "r"},
+            "IDLE": {"G", "g"},     # mint green
+            "TELEOP": {"Y", "y"},   # amber
+            "NAV": {"B", "b"},      # blue
+            "SLAM": {"P", "p"},     # violet
+            "ESTOP": {"R", "r"},    # red
         }
         for name, allowed in family_keys.items():
             chars_used = set()
@@ -263,7 +263,7 @@ class TestRotate90Cw:
     """The HAT is mounted 90° CCW on the robot, so rendering applies a
     90° CW software rotation to STATUS frames so glyphs appear upright."""
 
-    def _flat(self, lit_positions, color="W"):
+    def _flat(self, lit_positions, color="G"):
         """Build a 64-pixel list with `color` at the given (row, col)
         positions and "." everywhere else."""
         pixels = [sg.PALETTE["."]] * 64
@@ -283,7 +283,7 @@ class TestRotate90Cw:
         """(0,0) → (0,7) under 90° CW"""
         pixels = self._flat([(0, 0)])
         rotated = sg.rotate_90_cw(pixels)
-        assert rotated[0 * 8 + 7] == sg.PALETTE["W"]
+        assert rotated[0 * 8 + 7] == sg.PALETTE["G"]
         # Everything else stays off
         assert sum(1 for p in rotated if p != sg.PALETTE["."]) == 1
 
@@ -291,19 +291,19 @@ class TestRotate90Cw:
         """(0,7) → (7,7)"""
         pixels = self._flat([(0, 7)])
         rotated = sg.rotate_90_cw(pixels)
-        assert rotated[7 * 8 + 7] == sg.PALETTE["W"]
+        assert rotated[7 * 8 + 7] == sg.PALETTE["G"]
 
     def test_bottom_right_goes_to_bottom_left(self):
         """(7,7) → (7,0)"""
         pixels = self._flat([(7, 7)])
         rotated = sg.rotate_90_cw(pixels)
-        assert rotated[7 * 8 + 0] == sg.PALETTE["W"]
+        assert rotated[7 * 8 + 0] == sg.PALETTE["G"]
 
     def test_bottom_left_goes_to_top_left(self):
         """(7,0) → (0,0)"""
         pixels = self._flat([(7, 0)])
         rotated = sg.rotate_90_cw(pixels)
-        assert rotated[0 * 8 + 0] == sg.PALETTE["W"]
+        assert rotated[0 * 8 + 0] == sg.PALETTE["G"]
 
     def test_four_rotations_returns_to_original(self):
         """Rotating 4 times = identity."""
@@ -313,36 +313,37 @@ class TestRotate90Cw:
             rotated = sg.rotate_90_cw(rotated)
         assert rotated == pixels
 
-    def test_idle_letter_rotates_to_horizontal(self):
-        """The IDLE glyph is a vertical I (cols 1-6 lit on rows 0,1,6,7;
-        cols 3-4 lit on rows 2-5). After 90° CW, the rotated I should
-        have:
-            - rows 1,2 lit at cols 0,1,6,7  (was top serif, now right serif)
-            - rows 3,4 lit at all 8 cols    (was middle stem, now horizontal)
-            - rows 5,6 lit at cols 0,1,6,7  (was bottom serif, now left serif)
-            - rows 0 and 7 all dark         (was cols 0 and 7, both dark)
-        """
+    def test_idle_orb_is_rotation_symmetric(self):
+        """The IDLE orb is intentionally 4-fold rotation symmetric so the
+        90° CW software rotation pipeline doesn't mangle it. Rotating
+        the rendered pixels should produce identical output."""
         pixels = sg.render_glyph(sg.MODE_GLYPHS["IDLE"])
         rotated = sg.rotate_90_cw(pixels)
+        assert rotated == pixels
+
+    def test_nav_arrow_points_up_in_user_view(self):
+        """NAV is a triangular up-arrow. The tip should be in row 0,
+        and the wide base should be in row 3. After the SW+HW rotation
+        pipeline cancels out, the user sees the design as-drawn."""
+        pixels = sg.render_glyph(sg.MODE_GLYPHS["NAV"])
         off = sg.PALETTE["."]
-
-        # Rows 0 and 7 should be entirely off
+        # Row 0 should have only the 2-pixel tip lit (cols 3,4)
+        row0_lit = [c for c in range(8) if pixels[0 * 8 + c] != off]
+        assert row0_lit == [3, 4], f"NAV row 0 lit = {row0_lit}, want [3, 4]"
+        # Row 3 should be entirely lit (the widest part of the arrowhead)
         for c in range(8):
-            assert rotated[0 * 8 + c] == off, f"new row 0 col {c} should be off"
-            assert rotated[7 * 8 + c] == off, f"new row 7 col {c} should be off"
+            assert pixels[3 * 8 + c] != off, f"NAV row 3 col {c} should be lit"
 
-        # Rows 3 and 4 should be entirely lit
-        for c in range(8):
-            assert rotated[3 * 8 + c] != off, f"new row 3 col {c} should be lit"
-            assert rotated[4 * 8 + c] != off, f"new row 4 col {c} should be lit"
-
-        # Rows 1, 2, 5, 6 should have the serif pattern: cols 0,1,6,7 lit
-        for row in (1, 2, 5, 6):
-            for c in range(8):
-                expected_lit = c in (0, 1, 6, 7)
-                actually_lit = rotated[row * 8 + c] != off
-                assert expected_lit == actually_lit, \
-                    f"row {row} col {c}: expected lit={expected_lit}"
+    def test_estop_octagon_corners_are_dark(self):
+        """ESTOP is a solid octagon. Its 4 matrix corners must be dark
+        so alarm-badge overlays remain visible. (Same applies to all
+        other mode glyphs.)"""
+        for name in ("IDLE", "TELEOP", "NAV", "SLAM", "ESTOP"):
+            pixels = sg.render_glyph(sg.MODE_GLYPHS[name])
+            off = sg.PALETTE["."]
+            for idx in (0, 7, 56, 63):
+                assert pixels[idx] == off, \
+                    f"{name}: corner pixel {idx} should be dark for badge overlays"
 
     def test_alarm_corners_land_in_user_view_corners(self):
         """alarm_overlay returns indices in matrix frame. After 90° CW

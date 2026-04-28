@@ -24,170 +24,177 @@ RGB = Tuple[int, int, int]
 
 
 # ── PALETTE ─────────────────────────────────────────────────────────────
-# Each mode owns a primary (uppercase, bright) + shadow (lowercase, dim)
-# pair so glyphs can use shading. Single-character keys keep glyph
-# patterns readable as ASCII pixel art.
+# Modern flat-design palette: each mode owns a hue spaced ~72° apart on
+# the color wheel for instant glance differentiation. Lowercase chars
+# are dim variants for shading where wanted.
+#
+# Color semantics:
+#   IDLE   — mint green   = "ready / all systems go"
+#   TELEOP — amber/orange = "human in the loop, attention required"
+#   NAV    — cool blue    = "autonomous navigation in progress"
+#   SLAM   — violet       = "creative exploration / building map"
+#   ESTOP  — red          = "emergency stop, locked"
 PALETTE: Dict[str, RGB] = {
     ".": (0, 0, 0),          # off / black
 
-    # Idle / baseline — warm white, like incandescent at rest
-    "W": (255, 235, 195),    # warm white primary
-    "w": (90, 75, 50),       # warm white shadow
+    # IDLE — soft mint green (like a power-on LED)
+    "G": (60, 220, 140),     # mint primary
+    "g": (20, 90, 55),       # mint shadow
 
-    # Teleop — cool cyan
-    "C": (0, 210, 230),      # cyan primary
-    "c": (0, 90, 110),       # cyan shadow
+    # TELEOP — warm amber (dashboard-warning hue)
+    "Y": (255, 165, 30),     # amber primary
+    "y": (110, 65, 5),       # amber shadow
 
-    # Nav — magenta/violet (a "navigating" hue)
-    "M": (210, 70, 215),     # magenta primary
-    "m": (90, 25, 100),      # magenta shadow
+    # NAV — cool blue (calm autonomy)
+    "B": (60, 130, 255),     # blue primary
+    "b": (15, 40, 110),      # blue shadow
 
-    # SLAM — mint/teal (an "exploring" hue)
-    "T": (50, 220, 150),     # teal primary
-    "t": (15, 90, 65),       # teal shadow
+    # SLAM — vivid violet (creative discovery)
+    "P": (180, 90, 255),     # violet primary
+    "p": (60, 25, 105),      # violet shadow
 
-    # Estop — fire-engine red with darker shoulder
+    # ESTOP — fire-engine red
     "R": (255, 35, 35),      # red primary
     "r": (110, 0, 0),        # red shadow
-
-    # Status badges
-    "Y": (255, 175, 0),      # amber warning
-    "G": (50, 220, 80),      # healthy green
-
-    # Generic accent
-    "B": (50, 110, 255),     # cool blue
 }
 
 
 # ── MODE GLYPHS ─────────────────────────────────────────────────────────
-# Big letters, instantly readable from across the room. Each mode owns
-# a colour:
-#   I (warm white) = IDLE   — robot at rest, no commanded motion
-#   T (cyan)       = TELEOP — manual driving (any teleop source active)
-#   N (magenta)    = NAV    — Nav2 autonomous navigation requested
-#   S (teal)       = SLAM   — SLAM mapping requested
-#   X (red)        = ESTOP  — emergency stop locked in (10 Hz zero Twist)
+# Modern flat-design icons. Each mode is identified by both its colour
+# and its silhouette so a glance from across the room reads correctly:
 #
-# Corner pixels may be overwritten by alarm overlays (see alarm_overlay()):
+#   IDLE   — green orb         (●)   "ready / all systems go"
+#   TELEOP — amber joystick    (♦)   "human in the loop"
+#   NAV    — blue up-arrow     (▲)   "autonomous navigation"
+#   SLAM   — violet rings      (◎)   "scanning / mapping"
+#   ESTOP  — red octagon       (⬢)   "emergency stop"
+#
+# All designs intentionally leave the four corner pixels (indices 0, 7,
+# 56, 63) dark so the alarm-badge overlays from alarm_overlay() are
+# always clearly visible without conflict:
 #   top-left red    = motor ESP32 unhealthy
 #   top-right red   = sensor ESP32 unhealthy
 #   bottom-left amb = Mac brain disconnected
 #   bottom-right red= cliff detected
-#
-# So if you see "T" with a red top-left dot, that means the robot is in
-# TELEOP mode AND the motor controller is reporting a fault.
 
 MODE_GLYPHS: Dict[str, List[str]] = {
+    # Centered solid orb. 4-fold rotation symmetric, so the 90° CW
+    # software rotation pipeline doesn't mangle it.
     "IDLE": [
-        ".WWWWWW.",
-        ".WWWWWW.",
-        "...WW...",
-        "...WW...",
-        "...WW...",
-        "...WW...",
-        ".WWWWWW.",
-        ".WWWWWW.",
+        "........",
+        "...GG...",
+        "..GGGG..",
+        ".GGGGGG.",
+        ".GGGGGG.",
+        "..GGGG..",
+        "...GG...",
+        "........",
     ],
 
+    # Joystick: ball on top, neck, wide base.
     "TELEOP": [
-        ".CCCCCC.",
-        ".CCCCCC.",
-        "...CC...",
-        "...CC...",
-        "...CC...",
-        "...CC...",
-        "...CC...",
-        "...CC...",
+        "...YY...",
+        "..YYYY..",
+        "..YYYY..",
+        "...YY...",
+        "...YY...",
+        "..YYYY..",
+        ".YYYYYY.",
+        ".YYYYYY.",
     ],
 
+    # Up-arrow: triangular head with 2-wide stem.
     "NAV": [
-        ".M....M.",
-        ".MM...M.",
-        ".MMM..M.",
-        ".M.M..M.",
-        ".M..M.M.",
-        ".M..MMM.",
-        ".M...MM.",
-        ".M....M.",
+        "...BB...",
+        "..BBBB..",
+        ".BBBBBB.",
+        "BBBBBBBB",
+        "...BB...",
+        "...BB...",
+        "...BB...",
+        "...BB...",
     ],
 
+    # Concentric octagonal rings — radar / scanner motif.
     "SLAM": [
-        ".TTTTTT.",
-        "TT....T.",
-        "TT......",
-        ".TTTTT..",
-        ".....TT.",
-        "......TT",
-        ".T....TT",
-        ".TTTTTT.",
+        ".PPPPPP.",
+        "PP....PP",
+        "P.PPPP.P",
+        "P.P..P.P",
+        "P.P..P.P",
+        "P.PPPP.P",
+        "PP....PP",
+        ".PPPPPP.",
     ],
 
+    # Solid red octagonal stop sign.
     "ESTOP": [
-        "RR....RR",
-        ".RR..RR.",
         "..RRRR..",
-        "...RR...",
-        "...RR...",
+        ".RRRRRR.",
+        "RRRRRRRR",
+        "RRRRRRRR",
+        "RRRRRRRR",
+        "RRRRRRRR",
+        ".RRRRRR.",
         "..RRRR..",
-        ".RR..RR.",
-        "RR....RR",
     ],
 }
 
 
 # ── TELEOP ARROWS ───────────────────────────────────────────────────────
-# Shown when the joystick is in TELEOP feature set. Highlights the
-# direction currently being pressed; fades to a center dot when idle.
+# Shown when the joystick is in TELEOP feature set. Direction arrows
+# in amber to match the TELEOP mode colour. Center is a small dot when
+# the joystick is released.
 ARROW_GLYPHS: Dict[str, List[str]] = {
     "CENTER": [
         "........",
         "........",
-        "...cc...",
-        "..cCCc..",
-        "..cCCc..",
-        "...cc...",
+        "...YY...",
+        "..YYYY..",
+        "..YYYY..",
+        "...YY...",
         "........",
         "........",
     ],
     "UP": [
-        "...CC...",
-        "..CCCC..",
-        ".CCCCCC.",
-        "CCCcCCCC",
-        "...cc...",
-        "...cc...",
-        "...cc...",
-        "...cc...",
+        "...YY...",
+        "..YYYY..",
+        ".YYYYYY.",
+        "YYYYYYYY",
+        "...YY...",
+        "...YY...",
+        "...YY...",
+        "...YY...",
     ],
     "DOWN": [
-        "...cc...",
-        "...cc...",
-        "...cc...",
-        "...cc...",
-        "CCCcCCCC",
-        ".CCCCCC.",
-        "..CCCC..",
-        "...CC...",
+        "...YY...",
+        "...YY...",
+        "...YY...",
+        "...YY...",
+        "YYYYYYYY",
+        ".YYYYYY.",
+        "..YYYY..",
+        "...YY...",
     ],
     "LEFT": [
-        "...c....",
-        "..cc....",
-        ".CCcccc.",
-        "CCCCCCCc",
-        "CCCCCCCc",
-        ".CCcccc.",
-        "..cc....",
-        "...c....",
+        "...Y....",
+        "..YY....",
+        ".YYYYYYY",
+        "YYYYYYYY",
+        "YYYYYYYY",
+        ".YYYYYYY",
+        "..YY....",
+        "...Y....",
     ],
     "RIGHT": [
-        "....c...",
-        "....cc..",
-        ".cccCC..",
-        "cCCCCCCC",
-        "cCCCCCCC",
-        ".cccCC..",
-        "....cc..",
-        "....c...",
+        "....Y...",
+        "....YY..",
+        "YYYYYYY.",
+        "YYYYYYYY",
+        "YYYYYYYY",
+        "YYYYYYY.",
+        "....YY..",
+        "....Y...",
     ],
 }
 

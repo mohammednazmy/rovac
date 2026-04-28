@@ -116,15 +116,15 @@ The panel's HAT joystick has 3 feature sets, cycled by center-click:
 
 #### Visual reference — what each LED display means
 
-**Mode letters (STATUS feature set, big letter on display):**
+**Mode icons (STATUS feature set):** Each mode is identified by both its silhouette and its color. Color semantics: green = ready, amber = human-active, blue = autonomous, violet = exploring, red = stopped.
 
-| Letter | Colour | Meaning |
-|---|---|---|
-| **I** | warm white | IDLE — robot at rest, no commanded motion |
-| **T** | cyan | TELEOP — manual driving (any teleop source active) |
-| **N** | magenta | NAV — Nav2 autonomous navigation requested |
-| **S** | teal | SLAM — SLAM mapping requested |
-| **X** | red | ESTOP — emergency stop locked in (10 Hz zero Twist on `/cmd_vel_teleop`) |
+| Icon | Shape | Colour | Meaning |
+|---|---|---|---|
+| **●** | centered orb | mint green | IDLE — robot at rest, all systems go |
+| **♦** | joystick (ball + stem + base) | amber | TELEOP — manual driving, human in the loop |
+| **▲** | triangular up-arrow with tail | cool blue | NAV — Nav2 autonomous navigation requested |
+| **◎** | concentric octagonal rings | violet | SLAM — scanning / building map |
+| **⬢** | solid octagonal stop sign | red | ESTOP — emergency stop locked (10 Hz zero Twist on `/cmd_vel_teleop`) |
 
 **Corner alarm badges (small dot in corner, overlays on top of letter, positions are user-view when looking at the robot from above):**
 
