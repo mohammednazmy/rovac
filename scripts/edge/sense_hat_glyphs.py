@@ -205,6 +205,25 @@ def render_glyph(pattern: List[str]) -> List[RGB]:
     return pixels
 
 
+def rotate_90_cw(pixels: List[RGB]) -> List[RGB]:
+    """Rotate a flat 64-pixel list 90° clockwise within the 8×8 matrix.
+
+    Pixel originally at (row=R, col=C) moves to (row=C, col=7-R).
+    Applied in the panel's STATUS feature set to compensate for the
+    HAT's physical 90° CCW mounting on the robot — so that designed-
+    upright glyphs (the I/T/N/S/X letters) appear upright to a user
+    looking at the robot from above.
+
+    NOT applied to TELEOP arrows: those need to stay in matrix-frame so
+    that the physical rotation alone aligns them with robot motion.
+    """
+    new = [PALETTE["."]] * 64
+    for r in range(8):
+        for c in range(8):
+            new[c * 8 + (7 - r)] = pixels[r * 8 + c]
+    return new
+
+
 # ── RAINBOW ANIMATION ───────────────────────────────────────────────────
 # Beautiful plasma-vortex effect: a hue-rotated swirl with a slowly drifting
 # warp center and radial ripples. The math is intentionally layered to

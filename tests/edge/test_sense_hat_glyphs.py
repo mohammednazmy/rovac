@@ -257,3 +257,111 @@ class TestRenderWithOverlay:
             pixels[idx] = color
         assert pixels[0] == sg.PALETTE["R"]   # motor → top-left
         assert pixels[63] == sg.PALETTE["R"]  # cliff → bottom-right
+
+
+class TestRotate90Cw:
+    """The HAT is mounted 90° CCW on the robot, so rendering applies a
+    90° CW software rotation to STATUS frames so glyphs appear upright."""
+
+    def _flat(self, lit_positions, color="W"):
+        """Build a 64-pixel list with `color` at the given (row, col)
+        positions and "." everywhere else."""
+        pixels = [sg.PALETTE["."]] * 64
+        for r, c in lit_positions:
+            pixels[r * 8 + c] = sg.PALETTE[color]
+        return pixels
+
+    def test_returns_64_pixels(self):
+        out = sg.rotate_90_cw([sg.PALETTE["."]] * 64)
+        assert len(out) == 64
+
+    def test_all_off_stays_off(self):
+        zero = [sg.PALETTE["."]] * 64
+        assert sg.rotate_90_cw(zero) == zero
+
+    def test_top_left_goes_to_top_right(self):
+        """(0,0) → (0,7) under 90° CW"""
+        pixels = self._flat([(0, 0)])
+        rotated = sg.rotate_90_cw(pixels)
+        assert rotated[0 * 8 + 7] == sg.PALETTE["W"]
+        # Everything else stays off
+        assert sum(1 for p in rotated if p != sg.PALETTE["."]) == 1
+
+    def test_top_right_goes_to_bottom_right(self):
+        """(0,7) → (7,7)"""
+        pixels = self._flat([(0, 7)])
+        rotated = sg.rotate_90_cw(pixels)
+        assert rotated[7 * 8 + 7] == sg.PALETTE["W"]
+
+    def test_bottom_right_goes_to_bottom_left(self):
+        """(7,7) → (7,0)"""
+        pixels = self._flat([(7, 7)])
+        rotated = sg.rotate_90_cw(pixels)
+        assert rotated[7 * 8 + 0] == sg.PALETTE["W"]
+
+    def test_bottom_left_goes_to_top_left(self):
+        """(7,0) → (0,0)"""
+        pixels = self._flat([(7, 0)])
+        rotated = sg.rotate_90_cw(pixels)
+        assert rotated[0 * 8 + 0] == sg.PALETTE["W"]
+
+    def test_four_rotations_returns_to_original(self):
+        """Rotating 4 times = identity."""
+        pixels = sg.render_glyph(sg.MODE_GLYPHS["NAV"])
+        rotated = pixels
+        for _ in range(4):
+            rotated = sg.rotate_90_cw(rotated)
+        assert rotated == pixels
+
+    def test_idle_letter_rotates_to_horizontal(self):
+        """The IDLE glyph is a vertical I (cols 1-6 lit on rows 0,1,6,7;
+        cols 3-4 lit on rows 2-5). After 90° CW, the rotated I should
+        have:
+            - rows 1,2 lit at cols 0,1,6,7  (was top serif, now right serif)
+            - rows 3,4 lit at all 8 cols    (was middle stem, now horizontal)
+            - rows 5,6 lit at cols 0,1,6,7  (was bottom serif, now left serif)
+            - rows 0 and 7 all dark         (was cols 0 and 7, both dark)
+        """
+        pixels = sg.render_glyph(sg.MODE_GLYPHS["IDLE"])
+        rotated = sg.rotate_90_cw(pixels)
+        off = sg.PALETTE["."]
+
+        # Rows 0 and 7 should be entirely off
+        for c in range(8):
+            assert rotated[0 * 8 + c] == off, f"new row 0 col {c} should be off"
+            assert rotated[7 * 8 + c] == off, f"new row 7 col {c} should be off"
+
+        # Rows 3 and 4 should be entirely lit
+        for c in range(8):
+            assert rotated[3 * 8 + c] != off, f"new row 3 col {c} should be lit"
+            assert rotated[4 * 8 + c] != off, f"new row 4 col {c} should be lit"
+
+        # Rows 1, 2, 5, 6 should have the serif pattern: cols 0,1,6,7 lit
+        for row in (1, 2, 5, 6):
+            for c in range(8):
+                expected_lit = c in (0, 1, 6, 7)
+                actually_lit = rotated[row * 8 + c] != off
+                assert expected_lit == actually_lit, \
+                    f"row {row} col {c}: expected lit={expected_lit}"
+
+    def test_alarm_corners_land_in_user_view_corners(self):
+        """alarm_overlay returns indices in matrix frame. After 90° CW
+        software rotation + 90° CCW physical rotation, those should
+        appear in the user-view positions documented in CLAUDE.md."""
+        # Build a frame with all four alarm badges lit
+        pixels = [sg.PALETTE["."]] * 64
+        for idx, color in sg.alarm_overlay(
+            motor_unhealthy=True, sensor_unhealthy=True,
+            mac_disconnected=True, cliff_detected=True,
+        ):
+            pixels[idx] = color
+        rotated = sg.rotate_90_cw(pixels)
+        # After SW rotation, indices map:
+        #   motor   (idx 0)  → idx 7
+        #   sensor  (idx 7)  → idx 63
+        #   mac     (idx 56) → idx 0
+        #   cliff   (idx 63) → idx 56
+        assert rotated[7] == sg.PALETTE["R"]    # motor → matrix top-right
+        assert rotated[63] == sg.PALETTE["R"]   # sensor → matrix bottom-right
+        assert rotated[0] == sg.PALETTE["Y"]    # mac → matrix top-left
+        assert rotated[56] == sg.PALETTE["R"]   # cliff → matrix bottom-left

@@ -126,7 +126,7 @@ The panel's HAT joystick has 3 feature sets, cycled by center-click:
 | **S** | teal | SLAM — SLAM mapping requested |
 | **X** | red | ESTOP — emergency stop locked in (10 Hz zero Twist on `/cmd_vel_teleop`) |
 
-**Corner alarm badges (small dot in corner, overlays on top of letter):**
+**Corner alarm badges (small dot in corner, overlays on top of letter, positions are user-view when looking at the robot from above):**
 
 | Position | Colour | Meaning |
 |---|---|---|
@@ -134,6 +134,8 @@ The panel's HAT joystick has 3 feature sets, cycled by center-click:
 | top-right | red | Sensor hub ESP32 unhealthy |
 | bottom-left | amber | Mac brain unreachable for >8s |
 | bottom-right | red | Cliff detected — `/sensors/cliff/detected = True` |
+
+The STATUS feature set frames are software-rotated 90° CW before being pushed to the chip, so that the HAT's 90° CCW physical mounting on the robot is compensated for: glyphs appear upright and corner badges land at the user-view positions above. The TELEOP arrows are *not* software-rotated — they stay in matrix-frame so the physical rotation alone aligns them with robot motion direction.
 
 **Example:** A cyan `T` with a red dot in the top-right corner = robot is in TELEOP mode but the sensor hub ESP32 is reporting a fault.
 

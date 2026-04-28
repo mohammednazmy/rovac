@@ -64,7 +64,7 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sense_hat_glyphs import (  # noqa: E402
     MODE_GLYPHS, ARROW_GLYPHS,
-    render_glyph, rainbow_frame, alarm_overlay,
+    render_glyph, rainbow_frame, alarm_overlay, rotate_90_cw,
 )
 from sense_hat_direct import SenseHatDirect  # noqa: E402
 
@@ -381,7 +381,13 @@ class SenseHatPanel(Node):
                 mac_disconnected=mac_disconnected,
                 cliff=cliff,
             )
+            # Compensate for the HAT's 90° CCW physical mounting so the
+            # I/T/N/S/X letters and corner badges appear upright/positioned
+            # correctly to the user looking at the robot from above.
+            pixels = rotate_90_cw(pixels)
         elif feat == FEATURE_TELEOP:
+            # No rotation: arrows stay in matrix-frame so the physical
+            # rotation alone aligns them with robot motion direction.
             pixels = self._render_teleop(teleop_dir)
         else:  # RAINBOW
             pixels = rainbow_frame(time.time() - self._rainbow_start)
