@@ -143,6 +143,19 @@ The panel's HAT joystick has 3 feature sets, cycled by center-click:
 
 The Sense HAT IMU (LSM9DS1) is intentionally unused — the BNO055 on the ESP32 motor controller remains the sole IMU.
 
+#### Kernel driver workaround (rpisense_fb blacklist)
+
+The kernel `rpisense_fb` framebuffer driver on Pi 5 / Bookworm has a broken framebuffer-to-I2C update path: writes to `/dev/fb0` (via mmap or write()) succeed at the kernel level but never reach the ATTiny88 LED chip, AND the driver actively wipes the chip with zeros every refresh tick. Verified via direct I2C read-back — chip stores writes briefly then gets cleared by the kernel within ~1s.
+
+Fix: `/etc/modprobe.d/blacklist-rpisense-fb.conf` blacklists the broken module. The other Sense HAT kernel modules (`rpisense_core`, `rpisense_js`) remain loaded — joystick events come through `/dev/input/eventN` as expected. LED output is driven by `scripts/edge/sense_hat_direct.py` (direct I2C transactions to register 0x00 of chip 0x46), bypassing the kernel framebuffer entirely.
+
+**If you re-flash the Pi or re-image the SD card, you must recreate the blacklist file:**
+```bash
+echo "blacklist rpisense_fb" | sudo tee /etc/modprobe.d/blacklist-rpisense-fb.conf
+sudo reboot
+```
+Without this, the LED matrix will be dark even though the panel service runs without errors.
+
 ## Hardware
 
 | Component | Details |
