@@ -454,7 +454,15 @@ class RosBridge:
                 lambda _msg: self._tick_pipeline('cmd_vel'),
                 reliable_qos)
 
-            # Mux active source — published by Pi cmd_vel_mux at 1Hz.
+            # Mux active source — cmd_vel_mux.py publishes one of
+            # 'TELEOP', 'JOYSTICK', 'OBSTACLE', 'NAV', 'IDLE' ONLY on
+            # transitions (see _set_active() in cmd_vel_mux.py), not
+            # periodically. TRANSIENT_LOCAL durability is what makes
+            # this work: late-joining subscribers (Command Center
+            # startup) still receive the last published value, so
+            # state['mux_active'] is always populated within a few ms
+            # of subscription rather than waiting for the next
+            # transition that may never come.
             mux_qos = QoSProfile(
                 reliability=ReliabilityPolicy.RELIABLE,
                 history=HistoryPolicy.KEEP_LAST, depth=1,
