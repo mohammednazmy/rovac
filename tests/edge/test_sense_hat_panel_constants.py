@@ -158,3 +158,59 @@ class TestTimeouts:
     def test_diag_stale_timeout_is_reasonable(self, panel_module):
         """Diagnostics publish at 1 Hz from each ESP32, so 3-15s is fine."""
         assert 3.0 <= panel_module.DIAG_STALE_TIMEOUT_S <= 15.0
+
+
+class TestJoystickRotatedMapping:
+    """The HAT is mounted with header pins toward the rear of the robot,
+    so the joystick→motion mapping must be rotated 90° CW relative to
+    the HAT's intrinsic frame."""
+
+    def test_right_drives_forward(self, panel_module):
+        lin, ang = panel_module.JOYSTICK_TO_TWIST_SCALE['right']
+        assert lin > 0   # forward
+        assert ang == 0  # no rotation
+
+    def test_left_drives_reverse(self, panel_module):
+        lin, ang = panel_module.JOYSTICK_TO_TWIST_SCALE['left']
+        assert lin < 0   # reverse
+        assert ang == 0
+
+    def test_up_turns_left_ccw(self, panel_module):
+        lin, ang = panel_module.JOYSTICK_TO_TWIST_SCALE['up']
+        assert lin == 0
+        assert ang > 0   # +z = CCW = left turn (REP-103)
+
+    def test_down_turns_right_cw(self, panel_module):
+        lin, ang = panel_module.JOYSTICK_TO_TWIST_SCALE['down']
+        assert lin == 0
+        assert ang < 0   # -z = CW = right turn
+
+    def test_all_four_directions_present(self, panel_module):
+        directions = set(panel_module.JOYSTICK_TO_TWIST_SCALE.keys())
+        assert directions == {'up', 'down', 'left', 'right'}
+
+    def test_unit_scale_magnitudes(self, panel_module):
+        """Each entry must have unit magnitude (±1.0) so multiplying by
+        the configured TELEOP_*_MAGNITUDE yields the expected speed."""
+        for direction, (lin, ang) in panel_module.JOYSTICK_TO_TWIST_SCALE.items():
+            non_zero = [x for x in (lin, ang) if x != 0]
+            assert len(non_zero) == 1, \
+                f"{direction}: must have exactly one non-zero axis"
+            assert abs(non_zero[0]) == 1.0, \
+                f"{direction}: non-zero scale must be ±1.0, got {non_zero[0]}"
+
+    def test_mapping_is_a_90deg_rotation(self, panel_module):
+        """Verify the mapping is exactly a 90° CW rotation by checking
+        the symmetry: right=+lin, down=-ang, left=-lin, up=+ang form a
+        cycle going CW around the joystick face."""
+        m = panel_module.JOYSTICK_TO_TWIST_SCALE
+        # CW cycle starting at 'up': up → right → down → left → up
+        # Each step rotates the (lin, ang) vector 90° CW: (l, a) → (a, -l)
+        cycle = ['up', 'right', 'down', 'left']
+        for i in range(4):
+            cur = m[cycle[i]]
+            nxt = m[cycle[(i + 1) % 4]]
+            l, a = cur
+            expected = (a, -l)
+            assert nxt == expected, \
+                f"{cycle[i]} → {cycle[(i+1)%4]} not a 90° CW step: {cur} vs {nxt}"

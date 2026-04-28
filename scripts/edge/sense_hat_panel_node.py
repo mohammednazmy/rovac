@@ -96,10 +96,30 @@ ESTOP_PUBLISH_HZ = 10.0
 
 
 # ── Teleop limits when joystick drives the robot ────────────────────────
-# Top speed — Mohammed wants the HAT joystick to drive the robot at full
-# power. These match the documented robot maximums (CLAUDE.md).
+# Top speed — full robot maximums (from CLAUDE.md hardware section).
 TELEOP_LINEAR_MAGNITUDE = 0.57   # m/s — full forward/backward
 TELEOP_ANGULAR_MAGNITUDE = 6.5   # rad/s — full left/right rotation
+
+# Joystick → (linear_scale, angular_scale) at unit magnitude.
+# Mapping is rotated 90° CW from the HAT's intrinsic frame because the
+# HAT is mounted on the robot with header pins toward the rear:
+#
+#     joystick physical          robot motion
+#     ──────────────────         ──────────────────
+#     right                      forward
+#     left                       reverse
+#     up   (toward header pins)  turn left (CCW)
+#     down (away from header)    turn right (CW)
+#
+# This makes the joystick "point" in the same world-frame direction the
+# robot is commanded — user-visible arrows on the LED matrix naturally
+# align with robot motion because the matrix is also physically rotated.
+JOYSTICK_TO_TWIST_SCALE = {
+    'right': (+1.0,  0.0),
+    'left':  (-1.0,  0.0),
+    'up':    ( 0.0, +1.0),
+    'down':  ( 0.0, -1.0),
+}
 
 # Health/connectivity thresholds
 MAC_DISCONNECT_TIMEOUT_S = 8.0   # consider Mac unreachable if no health msg in this window
@@ -284,21 +304,24 @@ class SenseHatPanel(Node):
         self._mode_req_pub.publish(msg)
 
     def _handle_teleop_joystick(self, event):
-        """Press/hold an arrow → publish Twist; release → publish stop."""
-        # Treat both 'pressed' and 'held' as "stick is in this direction"
+        """Press/hold an arrow → publish Twist; release → publish stop.
+
+        Direction → motion mapping is from JOYSTICK_TO_TWIST_SCALE — rotated
+        90° CW relative to the HAT's intrinsic frame to match the robot's
+        physical mounting orientation.
+        """
         if event.action in ('pressed', 'held'):
             d = event.direction
             with self._lock:
                 self._teleop_dir = d
                 self._teleop_dir_ts = time.time()
-            if d == 'up':
-                self._publish_twist(+TELEOP_LINEAR_MAGNITUDE, 0.0)
-            elif d == 'down':
-                self._publish_twist(-TELEOP_LINEAR_MAGNITUDE, 0.0)
-            elif d == 'left':
-                self._publish_twist(0.0, +TELEOP_ANGULAR_MAGNITUDE)
-            elif d == 'right':
-                self._publish_twist(0.0, -TELEOP_ANGULAR_MAGNITUDE)
+            scale = JOYSTICK_TO_TWIST_SCALE.get(d)
+            if scale is not None:
+                lin, ang = scale
+                self._publish_twist(
+                    lin * TELEOP_LINEAR_MAGNITUDE,
+                    ang * TELEOP_ANGULAR_MAGNITUDE,
+                )
         elif event.action == 'released':
             with self._lock:
                 self._teleop_dir = None

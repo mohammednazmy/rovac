@@ -111,7 +111,7 @@ ALL velocity commands go through the mux (`cmd_vel_mux.py`). Nothing publishes d
 
 The panel's HAT joystick has 3 feature sets, cycled by center-click:
 - **STATUS** — mode glyph + corner-badge alarm overlays (motor/sensor ESP32 health, Mac connectivity, cliff detection). Up/Down cycles requested mode (publishes `mode_request`).
-- **TELEOP** — joystick directions drive robot at top speed via `/cmd_vel_teleop` (0.57 m/s linear, 6.5 rad/s angular — robot maximums).
+- **TELEOP** — joystick directions drive robot at top speed via `/cmd_vel_teleop` (0.57 m/s linear, 6.5 rad/s angular — robot maximums). Mapping is **rotated 90° CW** because the HAT is mounted with header pins toward the rear of the robot: joystick `right` = forward, `left` = reverse, `up` = turn left (CCW), `down` = turn right (CW). See `JOYSTICK_TO_TWIST_SCALE` in `sense_hat_panel_node.py`.
 - **RAINBOW** — plasma-vortex animation, joystick disabled except center-click.
 
 #### Visual reference — what each LED display means

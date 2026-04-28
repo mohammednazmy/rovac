@@ -139,3 +139,6 @@ CMD_reference.rtf
 
 # === Runtime IP stamp ===
 .rovac_mac_ip
+
+# Photo source files (Photoshop) — too large for git
+photos/**/*.psd
