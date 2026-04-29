@@ -114,24 +114,29 @@ static int64_t s_stall_event_r_start_us = 0;
 //   Single-wheel stall is routine (wall, vacuum suction, carpet snag).
 //   Both-wheel persistent stall is the failure mode we're hunting.
 //
-// Recovery: bounded retry (Option B). Hold motor_driver_stop() for the
+// Recovery: bounded retry (Option B+). Hold motor_driver_stop() for the
 // current dwell duration, then resume PID and observe for encoder ticks.
-// Widening dwells {10, 50, 200} ms — first attempt covers a transient
-// trip; later attempts cover marginal cases. After all attempts fail we
-// transition to GIVE_UP and hold motors off until the operator stops
-// commanding (which resets the state machine for a fresh attempt next
-// time they engage).
+// Widening dwells {200, 1000, 3000} ms — empirical evidence (2026-04-29)
+// shows the documented 1ms-typ. recovery is not enough for this fault in
+// practice, and the *only* reliable cure is an ESP32 reset. Long dwells
+// give the chip a fair chance first; if all 3 still fail we trigger
+// esp_restart() — the programmatic equivalent of the operator pressing
+// the reset button. Costs ~5-10s of odom/IMU outage but recovers without
+// operator intervention. Right before restarting, the LEDC duty registers
+// are read back: if they don't read 0 (what we just wrote), the LEDC
+// peripheral itself was stuck (Hyp_B). If they read 0, the chip needs
+// even longer LOW than 3s to clear (Hyp_A). Either way the restart fixes
+// it; the log evidence helps us refine future tuning.
 typedef enum {
     RECOVERY_IDLE = 0,
     RECOVERY_DWELL,
     RECOVERY_OBSERVE,
-    RECOVERY_GIVE_UP,
 } recovery_state_t;
 
-#define FAULT_DETECT_US      (500 * 1000)   /* both stalled this long → fault */
-#define RECOVERY_OBSERVE_US  (500 * 1000)   /* observation window after each clear */
+#define FAULT_DETECT_US      (500 * 1000)    /* both stalled this long → fault */
+#define RECOVERY_OBSERVE_US  (500 * 1000)    /* observation window after each clear */
 
-static const int s_recovery_dwells_ms[] = { 10, 50, 200 };
+static const int s_recovery_dwells_ms[] = { 200, 1000, 3000 };
 #define RECOVERY_MAX_ATTEMPTS \
     ((int)(sizeof(s_recovery_dwells_ms) / sizeof(s_recovery_dwells_ms[0])))
 
@@ -359,36 +364,40 @@ static void pid_task(void *arg)
                 // README + project memory for the TB67H450FNG ISD-latch investigation.
                 // One log line per event boundary, with enough context (uptime, heap,
                 // command age) to distinguish thermal vs overcurrent vs USB failure modes.
+                // NOTE: %d (int) is used instead of %lld (long long) because
+                // ESP-IDF's default newlib-nano doesn't support %lld — it
+                // prints the format spec literally and misaligns subsequent
+                // args. int32 holds 24+ days of millis, plenty for our use.
                 if (stall_left && !s_stall_event_l) {
                     s_stall_event_l = true;
                     s_stall_event_l_start_us = now_us;
                     ESP_LOGW(TAG,
-                        "STALL-L start tgt=%.3f meas=%.3f cmd_age_ms=%lld "
-                        "uptime_s=%lld heap=%lu",
+                        "STALL-L start tgt=%.3f meas=%.3f cmd_age_ms=%d "
+                        "uptime_s=%d heap=%lu",
                         (double)tgt_left, (double)v_left_meas,
-                        (long long)((now_us - s_last_cmd_time_us) / 1000),
-                        (long long)(now_us / 1000000),
+                        (int)((now_us - s_last_cmd_time_us) / 1000),
+                        (int)(now_us / 1000000),
                         (unsigned long)esp_get_free_heap_size());
                 } else if (!stall_left && s_stall_event_l) {
-                    int64_t dur_ms = (now_us - s_stall_event_l_start_us) / 1000;
-                    ESP_LOGW(TAG, "STALL-L end dur_ms=%lld meas=%.3f",
-                        (long long)dur_ms, (double)v_left_meas);
+                    int dur_ms = (int)((now_us - s_stall_event_l_start_us) / 1000);
+                    ESP_LOGW(TAG, "STALL-L end dur_ms=%d meas=%.3f",
+                        dur_ms, (double)v_left_meas);
                     s_stall_event_l = false;
                 }
                 if (stall_right && !s_stall_event_r) {
                     s_stall_event_r = true;
                     s_stall_event_r_start_us = now_us;
                     ESP_LOGW(TAG,
-                        "STALL-R start tgt=%.3f meas=%.3f cmd_age_ms=%lld "
-                        "uptime_s=%lld heap=%lu",
+                        "STALL-R start tgt=%.3f meas=%.3f cmd_age_ms=%d "
+                        "uptime_s=%d heap=%lu",
                         (double)tgt_right, (double)v_right_meas,
-                        (long long)((now_us - s_last_cmd_time_us) / 1000),
-                        (long long)(now_us / 1000000),
+                        (int)((now_us - s_last_cmd_time_us) / 1000),
+                        (int)(now_us / 1000000),
                         (unsigned long)esp_get_free_heap_size());
                 } else if (!stall_right && s_stall_event_r) {
-                    int64_t dur_ms = (now_us - s_stall_event_r_start_us) / 1000;
-                    ESP_LOGW(TAG, "STALL-R end dur_ms=%lld meas=%.3f",
-                        (long long)dur_ms, (double)v_right_meas);
+                    int dur_ms = (int)((now_us - s_stall_event_r_start_us) / 1000);
+                    ESP_LOGW(TAG, "STALL-R end dur_ms=%d meas=%.3f",
+                        dur_ms, (double)v_right_meas);
                     s_stall_event_r = false;
                 }
 
@@ -408,9 +417,9 @@ static void pid_task(void *arg)
                         } else if ((now_us - s_fault_detect_start_us) > FAULT_DETECT_US) {
                             int dwell_ms = s_recovery_dwells_ms[0];
                             ESP_LOGE(TAG,
-                                "H-BRIDGE FAULT — both wheels stalled %lldms, "
+                                "H-BRIDGE FAULT — both wheels stalled %dms, "
                                 "attempting ISD-clear #1 (LOW dwell %dms)",
-                                (long long)((now_us - s_fault_detect_start_us) / 1000),
+                                (int)((now_us - s_fault_detect_start_us) / 1000),
                                 dwell_ms);
                             s_recovery_state        = RECOVERY_DWELL;
                             s_recovery_phase_end_us = now_us + (int64_t)dwell_ms * 1000;
@@ -459,20 +468,38 @@ static void pid_task(void *arg)
                             s_recovery_phase_end_us = now_us + (int64_t)dwell_ms * 1000;
                             skip_pid                = true;
                         } else {
+                            // All ISD-clear attempts failed. Empirical evidence
+                            // (2026-04-29) shows ESP32 reset is the only reliable
+                            // recovery path — datasheet LOW-dwell sequence does
+                            // not unstick this fault. Read back LEDC duty
+                            // registers first for post-mortem diagnosis: if any
+                            // are non-zero (we just wrote 0 via motor_driver_stop),
+                            // the LEDC peripheral itself is stuck (Hyp_B confirmed);
+                            // if they all read 0, it's the chip needing more LOW
+                            // than 3s (Hyp_A). Either way, restart fixes it.
+                            uint32_t actual_duty[4] = {0};
+                            motor_driver_read_back_duty(actual_duty);
                             ESP_LOGE(TAG,
-                                "ISD-clear EXHAUSTED after %d attempts — chip "
-                                "likely latched. Power-cycle 12V required.",
-                                RECOVERY_MAX_ATTEMPTS);
-                            s_recovery_state = RECOVERY_GIVE_UP;
-                            skip_pid         = true;
+                                "ISD-clear EXHAUSTED after %d attempts — "
+                                "restarting ESP32. LEDC read-back: "
+                                "L_IN1=%lu L_IN2=%lu R_IN1=%lu R_IN2=%lu "
+                                "(all 0 = Hyp_A chip needs more LOW; "
+                                "non-zero = Hyp_B LEDC stuck)",
+                                RECOVERY_MAX_ATTEMPTS,
+                                (unsigned long)actual_duty[0],
+                                (unsigned long)actual_duty[1],
+                                (unsigned long)actual_duty[2],
+                                (unsigned long)actual_duty[3]);
+                            // Belt-and-suspenders: leave chip in a known-LOW
+                            // state during the brief shutdown window before
+                            // restart actually takes effect.
+                            motor_driver_stop();
+                            // Give the log line time to flush over USB serial
+                            // (~5-10ms at 460800 baud) before the chip resets.
+                            vTaskDelay(pdMS_TO_TICKS(50));
+                            esp_restart();  // never returns
                         }
                     }
-                    break;
-
-                case RECOVERY_GIVE_UP:
-                    skip_pid = true;
-                    // Stay here; reset happens in the inactive (else) branch
-                    // below when operator stops commanding.
                     break;
                 }
 
@@ -480,10 +507,10 @@ static void pid_task(void *arg)
                     motor_driver_stop();
                     if (++debug_counter % PID_DEBUG_INTERVAL == 0) {
                         ESP_LOGW(TAG,
-                            "RECOVERY state=%d attempt=%d phase_remaining_ms=%lld "
+                            "RECOVERY state=%d attempt=%d phase_remaining_ms=%d "
                             "tgt=%.3f/%.3f meas=%.3f/%.3f",
                             (int)s_recovery_state, s_recovery_attempt,
-                            (long long)((s_recovery_phase_end_us - now_us) / 1000),
+                            (int)((s_recovery_phase_end_us - now_us) / 1000),
                             (double)tgt_left, (double)tgt_right,
                             (double)v_left_meas, (double)v_right_meas);
                     }
@@ -549,9 +576,9 @@ static void pid_task(void *arg)
 
             // Phase 2: operator stopped commanding — reset recovery state.
             // Lets a fresh engagement get a clean retry budget instead of
-            // staying stuck in GIVE_UP forever once the operator releases.
-            // Also clears stall edge state so we don't see spurious "end"
-            // logs on the next cycle.
+            // resuming mid-DWELL or mid-OBSERVE from a stale fault. Also
+            // clears stall edge state so we don't see spurious "end" logs
+            // on the next cycle.
             if (s_recovery_state != RECOVERY_IDLE) {
                 ESP_LOGI(TAG, "Recovery state reset by operator stop "
                          "(was state=%d attempt=%d)",

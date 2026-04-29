@@ -184,3 +184,11 @@ int16_t motor_driver_get_right(void)
 {
     return s_right_speed;
 }
+
+void motor_driver_read_back_duty(uint32_t out[4])
+{
+    out[0] = ledc_get_duty(LEDC_LOW_SPEED_MODE, LEDC_LEFT_IN1_CH);
+    out[1] = ledc_get_duty(LEDC_LOW_SPEED_MODE, LEDC_LEFT_IN2_CH);
+    out[2] = ledc_get_duty(LEDC_LOW_SPEED_MODE, LEDC_RIGHT_IN1_CH);
+    out[3] = ledc_get_duty(LEDC_LOW_SPEED_MODE, LEDC_RIGHT_IN2_CH);
+}

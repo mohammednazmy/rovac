@@ -36,3 +36,9 @@ void motor_driver_stop(void);   // Coast (both pins LOW)
 void motor_driver_brake(void);  // Brake (both pins HIGH)
 int16_t motor_driver_get_left(void);
 int16_t motor_driver_get_right(void);
+
+/* Read back the actual LEDC duty registers for the 4 motor channels.
+ * Output order: [L_IN1, L_IN2, R_IN1, R_IN2]. Used for diagnosing
+ * suspected LEDC peripheral lockups — if a read-back doesn't match
+ * what was last written, the peripheral is stuck. */
+void motor_driver_read_back_duty(uint32_t out[4]);
