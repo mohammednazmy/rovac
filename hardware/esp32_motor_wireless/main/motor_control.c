@@ -38,6 +38,7 @@
 #include "freertos/semphr.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "esp_system.h"  /* esp_get_free_heap_size() for stall event logs */
 
 static const char *TAG = "motor_ctrl";
 
@@ -92,6 +93,52 @@ static int16_t s_kickstart_left_pwm = 0;
 static int16_t s_kickstart_right_pwm = 0;
 static int64_t s_last_left_tick_us  = 0;      // per-wheel stall detection
 static int64_t s_last_right_tick_us = 0;
+
+// ── Edge-triggered stall event logging (TB67H450FNG ISD-latch hunt) ──
+// Touched only by pid_task on Core 1, no lock needed. The existing
+// stall flags above feed the FF boost; these track *event boundaries*
+// so we get one START log + one END log + duration per event (not one
+// log line per 20 ms cycle while the flag is high). Correlates with
+// the operator-visible "motors stopped responding" symptom.
+static bool    s_stall_event_l = false;
+static bool    s_stall_event_r = false;
+static int64_t s_stall_event_l_start_us = 0;
+static int64_t s_stall_event_r_start_us = 0;
+
+// ── Phase 2: H-bridge ISD-clear recovery state machine ──
+// Per TB67H450FNG datasheet, ISD overcurrent latches the H-bridge to Hi-Z
+// until either VM is power-cycled OR both inputs are held LOW for ≥1 ms
+// (typ.) and then driven HIGH again. We use the input-sequence path here.
+//
+// Trigger: both wheels stalled simultaneously for > FAULT_DETECT_US.
+//   Single-wheel stall is routine (wall, vacuum suction, carpet snag).
+//   Both-wheel persistent stall is the failure mode we're hunting.
+//
+// Recovery: bounded retry (Option B). Hold motor_driver_stop() for the
+// current dwell duration, then resume PID and observe for encoder ticks.
+// Widening dwells {10, 50, 200} ms — first attempt covers a transient
+// trip; later attempts cover marginal cases. After all attempts fail we
+// transition to GIVE_UP and hold motors off until the operator stops
+// commanding (which resets the state machine for a fresh attempt next
+// time they engage).
+typedef enum {
+    RECOVERY_IDLE = 0,
+    RECOVERY_DWELL,
+    RECOVERY_OBSERVE,
+    RECOVERY_GIVE_UP,
+} recovery_state_t;
+
+#define FAULT_DETECT_US      (500 * 1000)   /* both stalled this long → fault */
+#define RECOVERY_OBSERVE_US  (500 * 1000)   /* observation window after each clear */
+
+static const int s_recovery_dwells_ms[] = { 10, 50, 200 };
+#define RECOVERY_MAX_ATTEMPTS \
+    ((int)(sizeof(s_recovery_dwells_ms) / sizeof(s_recovery_dwells_ms[0])))
+
+static recovery_state_t s_recovery_state        = RECOVERY_IDLE;
+static int64_t          s_recovery_phase_end_us = 0;
+static int              s_recovery_attempt      = 0;
+static int64_t          s_fault_detect_start_us = 0;
 
 // ---- Gyro-assisted angular outer loop state (Phase 4) ----
 // The cmd_vel callback on Core 0 stores the commanded (post-heading-correction)
@@ -308,6 +355,141 @@ static void pid_task(void *arg)
                                    (fabsf(v_right_meas) < STALL_MEAS_EPS) &&
                                    (now_us - s_last_right_tick_us) > STALL_TIMEOUT_US;
 
+                // Edge-triggered diagnostic logging — see hardware/esp32_motor_wireless
+                // README + project memory for the TB67H450FNG ISD-latch investigation.
+                // One log line per event boundary, with enough context (uptime, heap,
+                // command age) to distinguish thermal vs overcurrent vs USB failure modes.
+                if (stall_left && !s_stall_event_l) {
+                    s_stall_event_l = true;
+                    s_stall_event_l_start_us = now_us;
+                    ESP_LOGW(TAG,
+                        "STALL-L start tgt=%.3f meas=%.3f cmd_age_ms=%lld "
+                        "uptime_s=%lld heap=%lu",
+                        (double)tgt_left, (double)v_left_meas,
+                        (long long)((now_us - s_last_cmd_time_us) / 1000),
+                        (long long)(now_us / 1000000),
+                        (unsigned long)esp_get_free_heap_size());
+                } else if (!stall_left && s_stall_event_l) {
+                    int64_t dur_ms = (now_us - s_stall_event_l_start_us) / 1000;
+                    ESP_LOGW(TAG, "STALL-L end dur_ms=%lld meas=%.3f",
+                        (long long)dur_ms, (double)v_left_meas);
+                    s_stall_event_l = false;
+                }
+                if (stall_right && !s_stall_event_r) {
+                    s_stall_event_r = true;
+                    s_stall_event_r_start_us = now_us;
+                    ESP_LOGW(TAG,
+                        "STALL-R start tgt=%.3f meas=%.3f cmd_age_ms=%lld "
+                        "uptime_s=%lld heap=%lu",
+                        (double)tgt_right, (double)v_right_meas,
+                        (long long)((now_us - s_last_cmd_time_us) / 1000),
+                        (long long)(now_us / 1000000),
+                        (unsigned long)esp_get_free_heap_size());
+                } else if (!stall_right && s_stall_event_r) {
+                    int64_t dur_ms = (now_us - s_stall_event_r_start_us) / 1000;
+                    ESP_LOGW(TAG, "STALL-R end dur_ms=%lld meas=%.3f",
+                        (long long)dur_ms, (double)v_right_meas);
+                    s_stall_event_r = false;
+                }
+
+                // ── Phase 2: H-bridge ISD-clear recovery state machine ──
+                // Runs once per PID cycle. When both wheels are persistently
+                // stalled, holds motors LOW for a widening dwell to clear the
+                // TB67H450FNG ISD latch, then resumes PID and observes.
+                bool both_stalled = stall_left && stall_right;
+                bool any_ticks    = (left_delta != 0 || right_delta != 0);
+                bool skip_pid     = false;
+
+                switch (s_recovery_state) {
+                case RECOVERY_IDLE:
+                    if (both_stalled) {
+                        if (s_fault_detect_start_us == 0) {
+                            s_fault_detect_start_us = now_us;
+                        } else if ((now_us - s_fault_detect_start_us) > FAULT_DETECT_US) {
+                            int dwell_ms = s_recovery_dwells_ms[0];
+                            ESP_LOGE(TAG,
+                                "H-BRIDGE FAULT — both wheels stalled %lldms, "
+                                "attempting ISD-clear #1 (LOW dwell %dms)",
+                                (long long)((now_us - s_fault_detect_start_us) / 1000),
+                                dwell_ms);
+                            s_recovery_state        = RECOVERY_DWELL;
+                            s_recovery_phase_end_us = now_us + (int64_t)dwell_ms * 1000;
+                            s_recovery_attempt      = 0;
+                            skip_pid                = true;
+                        }
+                    } else {
+                        s_fault_detect_start_us = 0;
+                    }
+                    break;
+
+                case RECOVERY_DWELL:
+                    skip_pid = true;
+                    if (now_us >= s_recovery_phase_end_us) {
+                        ESP_LOGW(TAG,
+                            "ISD-clear dwell #%d done — resuming PID, observe %dms",
+                            s_recovery_attempt + 1,
+                            (int)(RECOVERY_OBSERVE_US / 1000));
+                        // Critical: clear PID state so wound-up integral from
+                        // the stall doesn't cause a violent PWM spike that
+                        // immediately re-trips ISD on the resume cycle.
+                        pid_reset(&s_pid_left);
+                        pid_reset(&s_pid_right);
+                        s_recovery_state        = RECOVERY_OBSERVE;
+                        s_recovery_phase_end_us = now_us + RECOVERY_OBSERVE_US;
+                    }
+                    break;
+
+                case RECOVERY_OBSERVE:
+                    if (any_ticks) {
+                        ESP_LOGI(TAG, "ISD-clear SUCCEEDED on attempt #%d",
+                                 s_recovery_attempt + 1);
+                        s_recovery_state        = RECOVERY_IDLE;
+                        s_recovery_phase_end_us = 0;
+                        s_recovery_attempt      = 0;
+                        s_fault_detect_start_us = 0;
+                    } else if (now_us >= s_recovery_phase_end_us) {
+                        s_recovery_attempt++;
+                        if (s_recovery_attempt < RECOVERY_MAX_ATTEMPTS) {
+                            int dwell_ms = s_recovery_dwells_ms[s_recovery_attempt];
+                            ESP_LOGW(TAG,
+                                "ISD-clear attempt #%d failed — escalating to "
+                                "dwell %dms",
+                                s_recovery_attempt, dwell_ms);
+                            s_recovery_state        = RECOVERY_DWELL;
+                            s_recovery_phase_end_us = now_us + (int64_t)dwell_ms * 1000;
+                            skip_pid                = true;
+                        } else {
+                            ESP_LOGE(TAG,
+                                "ISD-clear EXHAUSTED after %d attempts — chip "
+                                "likely latched. Power-cycle 12V required.",
+                                RECOVERY_MAX_ATTEMPTS);
+                            s_recovery_state = RECOVERY_GIVE_UP;
+                            skip_pid         = true;
+                        }
+                    }
+                    break;
+
+                case RECOVERY_GIVE_UP:
+                    skip_pid = true;
+                    // Stay here; reset happens in the inactive (else) branch
+                    // below when operator stops commanding.
+                    break;
+                }
+
+                if (skip_pid) {
+                    motor_driver_stop();
+                    if (++debug_counter % PID_DEBUG_INTERVAL == 0) {
+                        ESP_LOGW(TAG,
+                            "RECOVERY state=%d attempt=%d phase_remaining_ms=%lld "
+                            "tgt=%.3f/%.3f meas=%.3f/%.3f",
+                            (int)s_recovery_state, s_recovery_attempt,
+                            (long long)((s_recovery_phase_end_us - now_us) / 1000),
+                            (double)tgt_left, (double)tgt_right,
+                            (double)v_left_meas, (double)v_right_meas);
+                    }
+                    continue;  // skip the PID compute + motor_driver_set below
+                }
+
                 float ff_off_l = (tgt_left  >= 0.0f) ? p.ff_offset_left_fwd  : p.ff_offset_left_rev;
                 float ff_off_r = (tgt_right >= 0.0f) ? p.ff_offset_right_fwd : p.ff_offset_right_rev;
                 if (stall_left)  ff_off_l += p.stall_ff_boost;
@@ -364,6 +546,23 @@ static void pid_task(void *arg)
             s_was_pid_active   = false;
             s_kickstart_end_us = 0;
             debug_counter = 0;
+
+            // Phase 2: operator stopped commanding — reset recovery state.
+            // Lets a fresh engagement get a clean retry budget instead of
+            // staying stuck in GIVE_UP forever once the operator releases.
+            // Also clears stall edge state so we don't see spurious "end"
+            // logs on the next cycle.
+            if (s_recovery_state != RECOVERY_IDLE) {
+                ESP_LOGI(TAG, "Recovery state reset by operator stop "
+                         "(was state=%d attempt=%d)",
+                         (int)s_recovery_state, s_recovery_attempt);
+                s_recovery_state        = RECOVERY_IDLE;
+                s_recovery_phase_end_us = 0;
+                s_recovery_attempt      = 0;
+                s_fault_detect_start_us = 0;
+            }
+            s_stall_event_l = false;
+            s_stall_event_r = false;
         }
     }
 }
