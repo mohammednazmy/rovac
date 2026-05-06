@@ -109,6 +109,12 @@ The phone connects via rosbridge WebSocket on Pi port 9090. The app source is `h
 - `hardware/hc-sr04-ultrasonic/`
 - `hardware/yahboom-usb3-hub/`
 
+### v2 chassis migration inventory (incoming / not yet integrated)
+
+These components are documented but not yet running on the active ROVAC v1 stack. They're part of the [Neato Botvac D5 donor migration](../docs/v2_chassis_migration/) and will move into "Start here" once the v2 build is online.
+
+- `hardware/delta-bcb1012gj-01-blower-motor/` — 8× Delta BLDC suction blowers (14.4 V, 3.45 A, ~50 W each) for Layout B1 dual-pair vacuum pancake. Received 2026-05-05.
+
 ### Historical or superseded experiments
 
 - `hardware/esp32_xv11_bridge/`
