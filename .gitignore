@@ -159,5 +159,11 @@ rovac_v3/3D_model/renders/
 rovac_v3/3D_model/audit_artifacts/*
 !rovac_v3/3D_model/audit_artifacts/audit_report.*
 
+# === External ROS2 packages (cloned via vcstool from external.repos) ===
+# These are declared in ros2_ws/src/external.repos and pulled by
+# `vcs import` during install. Do not commit them in this monorepo.
+ros2_ws/src/rplidar_ros/
+ros2_ws/src/rplidar_ros2_driver/   # legacy unused fork — slated for removal
+
 # Photo source files (Photoshop) — too large for git
 photos/**/*.psd

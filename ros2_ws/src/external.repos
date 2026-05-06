@@ -1,0 +1,27 @@
+# vcstool repos file for external ROS2 packages used by ROVAC.
+#
+# These packages are maintained upstream and are NOT vendored into this repo.
+# Instead they are declared here and pulled by `vcs import` during install.
+#
+# Usage (one-time bootstrap on a fresh clone):
+#   cd ros2_ws/src && vcs import < external.repos
+#
+# Or via the installer:
+#   ./scripts/install_pi_systemd.sh install   # runs vcs import as part of bootstrap
+#
+# To update to a newer upstream commit, edit the `version:` field below to the
+# desired SHA or tag, then re-run the install. To pull whatever is at HEAD on
+# the upstream branch instead of pinning a SHA, set `version: ros2`.
+#
+# Why pin to a SHA instead of a branch?
+#   The Slamtec upstream repo's `ros2` branch occasionally introduces breaking
+#   changes (the patched-SDK fix at 24cc9b6 was hand-picked because the master
+#   branch's nullptr_t type breaks on aarch64 compilers). Pinning gives
+#   reproducibility — anyone who runs `vcs import` gets the exact tree we
+#   tested against on the Pi.
+
+repositories:
+  rplidar_ros:
+    type: git
+    url: https://github.com/Slamtec/rplidar_ros.git
+    version: 24cc9b6           # ros2 branch HEAD as of 2026-05-06; bump as needed

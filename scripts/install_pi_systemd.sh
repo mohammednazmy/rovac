@@ -76,6 +76,35 @@ LEGACY_RULE_FILES=(
   /etc/udev/rules.d/99-encoder-bridge.rules  # retired Nano encoder bridge
 )
 
+install_ros2_ws_externals() {
+  # External ROS2 packages declared in ros2_ws/src/external.repos are pulled
+  # via vcstool. We DO NOT vendor them in this monorepo to avoid history bloat
+  # and to keep upstream patches a `git pull` away. Pinned to a SHA in the
+  # repos file so installs are reproducible.
+  local repos_file="$ROVAC_DIR/ros2_ws/src/external.repos"
+  if [ ! -f "$repos_file" ]; then
+    echo "  (no $repos_file - skipping external clone bootstrap)"
+    return 0
+  fi
+
+  echo "Bootstrapping external ROS2 packages from external.repos..."
+  if ! ssh "$PI_HOST" "command -v vcs >/dev/null 2>&1"; then
+    echo "  vcstool not installed on Pi - installing python3-vcstool via apt..."
+    if ! ssh "$PI_HOST" "sudo apt-get install -y python3-vcstool 2>&1 | tail -3"; then
+      echo "  WARNING: apt install of python3-vcstool failed; skipping external clone." >&2
+      echo "  Install manually: ssh pi 'sudo apt-get install -y python3-vcstool'" >&2
+      return 0
+    fi
+  fi
+
+  # vcs import is non-destructive: skips existing directories. Use --force to
+  # overwrite (don't enable in normal install — would blow away local edits).
+  ssh "$PI_HOST" "
+    cd /home/pi/robots/rovac/ros2_ws/src
+    vcs import --input external.repos 2>&1 | sed 's/^/  /'
+  "
+}
+
 install_udev_rules() {
   # Single source of truth: config/udev/99-rovac-usb.rules in the repo.
   # Step 1: wipe legacy/conflicting ROVAC udev rule files. These accumulate
@@ -135,6 +164,8 @@ install_units() {
   fi
 
   install_udev_rules
+
+  install_ros2_ws_externals
 
   # Remove dead services from previous installations (WiFi micro-ROS era)
   echo "Cleaning up legacy services..."
