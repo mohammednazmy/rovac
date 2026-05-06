@@ -14,7 +14,7 @@
       <LeaseDuration>5s</LeaseDuration>
       <Peers>
         <!-- Mac -->
-        <Peer address="192.168.1.89"/>
+        <Peer address="__MAC_IP__"/>
         <!-- Self (for local Pi-to-Pi communication) -->
         <Peer address="192.168.1.200"/>
       </Peers>

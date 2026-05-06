@@ -17,7 +17,7 @@
       <LeaseDuration>5s</LeaseDuration>
       <Peers>
         <!-- Local Mac participants (auto-resolved via en0 interface binding) -->
-        <Peer address="192.168.1.89"/>
+        <Peer address="__MAC_IP__"/>
         <!-- Raspberry Pi edge (on robot) -->
         <Peer address="192.168.1.200"/>
       </Peers>

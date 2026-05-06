@@ -93,6 +93,20 @@ else
     unset CYCLONEDDS_URI 2>/dev/null || true
 fi
 
+# ── Bootstrap CycloneDDS config from template if missing ──
+# The rendered cyclonedds_{mac,pi}.xml files are gitignored because this script
+# mutates them on every Mac DHCP IP change. On a fresh clone (or after the file
+# has been deleted), render from the .template by substituting __MAC_IP__ with
+# the current Mac IP.
+if [ "${RMW_IMPLEMENTATION:-}" = "rmw_cyclonedds_cpp" ]; then
+    _ROVAC_BOOTSTRAP_XML="$CYCLONE_PROFILE_DEFAULT"
+    _ROVAC_BOOTSTRAP_TEMPLATE="${_ROVAC_BOOTSTRAP_XML}.template"
+    if [ ! -f "$_ROVAC_BOOTSTRAP_XML" ] && [ -f "$_ROVAC_BOOTSTRAP_TEMPLATE" ]; then
+        sed "s|__MAC_IP__|${ROVAC_MAC_IP_DEFAULT}|g" "$_ROVAC_BOOTSTRAP_TEMPLATE" > "$_ROVAC_BOOTSTRAP_XML"
+        echo "  Rendered $_ROVAC_BOOTSTRAP_XML from template (Mac IP=$ROVAC_MAC_IP_DEFAULT)"
+    fi
+fi
+
 # ── Auto-sync Mac IP to CycloneDDS configs ────────────────
 # Updates both Mac self-peer and Pi Mac-peer when the Mac's DHCP IP changes.
 # Only runs on Mac, only when the IP actually changed.

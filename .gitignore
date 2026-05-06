@@ -140,5 +140,21 @@ CMD_reference.rtf
 # === Runtime IP stamp ===
 .rovac_mac_ip
 
+# === CycloneDDS configs are runtime-mutated (rendered from .template by ros2_env.sh) ===
+# The .template files ARE tracked; the rendered files are gitignored because
+# ros2_env.sh sed-mutates them on every Mac DHCP IP change.
+config/cyclonedds_mac.xml
+config/cyclonedds_pi.xml
+
+# === Playwright MCP browser logs (ephemeral debug output) ===
+.playwright-mcp/
+
+# === RoArm-M2 vendor SDK (493MB, downloadable from Waveshare wiki on demand) ===
+roarm/
+
+# === rovac_v3 OpenSCAD renders (regeneratable from .scad source) ===
+rovac_v3/3D_model/renders/
+rovac_v3/3D_model/renders/**
+
 # Photo source files (Photoshop) — too large for git
 photos/**/*.psd
