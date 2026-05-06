@@ -7,6 +7,7 @@
 #   ./scripts/install_pi_systemd.sh install   # copy unit files, enable + start
 #   ./scripts/install_pi_systemd.sh status    # show service status
 #   ./scripts/install_pi_systemd.sh restart   # restart rovac-edge.target
+#   ./scripts/install_pi_systemd.sh udev      # re-apply udev rules only (no systemd touch)
 #   ./scripts/install_pi_systemd.sh uninstall # disable + remove units
 #
 # Env:
@@ -61,6 +62,63 @@ check_hardware_notes() {
   " 2>/dev/null || true
 }
 
+# List of all legacy / superseded ROVAC udev rule filenames the installer
+# wipes before re-installing the canonical one. Keep this list authoritative
+# so install + uninstall stay in sync. Add to the list when retiring a rules
+# file; never remove an entry (a stale Pi may still have it).
+LEGACY_RULE_FILES=(
+  /etc/udev/rules.d/99-rovac-esp32.rules     # superseded by 99-rovac-usb.rules
+  /etc/udev/rules.d/99-rovac-usb.rules       # canonical (re-installed below)
+  /etc/udev/rules.d/99-esp32-lidar.rules     # retired XV11 experiment
+  /etc/udev/rules.d/99-hiwonder-rrc.rules    # retired Hiwonder controller
+  /etc/udev/rules.d/99-roarm.rules           # not yet integrated
+  /etc/udev/rules.d/99-super-sensor.rules    # retired CH341 super-sensor
+  /etc/udev/rules.d/99-encoder-bridge.rules  # retired Nano encoder bridge
+)
+
+install_udev_rules() {
+  # Single source of truth: config/udev/99-rovac-usb.rules in the repo.
+  # Step 1: wipe legacy/conflicting ROVAC udev rule files. These accumulate
+  # over time as hardware experiments come and go; they cause silent SYMLINK
+  # collisions (e.g. serial=="0001" -> esp32_lidar from the retired XV11
+  # experiment shadowed /dev/esp32_sensor for weeks).
+  echo "Wiping legacy ROVAC udev rule files..."
+  ssh "$PI_HOST" "sudo rm -f ${LEGACY_RULE_FILES[*]}"
+
+  # Step 2: install the canonical rule file
+  echo "Installing canonical udev rules (99-rovac-usb.rules)..."
+  remote_sudo_install "/etc/udev/rules.d/99-rovac-usb.rules" "$ROVAC_DIR/config/udev/99-rovac-usb.rules"
+
+  # Step 3: reload udevd and re-evaluate all currently-attached devices
+  ssh "$PI_HOST" "sudo udevadm control --reload-rules && sudo udevadm trigger --action=add"
+  ssh "$PI_HOST" "sudo udevadm settle --timeout=5" || true
+
+  # Step 4: verify expected symlinks exist. If any are missing the install is
+  # broken and the systemd target won't come up - fail loudly here rather
+  # than let the user chase 'dependency failed' errors later.
+  echo "Verifying USB symlinks..."
+  if ! ssh "$PI_HOST" '
+    missing=()
+    for sym in esp32_motor esp32_sensor rplidar_c1; do
+      if [ -e "/dev/$sym" ]; then
+        echo "  OK: /dev/$sym -> $(readlink /dev/$sym)"
+      else
+        echo "  MISSING: /dev/$sym"
+        missing+=("$sym")
+      fi
+    done
+    if [ ${#missing[@]} -gt 0 ]; then
+      echo "ERROR: ${#missing[@]} expected USB symlink(s) missing." >&2
+      echo "Check that each device is plugged in and that lsusb sees it:" >&2
+      lsusb >&2
+      exit 1
+    fi
+  '; then
+    echo "ERROR: USB symlink verification failed. Aborting." >&2
+    return 1
+  fi
+}
+
 install_units() {
   if [ ! -d "$UNIT_DIR" ]; then
     echo "ERROR: missing $UNIT_DIR" >&2
@@ -76,10 +134,7 @@ install_units() {
     exit 1
   fi
 
-  # Deploy udev rules for ESP32 motor controller
-  echo "Installing udev rules..."
-  remote_sudo_install "/etc/udev/rules.d/99-rovac-esp32.rules" "$ROVAC_DIR/config/udev/99-rovac-esp32.rules"
-  ssh "$PI_HOST" "sudo udevadm control --reload-rules && sudo udevadm trigger" || true
+  install_udev_rules
 
   # Remove dead services from previous installations (WiFi micro-ROS era)
   echo "Cleaning up legacy services..."
@@ -162,8 +217,7 @@ uninstall_units() {
     sudo rm -f /etc/systemd/system/rovac-edge*.timer
     sudo rm -f /etc/systemd/system/rovac-camera.service
     sudo rm -f /etc/systemd/system/rovac-phone-cameras.service
-    sudo rm -f /etc/udev/rules.d/99-rovac-esp32.rules
-    sudo rm -f /etc/udev/rules.d/99-rovac-usb.rules
+    sudo rm -f ${LEGACY_RULE_FILES[*]}
     sudo systemctl daemon-reload
   "
 }
@@ -180,11 +234,14 @@ case "${1:-}" in
     restart_stack
     show_status
     ;;
+  udev)
+    install_udev_rules
+    ;;
   uninstall)
     uninstall_units
     ;;
   *)
-    echo "Usage: $0 {install|status|restart|uninstall}" >&2
+    echo "Usage: $0 {install|status|restart|udev|uninstall}" >&2
     exit 1
     ;;
 esac

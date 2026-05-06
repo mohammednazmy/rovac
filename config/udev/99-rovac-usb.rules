@@ -1,0 +1,38 @@
+# ROVAC USB Device Rules — Raspberry Pi 5 (canonical)
+# Single source of truth. Installed by scripts/install_pi_systemd.sh.
+# DO NOT keep additional ROVAC udev rule files alongside this one — the
+# installer wipes legacy files before re-installing this one to guarantee
+# no symlink collisions.
+#
+# Expected symlinks after install (verified by the install script):
+#   /dev/esp32_motor   — Maker-ESP32 Dev Board running motor firmware
+#   /dev/esp32_sensor  — ESP32-DevKitV1 running sensor hub firmware
+#   /dev/rplidar_c1    — Slamtec RPLIDAR C1 (DTOF, 360°)
+#
+# Disambiguation note: the RPLIDAR (CP2102N) and sensor hub (CP2102) share
+# Silicon Labs vendor:product 10c4:ea60. We disambiguate using BOTH the
+# product string ("CP2102N..." vs "CP2102...") AND serial number, so
+# adding a future generic CP2102 device (which would default to serial
+# "0001" like the sensor hub) cannot silently collide.
+
+# ── Maker-ESP32 Motor Controller ────────────────────────────────────────
+# CH340 (1a86:7523) — 4x TB67H450FNG drivers, BNO055 IMU, COBS @ 460800.
+# Only one CH340 device on the bus at present, so VID:PID is sufficient.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", \
+  SYMLINK+="esp32_motor", MODE="0666", TAG+="systemd"
+
+# ── RPLIDAR C1 ──────────────────────────────────────────────────────────
+# Silicon Labs CP2102N (10c4:ea60), unique factory serial.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", \
+  ATTRS{product}=="CP2102N USB to UART Bridge Controller", \
+  ATTRS{serial}=="2cc40fe2db73ef1185f9cd8c8fcc3fa0", \
+  SYMLINK+="rplidar_c1", MODE="0666", TAG+="systemd"
+
+# ── ESP32 Sensor Hub ────────────────────────────────────────────────────
+# Silicon Labs CP2102 (10c4:ea60), default serial "0001". Disambiguated
+# from RPLIDAR via product string ("CP2102" vs "CP2102N").
+# 4x HC-SR04 ultrasonic + 2x Sharp GP2Y0A51SK0F IR cliff, COBS @ 460800.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", \
+  ATTRS{product}=="CP2102 USB to UART Bridge Controller", \
+  ATTRS{serial}=="0001", \
+  SYMLINK+="esp32_sensor", MODE="0666", TAG+="systemd"
