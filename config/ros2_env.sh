@@ -93,55 +93,80 @@ else
     unset CYCLONEDDS_URI 2>/dev/null || true
 fi
 
-# ── Bootstrap CycloneDDS config from template if missing ──
-# The rendered cyclonedds_{mac,pi}.xml files are gitignored because this script
-# mutates them on every Mac DHCP IP change. On a fresh clone (or after the file
-# has been deleted), render from the .template by substituting __MAC_IP__ with
-# the current Mac IP.
+# ── CycloneDDS config render + auto-sync (atomic, idempotent) ─────────
+# The rendered cyclonedds_{mac,pi}.xml files are gitignored because this
+# script writes to them on every source. They are produced from their
+# matching .template by substituting __MAC_IP__.
+#
+# Design notes:
+#  • The local file is rendered every source via tmp+rename (atomic).
+#    This is cheap (~1ms) and guarantees the local file always reflects
+#    the current Mac IP — no drift possible from interrupted past runs.
+#  • The Pi sync runs only when the Mac IP differs from the IP recorded
+#    in the stamp file ($HOME/.rovac_mac_ip).
+#  • The stamp is updated ONLY after the Pi sync succeeds. If Pi is
+#    unreachable or the SSH render fails, the stamp stays stale, and the
+#    next source will retry the Pi sync. This is the explicit fix for
+#    the previous stamp/file-content drift bug, where the Mac's local
+#    file got mutated but the stamp was not — leading to a future sed
+#    against a pattern that no longer matched.
 if [ "${RMW_IMPLEMENTATION:-}" = "rmw_cyclonedds_cpp" ]; then
-    _ROVAC_BOOTSTRAP_XML="$CYCLONE_PROFILE_DEFAULT"
-    _ROVAC_BOOTSTRAP_TEMPLATE="${_ROVAC_BOOTSTRAP_XML}.template"
-    if [ ! -f "$_ROVAC_BOOTSTRAP_XML" ] && [ -f "$_ROVAC_BOOTSTRAP_TEMPLATE" ]; then
-        sed "s|__MAC_IP__|${ROVAC_MAC_IP_DEFAULT}|g" "$_ROVAC_BOOTSTRAP_TEMPLATE" > "$_ROVAC_BOOTSTRAP_XML"
-        echo "  Rendered $_ROVAC_BOOTSTRAP_XML from template (Mac IP=$ROVAC_MAC_IP_DEFAULT)"
+    _ROVAC_LOCAL_XML="$CYCLONE_PROFILE_DEFAULT"
+    _ROVAC_LOCAL_TEMPLATE="${_ROVAC_LOCAL_XML}.template"
+
+    # Render local CycloneDDS config from template (atomic tmp+rename).
+    # Runs on both Mac and Pi — every source produces a fresh, correct file.
+    if [ -f "$_ROVAC_LOCAL_TEMPLATE" ] && [ -n "${ROVAC_MAC_IP_DEFAULT:-}" ]; then
+        _ROVAC_TMP=$(mktemp "${_ROVAC_LOCAL_XML}.tmp.XXXXXX" 2>/dev/null) || _ROVAC_TMP=""
+        if [ -n "$_ROVAC_TMP" ]; then
+            if sed "s|__MAC_IP__|${ROVAC_MAC_IP_DEFAULT}|g" "$_ROVAC_LOCAL_TEMPLATE" > "$_ROVAC_TMP" 2>/dev/null; then
+                mv -f "$_ROVAC_TMP" "$_ROVAC_LOCAL_XML"
+            else
+                rm -f "$_ROVAC_TMP"
+            fi
+        fi
+        unset _ROVAC_TMP
     fi
+    unset _ROVAC_LOCAL_XML _ROVAC_LOCAL_TEMPLATE
 fi
 
-# ── Auto-sync Mac IP to CycloneDDS configs ────────────────
-# Updates both Mac self-peer and Pi Mac-peer when the Mac's DHCP IP changes.
-# Only runs on Mac, only when the IP actually changed.
+# ── Mac→Pi auto-sync (Mac only, on IP change, atomic) ────────────────
 if [ "$ROVAC_OS" = "Darwin" ] && [ "${RMW_IMPLEMENTATION:-}" = "rmw_cyclonedds_cpp" ]; then
     _ROVAC_IP_STAMP="$HOME/.rovac_mac_ip"
     _ROVAC_LAST_IP=""
     [ -f "$_ROVAC_IP_STAMP" ] && _ROVAC_LAST_IP=$(cat "$_ROVAC_IP_STAMP" 2>/dev/null)
 
-    if [ "$ROVAC_MAC_IP_DEFAULT" != "$_ROVAC_LAST_IP" ] && [ -n "$ROVAC_MAC_IP_DEFAULT" ]; then
-        # Update Mac CycloneDDS self-peer
-        _ROVAC_MAC_XML="$ROVAC_CONFIG_DIR/cyclonedds_mac.xml"
-        if [ -f "$_ROVAC_MAC_XML" ] && [ -n "$_ROVAC_LAST_IP" ]; then
-            sed -i '' "s|<Peer address=\"${_ROVAC_LAST_IP}\"/>|<Peer address=\"${ROVAC_MAC_IP_DEFAULT}\"/>|" "$_ROVAC_MAC_XML" 2>/dev/null
-        fi
+    if [ -n "${ROVAC_MAC_IP_DEFAULT:-}" ] && [ "$ROVAC_MAC_IP_DEFAULT" != "$_ROVAC_LAST_IP" ]; then
+        _ROVAC_PI_XML="/home/pi/robots/rovac/config/cyclonedds_pi.xml"
+        _ROVAC_PI_TEMPLATE="${_ROVAC_PI_XML}.template"
 
-        # Sync to Pi: update Mac peer in Pi's CycloneDDS config + restart services
         if ssh -o ConnectTimeout=2 -o BatchMode=yes "pi@$ROVAC_EDGE_IP_DEFAULT" true 2>/dev/null; then
-            _ROVAC_PI_XML="/home/pi/robots/rovac/config/cyclonedds_pi.xml"
-            if [ -n "$_ROVAC_LAST_IP" ]; then
-                ssh -o ConnectTimeout=3 "pi@$ROVAC_EDGE_IP_DEFAULT" \
-                    "sed -i 's|<Peer address=\"${_ROVAC_LAST_IP}\"/>|<Peer address=\"${ROVAC_MAC_IP_DEFAULT}\"/>|' $_ROVAC_PI_XML" 2>/dev/null
+            # Render Pi xml via atomic tmp+rename. The remote shell uses set -e
+            # so any failure (missing template, sed error, mv error) propagates
+            # back as a non-zero SSH exit code and we won't update the stamp.
+            if ssh -o ConnectTimeout=5 -o BatchMode=yes "pi@$ROVAC_EDGE_IP_DEFAULT" "
+                set -e
+                test -f '$_ROVAC_PI_TEMPLATE' || { echo 'Pi template missing: $_ROVAC_PI_TEMPLATE' >&2; exit 10; }
+                _tmp=\$(mktemp '${_ROVAC_PI_XML}.tmp.XXXXXX')
+                sed 's|__MAC_IP__|${ROVAC_MAC_IP_DEFAULT}|g' '$_ROVAC_PI_TEMPLATE' > \"\$_tmp\"
+                mv -f \"\$_tmp\" '$_ROVAC_PI_XML'
+            " 2>&1; then
+                # Stamp update happens BEFORE the background restart. The restart
+                # is fire-and-forget; treating it as required would block the
+                # shell sourcing for ~10s on every IP change.
+                echo "$ROVAC_MAC_IP_DEFAULT" > "$_ROVAC_IP_STAMP"
+                ssh -o ConnectTimeout=3 -o BatchMode=yes "pi@$ROVAC_EDGE_IP_DEFAULT" \
+                    "sudo systemctl restart rovac-edge.target" 2>/dev/null &
+                echo "  Mac IP changed: ${_ROVAC_LAST_IP:-unknown} → $ROVAC_MAC_IP_DEFAULT (synced to Pi, restarting edge services)"
             else
-                # First run or stamp cleared — replace any Mac peer (not the Pi self-peer)
-                ssh -o ConnectTimeout=3 "pi@$ROVAC_EDGE_IP_DEFAULT" \
-                    "sed -i '/<\!-- Mac -->/{ n; s|<Peer address=\"[^\"]*\"/>|<Peer address=\"${ROVAC_MAC_IP_DEFAULT}\"/>| }' $_ROVAC_PI_XML" 2>/dev/null
+                echo "  Mac IP changed: ${_ROVAC_LAST_IP:-unknown} → $ROVAC_MAC_IP_DEFAULT (Mac local config updated; Pi sync FAILED — will retry next source)"
             fi
-            # Restart edge services to pick up new peer config
-            ssh -o ConnectTimeout=3 "pi@$ROVAC_EDGE_IP_DEFAULT" \
-                "sudo systemctl restart rovac-edge.target" 2>/dev/null &
-            echo "  IP changed: ${_ROVAC_LAST_IP:-unknown} → $ROVAC_MAC_IP_DEFAULT (synced to Pi, restarting edge services)"
-            echo "$ROVAC_MAC_IP_DEFAULT" > "$_ROVAC_IP_STAMP"
         else
-            echo "  IP changed but Pi unreachable — update Pi config manually (will retry next source)"
+            echo "  Mac IP changed: ${_ROVAC_LAST_IP:-unknown} → $ROVAC_MAC_IP_DEFAULT (Mac local config updated; Pi unreachable — will retry next source)"
         fi
+        unset _ROVAC_PI_XML _ROVAC_PI_TEMPLATE
     fi
+    unset _ROVAC_IP_STAMP _ROVAC_LAST_IP
 fi
 
 echo "ROS2 Environment: DOMAIN=$ROS_DOMAIN_ID, RMW=${RMW_IMPLEMENTATION:-unset}, LOCAL_IP=$ROVAC_LOCAL_IP, REMOTE_IP=$ROVAC_REMOTE_IP"
