@@ -4,1785 +4,1785 @@
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:27:1: I4002: Module footprint_box has no docstring.",
+      "message": "chassis_iter3.scad:27:1: I4002: Module footprint_box has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:28:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:28:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:29:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:29:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:33:1: I4002: Module standoff has no docstring.",
+      "message": "chassis_iter3.scad:33:1: I4002: Module standoff has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:36:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:36:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:41:1: I4002: Module cable_channel has no docstring.",
+      "message": "chassis_iter3.scad:41:1: I4002: Module cable_channel has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:49:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:49:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:50:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:50:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:51:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:51:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:53:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:53:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:57:1: I4002: Module cable_tie_post has no docstring.",
+      "message": "chassis_iter3.scad:57:1: I4002: Module cable_tie_post has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:58:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:58:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:59:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:59:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:62:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:62:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:68:1: I4002: Module perimeter_arc has no docstring.",
+      "message": "chassis_iter3.scad:68:1: I4002: Module perimeter_arc has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:86:1: I4002: Module chassis_floor has no docstring.",
+      "message": "chassis_iter3.scad:86:1: I4002: Module chassis_floor has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:98:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:98:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:104:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:104:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:108:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:108:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:110:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:110:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:114:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:114:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:115:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:115:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:118:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:118:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:121:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:121:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:132:1: I4002: Module cliff_bracket has no docstring.",
+      "message": "chassis_iter3.scad:132:1: I4002: Module cliff_bracket has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:133:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:133:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:134:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:134:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:138:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:138:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:142:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:142:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:148:1: I4002: Module chassis_wall has no docstring.",
+      "message": "chassis_iter3.scad:148:1: I4002: Module chassis_wall has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:154:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:154:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:161:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:161:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:168:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:168:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:177:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:177:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:177:27: I1001: Overly complicated argument contains 8 tokens.",
+      "message": "chassis_iter3.scad:177:27: I1001: Overly complicated argument contains 8 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:180:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:180:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:181:25: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:181:25: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:193:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:193:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:193:27: I1001: Overly complicated argument contains 8 tokens.",
+      "message": "chassis_iter3.scad:193:27: I1001: Overly complicated argument contains 8 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:195:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:195:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:196:25: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:196:25: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:209:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:209:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:210:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:210:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:211:25: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:211:25: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:222:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:222:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:222:27: I1001: Overly complicated argument contains 8 tokens.",
+      "message": "chassis_iter3.scad:222:27: I1001: Overly complicated argument contains 8 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:225:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:225:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:226:25: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:226:25: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:234:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:234:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:243:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:243:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:243:27: I1001: Overly complicated argument contains 8 tokens.",
+      "message": "chassis_iter3.scad:243:27: I1001: Overly complicated argument contains 8 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:246:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:246:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:247:25: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:247:25: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:258:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:258:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:259:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:259:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:260:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:260:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:262:29: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:262:29: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:269:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:269:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:269:19: I1001: Overly complicated argument contains 12 tokens.",
+      "message": "chassis_iter3.scad:269:19: I1001: Overly complicated argument contains 12 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:272:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:272:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:273:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:273:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:278:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:278:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:278:19: I1001: Overly complicated argument contains 12 tokens.",
+      "message": "chassis_iter3.scad:278:19: I1001: Overly complicated argument contains 12 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:281:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:281:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:282:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:282:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:289:1: I4002: Module chassis_top_plate has no docstring.",
+      "message": "chassis_iter3.scad:289:1: I4002: Module chassis_top_plate has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:292:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:292:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:297:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:297:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:303:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:303:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:311:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:311:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:319:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:319:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:330:25: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:330:25: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:330:35: I1001: Overly complicated argument contains 8 tokens.",
+      "message": "chassis_iter3.scad:330:35: I1001: Overly complicated argument contains 8 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:339:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:339:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:339:31: I1001: Overly complicated argument contains 8 tokens.",
+      "message": "chassis_iter3.scad:339:31: I1001: Overly complicated argument contains 8 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:346:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:346:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:346:27: I1001: Overly complicated argument contains 10 tokens.",
+      "message": "chassis_iter3.scad:346:27: I1001: Overly complicated argument contains 10 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:354:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:354:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:365:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:365:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:367:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:367:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:368:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:368:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:376:1: I4002: Module pi5_standoffs has no docstring.",
+      "message": "chassis_iter3.scad:376:1: I4002: Module pi5_standoffs has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:377:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:377:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:379:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:379:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:379:23: I1001: Overly complicated argument contains 12 tokens.",
+      "message": "chassis_iter3.scad:379:23: I1001: Overly complicated argument contains 12 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:387:1: I4002: Module esp32_motor_mount has no docstring.",
+      "message": "chassis_iter3.scad:387:1: I4002: Module esp32_motor_mount has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:388:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:388:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:390:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:390:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:390:23: I1001: Overly complicated argument contains 12 tokens.",
+      "message": "chassis_iter3.scad:390:23: I1001: Overly complicated argument contains 12 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:397:1: I4002: Module esp32_sensor_mount has no docstring.",
+      "message": "chassis_iter3.scad:397:1: I4002: Module esp32_sensor_mount has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:398:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:398:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:400:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:400:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:400:23: I1001: Overly complicated argument contains 12 tokens.",
+      "message": "chassis_iter3.scad:400:23: I1001: Overly complicated argument contains 12 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:407:1: I4002: Module buck_mount has no docstring.",
+      "message": "chassis_iter3.scad:407:1: I4002: Module buck_mount has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:408:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:408:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:410:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:410:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:410:23: I1001: Overly complicated argument contains 12 tokens.",
+      "message": "chassis_iter3.scad:410:23: I1001: Overly complicated argument contains 12 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:417:1: I4002: Module imu_post has no docstring.",
+      "message": "chassis_iter3.scad:417:1: I4002: Module imu_post has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:418:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:418:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:419:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:419:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:422:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:422:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:428:1: I4002: Module battery_cradle has no docstring.",
+      "message": "chassis_iter3.scad:428:1: I4002: Module battery_cradle has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:432:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:432:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:432:23: I1001: Overly complicated argument contains 12 tokens.",
+      "message": "chassis_iter3.scad:432:23: I1001: Overly complicated argument contains 12 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:438:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:438:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:438:19: I1001: Overly complicated argument contains 10 tokens.",
+      "message": "chassis_iter3.scad:438:19: I1001: Overly complicated argument contains 10 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:447:1: I4002: Module lidar_mount has no docstring.",
+      "message": "chassis_iter3.scad:447:1: I4002: Module lidar_mount has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:448:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:448:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:450:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:450:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:453:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:453:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:459:1: I4002: Module caster_mount has no docstring.",
+      "message": "chassis_iter3.scad:459:1: I4002: Module caster_mount has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:460:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:460:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:461:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:461:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:465:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:465:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:472:1: I4002: Module cable_management has no docstring.",
+      "message": "chassis_iter3.scad:472:1: I4002: Module cable_management has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:506:1: I4002: Module pi5_placeholder has no docstring.",
+      "message": "chassis_iter3.scad:506:1: I4002: Module pi5_placeholder has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:508:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:508:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:510:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:510:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:511:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:511:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:516:1: I4002: Module esp32_motor_placeholder has no docstring.",
+      "message": "chassis_iter3.scad:516:1: I4002: Module esp32_motor_placeholder has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:517:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:517:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:519:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:519:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:523:1: I4002: Module esp32_sensor_placeholder has no docstring.",
+      "message": "chassis_iter3.scad:523:1: I4002: Module esp32_sensor_placeholder has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:524:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:524:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:526:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:526:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:530:1: I4002: Module buck_placeholder has no docstring.",
+      "message": "chassis_iter3.scad:530:1: I4002: Module buck_placeholder has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:531:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:531:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:532:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:532:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:536:1: I4002: Module imu_placeholder has no docstring.",
+      "message": "chassis_iter3.scad:536:1: I4002: Module imu_placeholder has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:537:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:537:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:538:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:538:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:542:1: I4002: Module battery_placeholder has no docstring.",
+      "message": "chassis_iter3.scad:542:1: I4002: Module battery_placeholder has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:543:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:543:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:544:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:544:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:548:1: I4002: Module lidar_placeholder has no docstring.",
+      "message": "chassis_iter3.scad:548:1: I4002: Module lidar_placeholder has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:549:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:549:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:550:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:550:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:552:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:552:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:553:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:553:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:555:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:555:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:556:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:556:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:560:1: I4002: Module wheel_placeholder has no docstring.",
+      "message": "chassis_iter3.scad:560:1: I4002: Module wheel_placeholder has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:561:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:561:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:562:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:562:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:566:1: I4002: Module motor_placeholder has no docstring.",
+      "message": "chassis_iter3.scad:566:1: I4002: Module motor_placeholder has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:567:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:567:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:571:1: I4002: Module caster_placeholder has no docstring.",
+      "message": "chassis_iter3.scad:571:1: I4002: Module caster_placeholder has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:572:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:572:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:573:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:573:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:577:1: I4002: Module cliff_placeholder has no docstring.",
+      "message": "chassis_iter3.scad:577:1: I4002: Module cliff_placeholder has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:578:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:578:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:579:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:579:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:583:1: I4002: Module ultrasonic_placeholder has no docstring.",
+      "message": "chassis_iter3.scad:583:1: I4002: Module ultrasonic_placeholder has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:584:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:584:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:585:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:585:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:586:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:586:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:587:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:587:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:591:1: I4002: Module microswitch_placeholders has no docstring.",
+      "message": "chassis_iter3.scad:591:1: I4002: Module microswitch_placeholders has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:593:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:593:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:593:19: I1001: Overly complicated argument contains 10 tokens.",
+      "message": "chassis_iter3.scad:593:19: I1001: Overly complicated argument contains 10 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:596:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:596:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:597:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:597:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:598:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:598:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:603:1: I4002: Module ground_plane has no docstring.",
+      "message": "chassis_iter3.scad:603:1: I4002: Module ground_plane has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:604:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:604:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:605:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:605:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:609:1: I4002: Module forward_arrow has no docstring.",
+      "message": "chassis_iter3.scad:609:1: I4002: Module forward_arrow has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:610:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:610:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:611:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:611:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:612:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:612:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:618:1: I4002: Module chassis_assembly has no docstring.",
+      "message": "chassis_iter3.scad:618:1: I4002: Module chassis_assembly has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:626:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:626:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:631:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:631:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:632:9: I0003: Debug modifier in use.",
+      "message": "chassis_iter3.scad:632:9: I0003: Debug modifier in use.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:633:9: I0003: Debug modifier in use.",
+      "message": "chassis_iter3.scad:633:9: I0003: Debug modifier in use.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:635:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:635:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:653:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:653:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:656:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:656:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:657:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:657:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "chassis_iter3.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/chassis_iter3.scad:661:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "chassis_iter3.scad:661:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:48:1: I4002: Module shaft_socket has no docstring.",
+      "message": "wheel.scad:48:1: I4002: Module shaft_socket has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:51:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:51:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:56:1: I4002: Module hub_blank has no docstring.",
+      "message": "wheel.scad:56:1: I4002: Module hub_blank has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:64:1: I4002: Module spoked_hub has no docstring.",
+      "message": "wheel.scad:64:1: I4002: Module spoked_hub has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:79:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:79:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:82:29: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:82:29: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:89:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:89:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:90:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:90:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:96:1: I4002: Module setscrew_boss has no docstring.",
+      "message": "wheel.scad:96:1: I4002: Module setscrew_boss has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:97:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:97:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:98:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:98:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:99:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:99:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:103:25: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:103:25: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:108:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:108:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:115:1: I4002: Module orientation_marker has no docstring.",
+      "message": "wheel.scad:115:1: I4002: Module orientation_marker has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:116:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:116:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:117:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:117:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:118:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:118:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:119:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:119:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:120:29: I1001: Overly complicated argument contains 9 tokens.",
+      "message": "wheel.scad:120:29: I1001: Overly complicated argument contains 9 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:130:1: I4002: Module tire_smooth_pla has no docstring.",
+      "message": "wheel.scad:130:1: I4002: Module tire_smooth_pla has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:137:1: I4002: Module tire_oring_groove has no docstring.",
+      "message": "wheel.scad:137:1: I4002: Module tire_oring_groove has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:141:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:141:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:142:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:142:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:150:1: I4002: Module hub_tpu_keying_ribs has no docstring.",
+      "message": "wheel.scad:150:1: I4002: Module hub_tpu_keying_ribs has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:151:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:151:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:154:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:154:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:155:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:155:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:163:1: I4002: Module tire_tpu_overmold has no docstring.",
+      "message": "wheel.scad:163:1: I4002: Module tire_tpu_overmold has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:171:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:171:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:172:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:172:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:181:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:181:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:191:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:191:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:194:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:194:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:197:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:197:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:198:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:198:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:199:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:199:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:202:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "wheel.scad:202:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "wheel.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/wheel.scad:207:6: I1001: Overly complicated argument contains 10 tokens.",
+      "message": "wheel.scad:207:6: I1001: Overly complicated argument contains 10 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:41:1: I4002: Module bumper_arc_wall has no docstring.",
+      "message": "bumper.scad:41:1: I4002: Module bumper_arc_wall has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:43:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:43:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:44:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:44:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:45:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:45:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:49:1: I4002: Module bumper_led_slot has no docstring.",
+      "message": "bumper.scad:49:1: I4002: Module bumper_led_slot has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:51:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:51:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:53:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:53:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:55:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:55:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:55:15: I1001: Overly complicated argument contains 9 tokens.",
+      "message": "bumper.scad:55:15: I1001: Overly complicated argument contains 9 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:62:1: I4002: Module flexure_spring has no docstring.",
+      "message": "bumper.scad:62:1: I4002: Module flexure_spring has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:63:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:63:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:64:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:64:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:73:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:73:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:76:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:76:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:82:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:82:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:83:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:83:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:83:19: I1001: Overly complicated argument contains 8 tokens.",
+      "message": "bumper.scad:83:19: I1001: Overly complicated argument contains 8 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:90:1: I4002: Module lap_tab has no docstring.",
+      "message": "bumper.scad:90:1: I4002: Module lap_tab has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:91:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:91:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:92:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:92:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:97:1: I4002: Module switch_contacts has no docstring.",
+      "message": "bumper.scad:97:1: I4002: Module switch_contacts has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:104:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:104:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:105:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:105:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:106:21: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:106:21: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:114:1: I4002: Module bumper_quadrant has no docstring.",
+      "message": "bumper.scad:114:1: I4002: Module bumper_quadrant has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:132:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:132:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:133:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:133:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:142:1: I4002: Module bumper_full_ring has no docstring.",
+      "message": "bumper.scad:142:1: I4002: Module bumper_full_ring has no docstring.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:143:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:143:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:146:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:146:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:150:5: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:150:5: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:156:9: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:156:9: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:157:13: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:157:13: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:158:17: I0004: Module call scope is defined implicitly rather than with braces",
+      "message": "bumper.scad:158:17: I0004: Module call scope is defined implicitly rather than with braces",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:166:10: I1001: Overly complicated argument contains 9 tokens.",
+      "message": "bumper.scad:166:10: I1001: Overly complicated argument contains 9 tokens.",
       "detail": ""
     },
     {
       "severity": "LOW",
       "category": "sca2d",
       "file": "bumper.scad",
-      "message": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/bumper.scad:176:6: I1001: Overly complicated argument contains 9 tokens.",
+      "message": "bumper.scad:176:6: I1001: Overly complicated argument contains 9 tokens.",
       "detail": ""
     },
     {
@@ -8223,7 +8223,7 @@
       }
     },
     "3mf_export": {
-      "wheel_multimaterial_3mf": "/Users/mohammednazmy/robots/rovac/rovac_v3/3D_model/audit_artifacts/wheel_multimaterial.3mf",
+      "wheel_multimaterial_3mf": "audit_artifacts/wheel_multimaterial.3mf",
       "bodies": [
         "wheel_hub_PLA",
         "wheel_tire_TPU"

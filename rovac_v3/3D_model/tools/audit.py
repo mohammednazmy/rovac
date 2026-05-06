@@ -161,8 +161,13 @@ def run_sca2d(report: AuditReport) -> None:
     for scad in [PARAMETERS_SCAD, CHASSIS_SCAD, WHEEL_SCAD, BUMPER_SCAD]:
         if not scad.exists():
             continue
+        # Run sca2d with cwd=ROOT and a relative filename so its diagnostic
+        # output emits repo-relative paths (e.g. "parameters.scad:27:1: ...")
+        # rather than machine-specific absolute paths. Keeps audit_report.json
+        # portable across machines and free of $HOME-specific noise.
         result = subprocess.run(
-            ["python3", "-m", "sca2d", str(scad)],
+            ["python3", "-m", "sca2d", scad.name],
+            cwd=str(ROOT),
             capture_output=True, text=True
         )
         out = (result.stdout + result.stderr).strip()
