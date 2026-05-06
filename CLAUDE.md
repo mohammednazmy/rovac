@@ -2,8 +2,8 @@
 
 ## Overview
 
-ROVAC is a mobile robot (Yahboom G1 Tank) with a USB serial architecture:
-- **ESP32 Motor Controller** (on robot): USB serial COBS binary protocol — runs PID motor control, BNO055 IMU, publishes odom/tf/imu/diagnostics
+ROVAC is a mobile robot (built using Yahboom G1 Tank chassis) with a USB serial architecture:
+- **ESP32 Motor Controller** (Maker-ESP32 Dev Board on robot): USB serial COBS binary protocol — runs PID motor control, BNO055 IMU, publishes odom/tf/imu/diagnostics
 - **ESP32 Sensor Hub** (on robot): USB serial COBS binary protocol — 4x HC-SR04 ultrasonic + 2x Sharp IR cliff sensors, publishes range/cliff/diagnostics
 - **Raspberry Pi 5 (Edge)**: C++ motor driver node + C++ sensor driver node + sensor services at `192.168.1.200` (hostname: `rovac-pi`, user: `pi`)
 - **MacBook Pro (Brain)**: Nav2, SLAM, path planning, teleop (DHCP IP, auto-detected from en0)
@@ -41,10 +41,10 @@ cd ~/robots/rovac
 ssh pi@192.168.1.200 'sudo systemctl status rovac-edge.target'
 
 # Mac: source ROS2 environment
-source config/ros2_env.sh
+source ~/robots/rovac/config/ros2_env.sh
 
 # Keyboard teleop (auto-SSHes to Pi for lowest latency)
-python3 scripts/keyboard_teleop.py
+python3 ~/robots/rovac/scripts/keyboard_teleop.py
 
 # SLAM mapping (Mac) — slam-ekf recommended for best map quality
 ./scripts/mac_brain_launch.sh slam-ekf
