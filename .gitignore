@@ -152,9 +152,12 @@ config/cyclonedds_pi.xml
 # === RoArm-M2 vendor SDK (493MB, downloadable from Waveshare wiki on demand) ===
 roarm/
 
-# === rovac_v3 OpenSCAD renders (regeneratable from .scad source) ===
+# === rovac_v3 derived artifacts (regeneratable from .scad source) ===
+# Keep .scad source, design docs, and audit_report.{json,md}.
+# Drop renders, sliced gcode, exported stl, FEA mesh output.
 rovac_v3/3D_model/renders/
-rovac_v3/3D_model/renders/**
+rovac_v3/3D_model/audit_artifacts/*
+!rovac_v3/3D_model/audit_artifacts/audit_report.*
 
 # Photo source files (Photoshop) — too large for git
 photos/**/*.psd
