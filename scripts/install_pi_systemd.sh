@@ -4,11 +4,12 @@
 # auto-starts at boot and auto-restarts on crashes.
 #
 # Usage:
-#   ./scripts/install_pi_systemd.sh install   # copy unit files, enable + start
-#   ./scripts/install_pi_systemd.sh status    # show service status
-#   ./scripts/install_pi_systemd.sh restart   # restart rovac-edge.target
-#   ./scripts/install_pi_systemd.sh udev      # re-apply udev rules only (no systemd touch)
-#   ./scripts/install_pi_systemd.sh uninstall # disable + remove units
+#   ./scripts/install_pi_systemd.sh install    # copy unit files, enable + start (full bootstrap)
+#   ./scripts/install_pi_systemd.sh status     # show service status
+#   ./scripts/install_pi_systemd.sh restart    # restart rovac-edge.target
+#   ./scripts/install_pi_systemd.sh udev       # re-apply udev rules only (no systemd touch)
+#   ./scripts/install_pi_systemd.sh externals  # vcs import external.repos + apply tracked patches
+#   ./scripts/install_pi_systemd.sh uninstall  # disable + remove units
 #
 # Env:
 #   PI_HOST=pi@192.168.1.200
@@ -298,11 +299,14 @@ case "${1:-}" in
   udev)
     install_udev_rules
     ;;
+  externals)
+    install_ros2_ws_externals
+    ;;
   uninstall)
     uninstall_units
     ;;
   *)
-    echo "Usage: $0 {install|status|restart|udev|uninstall}" >&2
+    echo "Usage: $0 {install|status|restart|udev|externals|uninstall}" >&2
     exit 1
     ;;
 esac

@@ -165,7 +165,7 @@ Without this, the LED matrix will be dark even though the panel service runs wit
 | Motor Controller | NULLLAB Maker-ESP32 (ESP32-WROOM-32E, CH340) with 4x TB67H450FNG drivers. USB serial firmware: `hardware/esp32_motor_wireless/`. COBS binary at 460800 baud. 50Hz PID loop. |
 | Motors | 2x JGB37-520R60-12 (12V, 60:1 gear, Hall encoders, 2640 ticks/rev). Max: 0.57 m/s linear, 6.5 rad/s angular. |
 | IMU | Adafruit BNO055 (9-axis NDOF fusion) on ESP32 I2C bus. Mounted face-down, front edge toward LIDAR. |
-| LIDAR | RPLIDAR C1 DTOF (16m range, ~10Hz, 5KHz). USB via CP2102N → `/dev/rplidar_c1`. Driver: `rplidar_ros` (official Slamtec, ros2 branch, SDK patched) in `ros2_ws/src/rplidar_ros/`. |
+| LIDAR | RPLIDAR C1 DTOF (16m range, ~10Hz, 5KHz). USB via CP2102N → `/dev/rplidar_c1`. Driver: `rplidar_ros` (Slamtec official, pinned to SHA `24cc9b6` in `ros2_ws/src/external.repos`, fetched by `vcs import` during install). The SDK has a known RX-thread race fix tracked at `ros2_ws/src/external_patches/rplidar_ros-rxthread-eagain-fix.patch` and applied idempotently by the installer. |
 | Sensor Hub | ESP32-DevKitV1 (WROOM-32, CP2102). 4x HC-SR04 ultrasonic (front/rear/left/right) + 2x Sharp GP2Y0A51SK0F IR cliff (front/rear). USB serial firmware: `hardware/esp32_sensor_hub/`. COBS binary at 460800 baud. 10Hz sensor data. |
 | Computer | Raspberry Pi 5 (8GB RAM, 117GB SD), Ubuntu 24.04, hostname `rovac-pi`. Runs C++ motor + sensor driver nodes. |
 | Power | 12V DC barrel jack. **Motor power switch must be ON.** |
@@ -192,7 +192,7 @@ Without this, the LED matrix will be dark even though the panel service runs wit
 │   ├── android_phone_sensors/          # RETIRED — BNO055 replaces phone IMU, no GPS needed
 ├── scripts/
 │   ├── keyboard_teleop.py             # Keyboard teleop (auto-SSHes to Pi)
-│   ├── install_pi_systemd.sh          # Pi systemd setup (install/uninstall/status/restart)
+│   ├── install_pi_systemd.sh          # Pi setup (install/status/restart/udev/uninstall) — also wipes legacy udev rules, runs vcs import, applies patches, verifies USB symlinks
 │   ├── mac_brain_launch.sh            # Mac brain launcher (slam, slam-ekf, nav, ekf, foxglove)
 │   ├── obstacle_avoidance_node.py     # Obstacle avoidance (sensor hub ultrasonic + cliff)
 │   ├── ps2_joy_mapper_node.py         # PS2 controller → /cmd_vel_joy
@@ -202,12 +202,14 @@ Without this, the LED matrix will be dark even though the panel service runs wit
 │       ├── sense_hat_panel_node.py    # Sense HAT status display + joystick panel
 │       └── sense_hat_glyphs.py        # Sense HAT visual designs (palette, glyphs, rainbow)
 ├── config/
-│   ├── ros2_env.sh                    # ROS2 environment setup
-│   ├── cyclonedds_mac.xml             # Mac DDS config (peers with Pi)
-│   ├── cyclonedds_pi.xml             # Pi DDS config (peers with Mac)
-│   ├── ekf_params.yaml               # EKF config (subscribes /odom + /imu/data directly)
-│   ├── slam_params.yaml              # SLAM toolbox config
-│   ├── nav2_params.yaml              # Navigation2 config
+│   ├── ros2_env.sh                    # ROS2 environment setup (renders cyclonedds_*.xml from .template, atomic Mac↔Pi auto-sync on DHCP IP change)
+│   ├── cyclonedds_mac.xml.template    # Mac DDS config template (rendered to cyclonedds_mac.xml on source — gitignored)
+│   ├── cyclonedds_pi.xml.template     # Pi DDS config template (same render-on-source pattern)
+│   ├── ekf_params.yaml                # EKF config (subscribes /odom + /imu/data directly)
+│   ├── slam_params.yaml               # SLAM toolbox config
+│   ├── nav2_params.yaml               # Navigation2 config
+│   ├── udev/
+│   │   └── 99-rovac-usb.rules         # Canonical udev rules (esp32_motor + esp32_sensor + rplidar_c1)
 │   └── systemd/                       # Pi edge unit files
 │       ├── rovac-edge.target          # Main orchestration target
 │       ├── rovac-edge-motor-driver.service  # C++ USB serial motor driver
@@ -227,8 +229,12 @@ Without this, the LED matrix will be dark even though the panel service runs wit
 │   ├── rovac_motor_driver/            # C++ USB serial motor driver (ament_cmake)
 │   ├── rovac_sensor_driver/           # C++ USB serial sensor hub driver (ament_cmake)
 │   ├── tank_description/              # URDF, cmd_vel_mux.py
-│   ├── rplidar_ros/                   # RPLIDAR C1 ROS2 driver (official Slamtec, SDK patched)
-│   └── rf2o_laser_odometry/           # Laser-based odometry
+│   ├── rf2o_laser_odometry/           # Laser-based odometry
+│   ├── external.repos                 # vcstool manifest — declares rplidar_ros (Slamtec) pinned by SHA
+│   ├── external_patches/              # Tracked patches applied to vcs-imported packages on install
+│   │                                  #  ├── README.md
+│   │                                  #  └── rplidar_ros-rxthread-eagain-fix.patch
+│   └── rplidar_ros/                   # (gitignored) Pulled by `vcs import` during install — see external.repos
 ├── tools/
 │   ├── motor_characterization.py      # Motor PID tuning (standalone serial)
 │   ├── pid_step_response.py           # PID step response analyzer
@@ -357,3 +363,22 @@ The CH340 chip can intermittently fail to enumerate (`error -71` in dmesg). Try:
 2. Try a different USB port on the Pi
 3. Try a different USB cable (some are power-only with no data lines)
 4. Check `sudo dmesg | tail -20` for USB errors
+
+### `/dev/esp32_sensor` (or other USB symlink) missing — service "dependency failed"
+A systemd unit with `BindsTo=/dev/esp32_X.device` won't start if the symlink is absent. Diagnose:
+1. Confirm the device is on the bus: `ssh pi@192.168.1.200 'lsusb | grep -E "(10c4|1a86)"'` — look for the expected vendor:product
+2. Confirm the kernel attached a tty: `ssh pi@192.168.1.200 'ls /dev/ttyUSB*'`
+3. Confirm udev created the symlink: `ssh pi@192.168.1.200 'ls -la /dev/esp32_motor /dev/esp32_sensor /dev/rplidar_c1'`
+4. If a tty exists but the symlink doesn't, re-apply the canonical udev rules (this also wipes any stale legacy rule files that may be shadowing):
+   ```
+   ./scripts/install_pi_systemd.sh udev
+   ```
+   The script verifies all three expected symlinks exist after reload — fails loudly with `lsusb` output if any are missing.
+
+### Updating an external ROS2 dependency (e.g. rplidar_ros)
+External packages are pulled by `vcs import` per `ros2_ws/src/external.repos`. To bump a version:
+1. Edit `ros2_ws/src/external.repos` and change the `version:` field for the target repo (commit SHA or branch name)
+2. From the Mac: `./scripts/install_pi_systemd.sh externals` — runs `vcs import` + idempotent patch apply on the Pi (non-destructive, skips existing dirs unless you bump the SHA)
+3. For a forced re-clone (existing dir exists at wrong SHA): `ssh pi 'cd ~/robots/rovac/ros2_ws/src && vcs import --force --input external.repos'` followed by step 2 to re-apply patches
+4. Rebuild on Pi: `ssh pi 'cd ~/robots/rovac/ros2_ws && source /opt/ros/jazzy/setup.bash && colcon build --packages-select rplidar_ros'`
+5. If a tracked patch fails to apply cleanly to the new upstream version, the install script prints a `WARN: ... does not apply cleanly` line — refresh the patch in `ros2_ws/src/external_patches/` and commit
