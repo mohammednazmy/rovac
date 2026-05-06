@@ -103,6 +103,36 @@ install_ros2_ws_externals() {
     cd /home/pi/robots/rovac/ros2_ws/src
     vcs import --input external.repos 2>&1 | sed 's/^/  /'
   "
+
+  # Apply patches from external_patches/ idempotently. Each patch's filename
+  # encodes the target package: <package>-<short-description>.patch
+  # Idempotency: if the patch already applies forward, apply it; if it only
+  # applies in reverse, it's already on the tree and we skip; otherwise warn.
+  echo "Applying external patches..."
+  ssh "$PI_HOST" '
+    cd /home/pi/robots/rovac/ros2_ws/src
+    if [ ! -d external_patches ]; then
+      echo "  (no external_patches/ — nothing to apply)"
+      exit 0
+    fi
+    shopt -s nullglob
+    for p in external_patches/*.patch; do
+      pkg="$(basename "$p" .patch | cut -d- -f1)"
+      if [ ! -d "$pkg" ]; then
+        echo "  SKIP $p (package $pkg not present)"
+        continue
+      fi
+      cd "$pkg"
+      if git apply --check "../$p" 2>/dev/null; then
+        git apply "../$p" && echo "  APPLIED $p to $pkg"
+      elif git apply --reverse --check "../$p" 2>/dev/null; then
+        echo "  already-applied $p in $pkg"
+      else
+        echo "  WARN: $p does not apply cleanly to $pkg (manual review needed)" >&2
+      fi
+      cd - >/dev/null
+    done
+  '
 }
 
 install_udev_rules() {
