@@ -1,0 +1,43 @@
+# Placeholder camera_info for LEFT stereo camera (OV5647 NoIR on Pi 5 CAM0).
+#
+# These intrinsics are NOT calibrated — they are reasonable defaults for an
+# OV5647 sensor at 1280x720 capture resolution (5MP sensor down-binned).
+# Real intrinsics will be generated post-mounting via `ros2 run camera_calibration
+# cameracalibrator` against a checkerboard target.
+#
+# Format follows camera_info_manager YAML spec (ROS standard).
+# After calibration, this file will be overwritten with real values.
+
+image_width: 1280
+image_height: 720
+camera_name: stereo_left
+camera_matrix:
+  rows: 3
+  cols: 3
+  # K = [[fx, 0, cx], [0, fy, cy], [0, 0, 1]]
+  # Placeholder: focal length ~1000px gives ~64° HFOV (typical for OV5647)
+  # Principal point at image center
+  data: [1000.0,    0.0,  640.0,
+            0.0, 1000.0,  360.0,
+            0.0,    0.0,    1.0]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  # Placeholder: zero distortion. Real values from calibration (typically <0.1).
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  # Identity until stereo rectification is computed via cv2.stereoRectify
+  data: [1.0, 0.0, 0.0,
+         0.0, 1.0, 0.0,
+         0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  # P = [K' | 0] for left camera. K' is the rectified intrinsics; for placeholder
+  # we use the same K as above. After calibration, this will be set by stereoRectify.
+  data: [1000.0,    0.0,  640.0, 0.0,
+            0.0, 1000.0,  360.0, 0.0,
+            0.0,    0.0,    1.0, 0.0]

@@ -1,0 +1,36 @@
+[Unit]
+Description=ROVAC Stereo Cameras (dual OV5647 NoIR via libcamera + camera_ros)
+Documentation=https://github.com/mohammednazmy/rovac
+After=network-online.target
+Wants=network-online.target
+PartOf=rovac-edge.target
+
+# Cameras need /dev/media0 and /dev/media1 (rp1-cfe). Both exist as soon as kernel
+# boots, so no special BindsTo needed — but a small sleep avoids racing libcamera
+# IPA module loading on cold boot.
+
+[Service]
+Type=simple
+User=pi
+SupplementaryGroups=video
+WorkingDirectory=/home/pi/robots/rovac
+Environment=HOME=/home/pi
+Environment=ROS_DOMAIN_ID=42
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
+# Use Pi-patched libcamera installed at /opt/rpi-libcamera (built from
+# raspberrypi/libcamera v0.5.2 — required for Pi 5 RP1 CFE support).
+Environment=LD_LIBRARY_PATH=/opt/rpi-libcamera/lib/aarch64-linux-gnu
+Environment=LIBCAMERA_IPA_MODULE_PATH=/opt/rpi-libcamera/lib/aarch64-linux-gnu/libcamera
+Environment=LIBCAMERA_IPA_CONFIG_PATH=/opt/rpi-libcamera/share/libcamera/ipa
+
+ExecStartPre=/bin/sleep 2
+ExecStart=/bin/bash -lc "source /opt/ros/jazzy/setup.bash; source /home/pi/robots/rovac/ros2_ws/install/setup.bash; [ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh; exec ros2 launch rovac_stereo_camera stereo_cameras.launch.py"
+
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Install]
+WantedBy=rovac-edge.target

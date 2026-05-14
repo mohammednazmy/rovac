@@ -24,5 +24,8 @@ Wants=rovac-edge-health.service
 Wants=rovac-edge-ps2-joy.service
 Wants=rovac-edge-ps2-mapper.service
 
+# Stereo cameras (dual OV5647 NoIR via libcamera + camera_ros)
+Wants=rovac-edge-stereo-cameras.service
+
 [Install]
 WantedBy=multi-user.target

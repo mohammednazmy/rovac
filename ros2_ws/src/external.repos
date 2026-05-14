@@ -25,3 +25,13 @@ repositories:
     type: git
     url: https://github.com/Slamtec/rplidar_ros.git
     version: 24cc9b6           # ros2 branch HEAD as of 2026-05-06; bump as needed
+  camera_ros:
+    # ROS2 wrapper around libcamera — used by rovac_stereo_camera for dual
+    # OV5647 NoIR camera bringup on Pi 5. Built FROM SOURCE on the Pi against
+    # Pi-patched libcamera 0.5.2 at /opt/rpi-libcamera (see
+    # scripts/build_pi_libcamera.sh) because the apt binary
+    # ros-jazzy-camera-ros links against ros-jazzy-libcamera 0.7.0 (upstream)
+    # which can't drive Pi 5 CSI hardware. Bump tag when Pi libcamera is bumped.
+    type: git
+    url: https://github.com/christianrauch/camera_ros.git
+    version: 0.6.0

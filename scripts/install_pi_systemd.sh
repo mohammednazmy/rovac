@@ -9,6 +9,7 @@
 #   ./scripts/install_pi_systemd.sh restart    # restart rovac-edge.target
 #   ./scripts/install_pi_systemd.sh udev       # re-apply udev rules only (no systemd touch)
 #   ./scripts/install_pi_systemd.sh externals  # vcs import external.repos + apply tracked patches
+#   ./scripts/install_pi_systemd.sh libcamera  # build + install Pi-patched libcamera + camera_ros
 #   ./scripts/install_pi_systemd.sh uninstall  # disable + remove units
 #
 # Env:
@@ -136,6 +137,23 @@ install_ros2_ws_externals() {
   '
 }
 
+build_pi_libcamera() {
+  # Pi 5 + OV5647 stereo cameras require the Pi-patched libcamera fork
+  # (v0.5.2+rpt20250903), built from source against the running kernel's
+  # rp1-cfe ABI. The Ubuntu apt libcamera (0.2.0) lacks Pi 5 support; the
+  # OSRF ros-jazzy-libcamera (0.7.0) ABI doesn't match the kernel.
+  # The build script is idempotent — it skips if already installed.
+  echo "Building/verifying Pi-patched libcamera + camera_ros (idempotent)..."
+  local local_script="$ROVAC_DIR/scripts/build_pi_libcamera.sh"
+  if [ ! -f "$local_script" ]; then
+    echo "  WARNING: $local_script not found - skipping libcamera build."
+    return 0
+  fi
+  # Rsync the script to the Pi so it always matches the repo version
+  rsync -av "$local_script" "$PI_HOST":/home/pi/robots/rovac/scripts/build_pi_libcamera.sh >/dev/null
+  ssh "$PI_HOST" "bash /home/pi/robots/rovac/scripts/build_pi_libcamera.sh 2>&1 | sed 's/^/  /'"
+}
+
 install_udev_rules() {
   # Single source of truth: config/udev/99-rovac-usb.rules in the repo.
   # Step 1: wipe legacy/conflicting ROVAC udev rule files. These accumulate
@@ -198,6 +216,10 @@ install_units() {
 
   install_ros2_ws_externals
 
+  # Build Pi-patched libcamera + camera_ros (needed for stereo cameras).
+  # Idempotent: skips if already built. Adds 10-15 min on first install only.
+  build_pi_libcamera
+
   # Remove dead services from previous installations (WiFi micro-ROS era)
   echo "Cleaning up legacy services..."
   ssh "$PI_HOST" "
@@ -236,11 +258,10 @@ install_units() {
   # EKF sensor fusion (disabled by default — run from Mac)
   remote_sudo_install "/etc/systemd/system/rovac-edge-ekf.service" "$UNIT_DIR/rovac-edge-ekf.service"
 
-  # Optional peripherals
-  remote_sudo_install "/etc/systemd/system/rovac-edge-stereo-depth.service" "$UNIT_DIR/rovac-edge-stereo-depth.service"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-stereo-obstacle.service" "$UNIT_DIR/rovac-edge-stereo-obstacle.service"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-stereo.target" "$UNIT_DIR/rovac-edge-stereo.target"
-  remote_sudo_install "/etc/systemd/system/rovac-edge-webcam.service" "$UNIT_DIR/rovac-edge-webcam.service"
+  # Stereo cameras (dual OV5647 NoIR via libcamera + camera_ros). Replaces the
+  # retired USB-webcam stereo stack (depth + obstacle + webcam services moved
+  # to archive/legacy_hardware/stereo_cameras_usb on 2026-05-14).
+  remote_sudo_install "/etc/systemd/system/rovac-edge-stereo-cameras.service" "$UNIT_DIR/rovac-edge-stereo-cameras.service"
 
   ssh "$PI_HOST" "sudo systemctl daemon-reload"
 
@@ -302,11 +323,14 @@ case "${1:-}" in
   externals)
     install_ros2_ws_externals
     ;;
+  libcamera)
+    build_pi_libcamera
+    ;;
   uninstall)
     uninstall_units
     ;;
   *)
-    echo "Usage: $0 {install|status|restart|udev|externals|uninstall}" >&2
+    echo "Usage: $0 {install|status|restart|udev|externals|libcamera|uninstall}" >&2
     exit 1
     ;;
 esac
