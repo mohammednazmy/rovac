@@ -37,6 +37,12 @@ hardware/esp32_gateway/
 # === Logs ===
 *.log
 
+# === Scratch / Experimental ===
+# experiments/ holds in-progress prototyping rigs (super_vacuum_*,
+# tools, tracing photos). Iterates fast and not part of the ROVAC
+# source tree — keep out of git so churn doesn't pollute history.
+experiments/
+
 # === Binary Archives ===
 *.zip
 *.ZIP

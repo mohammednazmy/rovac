@@ -500,6 +500,93 @@ To determine exact usable capacity, run a controlled discharge:
 
 ---
 
+## Battery 8: Neato Botvac 205-0011 Salvaged Pack (14.4V, 4200mAh)
+
+> **Status: SALVAGED — DISASSEMBLED FOR DIAGNOSIS** (2026-05-07)
+> **Origin:** Used Neato Botvac D5 battery from eBay-purchased robot. Pack reads 0V at output; cells inside are healthy.
+> **Detailed dossier:** See `~/robots/botvac/battery-original-salvaged/CLAUDE.md` for full diagnostic timeline, BMS PCB markings, probe-point voltage map, and recovery options.
+> **Note:** This battery belongs to the salvaged Botvac project at `~/robots/botvac/`, not ROVAC. It's listed here because the Hiyiton charger is the tool that diagnosed it — the Hiyiton lives in ROVAC's hardware folder but is shared between the two projects.
+
+| Field | Value |
+|-------|-------|
+| Brand | Neato Genuine |
+| Part Number | 205-0011 (also marketed as `4INR19/65-2`, `945-0225` — same pack) |
+| Used In | Neato Botvac D3, D4, D5, D6, D7 series |
+| Chemistry | **Li-ion** (label says "Li-ion"; cells charge to 4.2V/cell like LiPo) |
+| Cell Configuration | **4S2P** (4 series × 2 parallel = 8 cells) |
+| Cell Form Factor | **19mm × 65mm** (NOT standard 18650; slightly wider) |
+| Pack Voltage (nominal) | **14.4V** |
+| Full Charge Voltage | **16.8V** (4 × 4.20V/cell) |
+| Storage Voltage | ~14.4V (4 × 3.6V — measured on disassembly, pack was at storage SOC) |
+| Capacity (rated) | **4200 mAh** |
+| Energy | **60.48 Wh** |
+| Discharge Cutoff | 12.0V (3.0V/cell × 4) |
+| Onboard BMS | **NP-140TL** PCB (Neato date code 1726 = 2017 wk 26). Likely Sino-Wealth FM-series gauge IC (per repair-forum reports, exact part not yet confirmed — top-side PCB photo pending) |
+
+### External Connector (6-pin black, 6 wires)
+
+| Wire color | Function |
+|------------|----------|
+| Red | +VBAT |
+| Black ×2 (doubled for current handling) | GND |
+| Yellow | Thermistor sense |
+| Blue | SMBus signal A (SDA or SCL — to BMS pad `DT` or `CL`) |
+| White | SMBus signal B (the other of SDA/SCL) |
+
+### Failure State at Discovery
+
+- Output (red ↔ black on connector): **0V** with brief 0.14V transients (body-diode leakage)
+- Continuity test on output connector: **OL** in both polarities
+- Bench supply (14.4V external) on red/black: **robot did NOT power on** — Neato firmware requires SMBus handshake; bench supply on power wires alone insufficient.
+- B6 V2 in **LiPo 4S** mode: `VOLT ERROR` (battery voltage below safety floor)
+- B6 V2 in **NiMH 1-cell, 0.1A** rescue mode (per Battery 4 procedure): output rose to 20–24V automatically, then `CONNECTION BREAK` within 30s. **Charger could not push current through the BMS body diodes** → upstream fuse is open.
+
+### Cell Probes (Pack Disassembled)
+
+All 4 cell-groups measure **3.6V each**, well-balanced. Cells are healthy.
+
+### BMS PCB Probe Points (Solder Side)
+
+| Pad | V vs LP1 | Function |
+|-----|----------|----------|
+| LP1 | 0.00V | Cell-stack negative (B−) |
+| **LP2** | **+0.11V** | Load-side of negative protection (P−). **Smoking gun**: 0.11V offset = body-diode leakage with FETs/fuse OPEN |
+| LP3 | +3.72V | Cell-junction tap (groups 1↔2) |
+| LP4 | +7.33V | Cell-junction tap (groups 2↔3) |
+| LP5 | +10.94V | Cell-junction tap (groups 3↔4) |
+| (top, unlabeled) | ≈ +14.40V | Cell-stack positive (B+) |
+
+### Failure Mode Hypothesis
+
+**Internal SCP (Self-Control Protector) fuse blown** — the most parsimonious explanation for healthy cells + open output + zero body-diode conduction. Possibly compounded by BMS sticky-fault NVRAM flag (Robot Reviews reports the FM-series chip can permanently flag itself).
+
+### Charger Settings (For Future Recovery Attempts)
+
+| Setting | Value | Notes |
+|---------|-------|-------|
+| Battery Type | **LiPo** | Cells charge to 4.20V/cell. NOT "Li-Ion" mode (which caps at 4.10V). |
+| Mode | **CHARGE** | No external balance lead — onboard BMS handles balancing if alive |
+| Cell Count | **4S** (displays "14.8V" nominal) | Full charge cutoff = 16.8V |
+| Charge Current | **1.0A** for first recovery; **2.0A** (0.5C) thereafter | |
+| Confirmation | **R:4S S:4S → ENTER** | If charger refuses (VOLT ERROR), see rescue procedure under Battery 4 |
+
+### Recovery Options (Pending Decision)
+
+| Path | Action | Outcome |
+|------|--------|---------|
+| **A** | Document + harvest 8 cells | ~$15–25 cell value; data captured for future reference |
+| **B** | Bypass the fuse with solder bridge | Pack works as bench-only 14.4V supply; robot will likely reject via SMBus auth |
+| **C** | Replace fuse with equivalent SCP | Same as B, plus preserves safety component; needs exact part match |
+
+### Cells (If Harvested)
+
+- 8× INR19/65 Li-ion cylindrical cells at 3.6V each
+- Slightly larger than 18650 — **will not fit standard 18650 holders**; need 19mm-bore holders or direct-tab assembly
+- Healthy storage-level SOC, balanced — recoverable for other projects
+- Add to inventory under harvested-cells if/when extracted
+
+---
+
 ## Quick Comparison Table
 
 | Battery | Chemistry | Cells | Charge Mode | Current | Max Voltage | Est. Time |
@@ -511,6 +598,7 @@ To determine exact usable capacity, run a controlled discharge:
 | Streamlight NiMH 3.6V | NiMH 3S | 3 | CHARGE | 1.3A | delta-peak | ~2 hrs |
 | Reassembled AA 6S 7.2V 2300mAh | NiMH 6S | 6 | CHARGE | 1.15A | delta-peak | ~2 hrs |
 | **LPB Jump Starter 11.1V** | **LiPo 3S** | **3** | **CHARGE** | **1.0A** | **12.60V** | ~4 hrs from empty |
+| **Neato 205-0011 14.4V (salvaged)** | **LiPo 4S** | **4(×2P)** | **CHARGE** | **1.0A** | **16.80V** | TBD (pack currently disassembled — fuse repair pending) |
 
 *WZS charge time based on likely actual capacity of ~1000–1500 mAh, not the claimed 6800 mAh.
 

@@ -104,28 +104,45 @@ Applying fan affinity laws (volumetric flow ∝ RPM, pressure ∝ RPM², power �
 ### Housing dimensions (overall)
 | Dimension | Value | Confidence |
 |---|---|---|
-| Length × Width × Height | **97 × 87 × 25 mm** | 📜 elecok.com / pchub.com listings of this exact MPN; consistent with photos |
+| Length × Width × Height (housing) | **95 × 89.5 × 24 mm** | ✅ MEASURED 2026-05-07 by Mohammed (caliper). Slight 0.5mm taper on Z dimension (24mm top, 24.5mm bottom of exhaust port). |
+| Width including mounting tabs | **102 mm** (perpendicular axis) | ✅ MEASURED |
+| Length including upper-tab stem | **95 mm** (long axis, all-in) | ✅ MEASURED |
+| Catalog claim (now superseded) | ~~97 × 87 × 25 mm~~ | 📜 elecok.com / pchub.com listings — wrong by ~2mm in each dim |
 | Closest sibling overall (UH) | 97.2 × 94.4 × 25 mm | 📜 Lisleapex / Avaq |
-| Approximate volume | ~210 cm³ | 📐 |
-| Estimated weight | ~110–140 g per motor | ⚠️ Class estimate; 📏 TBD by Mohammed |
-| Housing material | **PBT-GF30-FR** (PBT + 30% glass fiber, flame retardant UL94 V-0) | ✅ Visible molding mark in elecok product photo (page 2 of `datasheets/elecok_product_page_BCB1012GJ-01.pdf`) |
+| Approximate volume | ~204 cm³ | 📐 (95 × 89.5 × 24) |
+| Estimated weight | ~110–140 g per motor | ⚠️ Class estimate; 📏 TBD with scale |
+| Housing material | **PBT-GF30-FR** (PBT + 30% glass fiber, flame retardant UL94 V-0) | ✅ Visible molding mark in elecok product photo + on the actual motor (visible on label face: "PBT-GF30-FR(17)") |
 | Impeller type | Centrifugal, single-inlet (axial intake → radial exhaust through tangential scroll) | ✅ Photo |
-| Mounting tabs visible | 3 tabs on the housing perimeter (each with an M3-class through-hole) | ✅ Photo |
-| Exhaust port (rectangular outlet) | ~25 × 14 mm | ⚠️ Rough estimate from the existing `vacuum_subsystem.md`; 📏 TBD by Mohammed |
+| Round axial intake diameter | **58 mm** | ✅ MEASURED 2026-05-07 (was assumed 50mm from class estimate — actual is 58mm) |
+| Mounting tabs | **4 tabs (TL, TR, BL, BR) — NOT a 3-tab L-pattern as previously thought** | ✅ MEASURED 2026-05-07 by tracing motor outline on paper |
+| Tab positions (impeller-centric coords, IC = round intake center) | TL=(−41, +41), TR=(+48, +41), BL=(−41, −29.5), BR=(+29.5, −31.3) mm | ✅ MEASURED via tracing |
+| Tab→tab distances | TL↔TR=89mm, TL↔BL=70.5mm, BL↔BR=70.5mm | ✅ MEASURED |
+| Tab→impeller-center distances | TL→IC=58mm, BL→IC=50.5mm, BR→IC=43mm, TR→IC=63.1mm (computed) | ✅ MEASURED |
+| **Important geometric fact** | **The impeller is OFFSET from the housing/hole bbox center.** Impeller is roughly 3.5mm left and 5.8mm down from the hole-bbox geometric center. Any 3D-printed flange MUST center its intake hole on the impeller, not on the flange's geometric center. | ✅ Derived from tracing |
+| Exhaust port (rectangular outlet) | **52 × 24 mm** (along motor long axis × motor thickness) | ✅ MEASURED 2026-05-07 (was estimated 25×14mm in catalog — actual port is much larger) |
+
+📷 **Annotated measurement photos**: see `experiments/super_vacuum_4stage/photos/{top,bottom,blower_side}_annotated.png`.
+
+### Recommended mounting hardware
+
+For mounting this motor in any rig, use the following spec (validated by the v2/super-vacuum design audit 2026-05-07):
+
+| Use case | Screw spec | Notes |
+|---|---|---|
+| Motor only → flat baseplate | M3 × 16 mm flat-head (DIN 7991) + nylock nut | Goes through baseplate (5mm) + grommet (5mm) + motor tab + nut |
+| Motor + part above (e.g. intake collector or manifold flange) | **M3 × 40 mm flat-head (DIN 7991)** + nylock nut | "Unified mount" — single screw holds motor to baseplate AND part above to motor |
+| Vibration isolation | Sorbothane M3 grommet, 9 mm OD × 5 mm height | One per tab. Compresses ~30% under finger-tight + 1/4 turn |
+| Baseplate hole | M3 clearance Ø 3.5 mm with Ø 6.5 × 2 mm countersink on bottom | DIN 7991 flat-head sits flush |
+
+The **unified long-screw approach** is recommended for any multi-stage blower rig: it reduces parts count (one screw per tab serves multiple purposes) and eliminates compatibility issues between mating parts (anything mounted on top of the motor uses the SAME L-pattern hole positions as the motor's tabs).
 
 ### Things to physically measure (📏 TBD)
-These should be measured before printing any 3-D adapters or manifold parts:
+Most dimensions now confirmed (see above). Remaining unknowns:
 
-- [ ] Exact length × width × height with a caliper (verify the 97 × 87 × 25 mm claim)
-- [ ] Exact diameter of the round intake (top/bottom face)
-- [ ] Exact rectangular exhaust port: width × height, and the distance from the housing edge
-- [ ] Mounting hole pattern: number of holes, hole diameter, PCD (pitch-circle diameter) and angular spacing
-- [ ] Distance from each mounting hole to the impeller centre
 - [ ] Total weight of one motor (digital scale)
 - [ ] Connector type: pitch (1.5 mm? 2.0 mm? 2.5 mm?), orientation, locking style
 - [ ] Wire gauge (likely 26 AWG or 24 AWG)
-
-A small `MEASUREMENTS.md` companion file or an addition to this document under a "Measured by Mohammed (2026-05-XX)" section is the recommended way to record those numbers — they unblock CAD work for the inter-stage manifold.
+- [ ] Tab origin offset within housing footprint (we currently center the tab pair on the perpendicular axis, which is approximate)
 
 ### Available 3-D models
 **No public CAD model found** for the BCB1012GJ-01. Searched:
