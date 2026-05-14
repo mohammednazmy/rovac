@@ -175,6 +175,7 @@ rovac_v3/3D_model/audit_artifacts/*
 ros2_ws/src/rplidar_ros/
 # Legacy unused fork — slated for removal:
 ros2_ws/src/rplidar_ros2_driver/
+ros2_ws/src/camera_ros/
 
 # Photo source files (Photoshop) — too large for git
 photos/**/*.psd
