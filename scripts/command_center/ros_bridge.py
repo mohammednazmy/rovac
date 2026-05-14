@@ -1,3 +1,4 @@
+import contextlib
 import json
 import math
 import threading
@@ -92,7 +93,22 @@ class RosBridge:
         self._rosout_tail = deque(maxlen=50)
         self._node = None
         self._thread = None
-        self._hz = {}  # topic_name -> HzTracker
+        # Pre-create every HzTracker the callbacks reference. _run() used
+        # to create them just-in-time before each subscription, which
+        # left a race: any callback firing before its tracker was wired
+        # would KeyError and crash the spin thread. Now every tracker
+        # exists from __init__, so callbacks are always safe to invoke.
+        # Keep this list aligned with the subscription list in _run().
+        self._hz: dict[str, HzTracker] = {
+            "odom": HzTracker(),
+            "scan": HzTracker(),
+            "map": HzTracker(),
+            "bno055_imu": HzTracker(),
+            "cmd_vel_teleop": HzTracker(),
+            "cmd_vel_joy": HzTracker(),
+            "cmd_vel_smoothed": HzTracker(),
+            "cmd_vel": HzTracker(),
+        }
         self._prev_odom_x = 0.0
         self._prev_odom_y = 0.0
 
@@ -137,10 +153,8 @@ class RosBridge:
         except Exception:
             pass
         # 0b) Persist the current AMCL pose so next session starts pre-filled.
-        try:
+        with contextlib.suppress(Exception):
             self.save_current_pose()
-        except Exception:
-            pass
         # 1) Tear down explicit publishers/subscribers we hold references to
         try:
             if self._node and self._pub_cmd_vel is not None:
@@ -166,10 +180,8 @@ class RosBridge:
         # we'd survive without this, but joining ensures clean teardown
         # (no rclpy access after shutdown) when the process is reused.
         if self._thread and self._thread.is_alive():
-            try:
+            with contextlib.suppress(Exception):
                 self._thread.join(timeout=2.0)
-            except Exception:
-                pass
 
     def get_state(self) -> dict:
         """Return a snapshot of state (thread-safe)."""
@@ -373,7 +385,7 @@ class RosBridge:
                 os.environ['CYCLONEDDS_URI'] = suppress_xml
 
             import rclpy
-            from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
+            from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
             rclpy.init()
             self._node = rclpy.create_node('rovac_command_center')
@@ -395,15 +407,14 @@ class RosBridge:
             )
 
             # --- Subscribers ---
-            from nav_msgs.msg import Odometry, OccupancyGrid
-            from sensor_msgs.msg import LaserScan, Range
             from diagnostic_msgs.msg import DiagnosticArray
-            from std_msgs.msg import String, Bool, Int32MultiArray
             from geometry_msgs.msg import Twist
+            from nav_msgs.msg import OccupancyGrid, Odometry
+            from sensor_msgs.msg import LaserScan, Range
+            from std_msgs.msg import Bool, String
 
-            self._hz['odom'] = HzTracker()
-            self._hz['scan'] = HzTracker()
-            self._hz['map'] = HzTracker()
+            # HzTrackers for these topics are pre-created in __init__ so
+            # callbacks are always safe to invoke (no startup race).
 
             self._node.create_subscription(Odometry, '/odom', self._on_odom, best_effort_qos)
             self._node.create_subscription(LaserScan, '/scan', self._on_scan, best_effort_qos)
@@ -433,10 +444,7 @@ class RosBridge:
                 history=HistoryPolicy.KEEP_LAST, depth=10,
                 durability=DurabilityPolicy.VOLATILE,
             )
-            self._hz['cmd_vel_teleop'] = HzTracker()
-            self._hz['cmd_vel_joy'] = HzTracker()
-            self._hz['cmd_vel_smoothed'] = HzTracker()
-            self._hz['cmd_vel'] = HzTracker()
+            # cmd_vel_* HzTrackers also pre-created in __init__.
             self._node.create_subscription(
                 Twist, '/cmd_vel_teleop',
                 lambda _msg: self._tick_pipeline('cmd_vel_teleop'),
@@ -505,9 +513,9 @@ class RosBridge:
                 PoseWithCovarianceStamped, '/amcl_pose',
                 self._on_amcl_pose, amcl_qos)
 
-            # BNO055 IMU (the ONE remaining IMU after phone retirement)
+            # BNO055 IMU (the ONE remaining IMU after phone retirement).
+            # bno055_imu HzTracker also pre-created in __init__.
             from sensor_msgs.msg import Imu
-            self._hz['bno055_imu'] = HzTracker()
             self._node.create_subscription(
                 Imu, '/imu/data', self._on_bno055_imu, best_effort_qos)
 
@@ -644,7 +652,7 @@ class RosBridge:
             return False
         try:
             from geometry_msgs.msg import PoseWithCovarianceStamped
-            from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+            from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
             # AMCL subscribes to /initialpose with reliable QoS
             qos = QoSProfile(
                 depth=1,
@@ -765,7 +773,7 @@ class RosBridge:
         Consecutive identical messages are deduped: AMCL spams the same
         warning every 1s while waiting for /initialpose, which would
         flood the 50-entry buffer with one repeated message. Instead,
-        we attach a count and bump it: '(×42) AMCL cannot publish ...'
+        we attach a count and bump it: '(x42) AMCL cannot publish ...'
         """
         if msg.level < 30:
             return
@@ -793,7 +801,7 @@ class RosBridge:
         """OccupancyGrid where 100=visited, -1=untouched. Compute coverage %.
 
         Uses numpy.frombuffer (vectorized) instead of a Python sum-over-
-        generator. On a 250×250 cell map (62500 cells) at 1Hz, this is
+        generator. On a 250x250 cell map (62500 cells) at 1Hz, this is
         the difference between ~10ms and ~0.2ms per callback.
         """
         try:

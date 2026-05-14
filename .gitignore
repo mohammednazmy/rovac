@@ -66,6 +66,10 @@ opencode.json
 .ruff_cache/
 .pytest_cache/
 .mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 .mcp.json
 *.swp
 *.swo

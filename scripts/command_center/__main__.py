@@ -2,6 +2,7 @@
 """ROVAC Command Center — unified TUI for robot control and monitoring."""
 
 import argparse
+import contextlib
 import os
 import signal
 import sys
@@ -44,10 +45,8 @@ def main():
     # the controlling TTY's signal — we re-enable SIGINT to terminate
     # the process if Textual hasn't intercepted it.
     def _emergency_exit(_signum, _frame):
-        try:
+        with contextlib.suppress(Exception):
             app.exit()
-        except Exception:
-            pass
         # Force-exit if the UI didn't unwind
         os._exit(130)
     signal.signal(signal.SIGINT, _emergency_exit)

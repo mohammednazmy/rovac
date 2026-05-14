@@ -2,24 +2,36 @@
 
 from __future__ import annotations
 
+import contextlib
 import threading
+from typing import TYPE_CHECKING, cast
+
 from textual.containers import Container, Horizontal
 from textual.widget import Widget
-from textual.widgets import Static, DataTable
+from textual.widgets import DataTable, Static
 
 from ..process_manager import PI_SERVICES
 
+if TYPE_CHECKING:
+    # Avoid the circular import at runtime — app.py imports EdgePanel.
+    from command_center.app import RovacCommandCenter
+
+
+# systemd state → Rich-formatted status indicator. dict lookup with a
+# fallback is cheaper than 3 conditional branches and pins the supported
+# states in one place.
+_SVC_INDICATORS: dict[str, str] = {
+    "active":   "[green]● active[/]",
+    "failed":   "[red]● failed[/]",
+    "inactive": "[dim]○ inactive[/]",
+}
+_SVC_INDICATOR_UNKNOWN = "[yellow]? unknown[/]"
+
 
 def _svc_indicator(status: str) -> str:
-    """Status dot for a systemd service."""
-    if status == "active":
-        return "[green]● active[/]"
-    elif status == "failed":
-        return "[red]● failed[/]"
-    elif status == "inactive":
-        return "[dim]○ inactive[/]"
-    else:
-        return "[yellow]? unknown[/]"
+    """Status dot for a systemd service. Any unrecognized status is
+    rendered as yellow ``? unknown`` rather than silently dropped."""
+    return _SVC_INDICATORS.get(status, _SVC_INDICATOR_UNKNOWN)
 
 
 class EdgePanel(Widget):
@@ -29,6 +41,11 @@ class EdgePanel(Widget):
         super().__init__()
         self._service_statuses: dict[str, str] = {}
         self._refreshing = False
+
+    @property
+    def _app(self) -> RovacCommandCenter:
+        """Typed accessor — same pattern as DrivePanel / SlamPanel."""
+        return cast("RovacCommandCenter", self.app)
 
     def compose(self):
         # Services table
@@ -89,27 +106,27 @@ class EdgePanel(Widget):
 
         def _do_refresh():
             try:
-                statuses = self.app.pm.pi_all_service_status()
+                statuses = self._app.pm.pi_all_service_status()
                 self._service_statuses = statuses
                 try:
-                    self.app.call_from_thread(self._apply_service_statuses)
-                    self.app.call_from_thread(
+                    self._app.call_from_thread(self._apply_service_statuses)
+                    self._app.call_from_thread(
                         self._show_result, "[green]Refreshed[/]"
                     )
                     # Auto-clear after 4s so a stale "Refreshed" doesn't
                     # mask a later operation's feedback. This was the
                     # "stuck refresh" UX bug — message persisting forever.
-                    self.app.call_from_thread(
+                    self._app.call_from_thread(
                         self.set_timer, 4.0,
                         lambda: self._show_result(" "))
                 except Exception:
                     pass  # App may have shut down
             except Exception:
                 try:
-                    self.app.call_from_thread(
+                    self._app.call_from_thread(
                         self._show_result, "[red]SSH refresh failed[/]"
                     )
-                    self.app.call_from_thread(
+                    self._app.call_from_thread(
                         self.set_timer, 8.0,
                         lambda: self._show_result(" "))
                 except Exception:
@@ -140,14 +157,14 @@ class EdgePanel(Widget):
         self._show_result("[dim]Restarting all services...[/]")
 
         def _do_restart():
-            ok = self.app.pm.pi_service_action("rovac-edge.target", "restart")
+            ok = self._app.pm.pi_service_action("rovac-edge.target", "restart")
             if ok:
-                self.app.call_from_thread(
+                self._app.call_from_thread(
                     self._show_result,
                     "[green]All services restarted[/]",
                 )
             else:
-                self.app.call_from_thread(
+                self._app.call_from_thread(
                     self._show_result,
                     "[red]Failed to restart services[/]",
                 )
@@ -155,7 +172,7 @@ class EdgePanel(Widget):
             import time
             time.sleep(2)
             self._refreshing = False
-            self.app.call_from_thread(self._trigger_refresh)
+            self._app.call_from_thread(self._trigger_refresh)
 
         self._refreshing = True
         threading.Thread(target=_do_restart, daemon=True).start()
@@ -175,30 +192,28 @@ class EdgePanel(Widget):
         self._show_result(f"[dim]Restarting {short}...[/]")
 
         def _do_restart():
-            ok = self.app.pm.pi_service_action(svc, "restart")
+            ok = self._app.pm.pi_service_action(svc, "restart")
             if ok:
-                self.app.call_from_thread(
+                self._app.call_from_thread(
                     self._show_result,
                     f"[green]{short} restarted[/]",
                 )
             else:
-                self.app.call_from_thread(
+                self._app.call_from_thread(
                     self._show_result,
                     f"[red]Failed to restart {short}[/]",
                 )
             import time
             time.sleep(1)
             self._refreshing = False
-            self.app.call_from_thread(self._trigger_refresh)
+            self._app.call_from_thread(self._trigger_refresh)
 
         self._refreshing = True
         threading.Thread(target=_do_restart, daemon=True).start()
 
     def _show_result(self, msg: str) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#edge-action-result", Static).update(msg)
-        except Exception:
-            pass
 
     def update_state(self, state: dict, logs: list, proc_status: dict) -> None:
         """Called by the app at 1 Hz."""
@@ -211,12 +226,10 @@ class EdgePanel(Widget):
         transport = edge.get("agent", {})
 
         if not sys_info:
-            try:
+            with contextlib.suppress(Exception):
                 self.query_one("#edge-pi-stats", Static).update(
                     "[dim]Waiting for Pi health data...[/]"
                 )
-            except Exception:
-                pass
             return
 
         cpu = sys_info.get("cpu_percent", 0)
@@ -229,10 +242,8 @@ class EdgePanel(Widget):
             f"CPU: {cpu:5.1f}%    RAM: {ram:5.1f}%    Temp: {temp:4.1f}°C\n"
             f"Disk: {disk:4.1f}%    Motor driver RSS: {rss:.1f} MB"
         )
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#edge-pi-stats", Static).update(text)
-        except Exception:
-            pass
 
     def _update_services_from_health(self, state: dict) -> None:
         """Update service table from ROS2 health topic (passive, no SSH)."""

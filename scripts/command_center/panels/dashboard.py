@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+
 from textual.containers import Container, Horizontal
 from textual.widget import Widget
 from textual.widgets import Static
@@ -53,14 +54,13 @@ class DashboardPanel(Widget):
                 yield Static("[dim]Waiting for health data...[/]", id="dash-pi-system")
 
         # Row 2: Topic Rates + Robot side by side
-        with Horizontal(id="dashboard-mid-row"):
-            with Container(classes="panel-box-cyan") as c:
-                c.border_title = "Topics & Robot"
-                yield Static(
-                    "/odom [dim]0.0[/] Hz   /scan [dim]0.0[/] Hz   /map [dim]0.0[/] Hz\n"
-                    "Pos (0.00, 0.00)  Yaw 0.0\u00b0  Vel 0.00 m/s  Dist 0.0 m",
-                    id="dash-topics-robot",
-                )
+        with Horizontal(id="dashboard-mid-row"), Container(classes="panel-box-cyan") as c:
+            c.border_title = "Topics & Robot"
+            yield Static(
+                "/odom [dim]0.0[/] Hz   /scan [dim]0.0[/] Hz   /map [dim]0.0[/] Hz\n"
+                "Pos (0.00, 0.00)  Yaw 0.0\u00b0  Vel 0.00 m/s  Dist 0.0 m",
+                id="dash-topics-robot",
+            )
 
         # Row 3: Edge Services
         with Container(classes="panel-box-green") as c:
@@ -82,7 +82,6 @@ class DashboardPanel(Widget):
     def _update_connectivity(self, state: dict, proc_status: dict) -> None:
         ros_ok = state.get("ros_connected", False)
         edge = state.get("edge_health", {})
-        net = edge.get("network", {})
 
         usb = edge.get("usb", {})
         esp_motor_ok = usb.get("esp32_motor")
@@ -101,16 +100,16 @@ class DashboardPanel(Widget):
             f"[dim]LIDAR[/] {_dot(rplidar_ok if pi_ok else None)}"
         )
         if fox_ok:
-            line2 = f"[dim]Foxglove[/] [green]● ws://localhost:8765[/]"
+            line2 = "[dim]Foxglove[/] [green]● ws://localhost:8765[/]"
         else:
-            line2 = f"[dim]Foxglove[/] [dim]○ OFF[/]"
+            line2 = "[dim]Foxglove[/] [dim]○ OFF[/]"
 
         # BNO055 IMU status
         bno055_hz = state.get("bno055_imu_hz", 0)
         if bno055_hz > 0:
             bno055_line = f"[dim]BNO055[/] [green]● {bno055_hz:.0f}Hz[/]"
         else:
-            bno055_line = f"[dim]BNO055[/] [dim]○ ---[/]"
+            bno055_line = "[dim]BNO055[/] [dim]○ ---[/]"
 
         lines = [line1, line2, bno055_line]
         self.query_one("#dash-connectivity", Static).update("\n".join(lines))

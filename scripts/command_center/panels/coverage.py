@@ -27,9 +27,16 @@ Key bindings (only active when this tab is focused):
 """
 from __future__ import annotations
 
+import contextlib
+from typing import TYPE_CHECKING, cast
+
 from textual.containers import Container, Horizontal
 from textual.widget import Widget
-from textual.widgets import Static, Input
+from textual.widgets import Input, Static
+
+if TYPE_CHECKING:
+    # Avoid the circular import at runtime — app.py imports CoveragePanel.
+    from command_center.app import RovacCommandCenter
 
 
 # Friendly per-row symbols
@@ -47,6 +54,13 @@ def _status_dot(active: bool, missing: bool = False) -> str:
 
 class CoveragePanel(Widget):
     """Coverage workflow control + comprehensive readiness check."""
+
+    @property
+    def _app(self) -> RovacCommandCenter:
+        """Typed accessor — same pattern as DrivePanel / SlamPanel / EdgePanel.
+        Centralises the App[Any] → RovacCommandCenter cast so .pm and .ros
+        accesses type-check across coverage.py."""
+        return cast("RovacCommandCenter", self.app)
 
     def compose(self):
         # Row 1 — services / processes / lifecycle
@@ -185,18 +199,16 @@ class CoveragePanel(Widget):
         import os
         if not map_path:
             # Pick the most recently modified map yaml
-            maps = self.app.pm.list_maps()
+            maps = self._app.pm.list_maps()
             if maps:
                 map_path = max(maps, key=os.path.getmtime)
-                try:
+                with contextlib.suppress(Exception):
                     self.query_one("#cov-map-input", Input).value = map_path
-                except Exception:
-                    pass
             else:
                 self._show_result("[red]No map yaml found in ~/maps. SLAM first, then save.[/]")
                 return
         map_path = os.path.expanduser(map_path)
-        ok, err = self.app.pm.validate_map_for_nav(map_path)
+        ok, err = self._app.pm.validate_map_for_nav(map_path)
         if not ok:
             self._show_result(f"[red]{err}[/]")
             return
@@ -246,8 +258,8 @@ class CoveragePanel(Widget):
         # Pass ros_bridge so the macro can publish /initialpose for AMCL
         # at the end of bringup, AND skip the publish if AMCL is already
         # localized (survived from a previous session).
-        if not self.app.pm.auto_start_full_stack(
-                map_path, on_step=on_step, ros_bridge=self.app.ros,
+        if not self._app.pm.auto_start_full_stack(
+                map_path, on_step=on_step, ros_bridge=self._app.ros,
                 initial_pose=initial_pose):
             # Reentrancy guard fired — another auto-start is in flight.
             self._show_result(
@@ -259,14 +271,12 @@ class CoveragePanel(Widget):
         if not steps:
             return
         lines = [f"  {sym} {lbl}" for lbl, sym in steps]
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#cov-result", Static).update(
                 "[bold]Auto-start progress:[/]\n" + "\n".join(lines))
-        except Exception:
-            pass
 
     def _start_ekf(self):
-        if self.app.pm.start_ekf():
+        if self._app.pm.start_ekf():
             self._show_result("[green]EKF started[/]")
         else:
             self._show_result("[red]EKF start failed[/]")
@@ -279,41 +289,41 @@ class CoveragePanel(Widget):
         if not map_path:
             self._show_result("[yellow]Enter a map yaml path first[/]")
             return
-        ok, err = self.app.pm.validate_map_for_nav(map_path)
+        ok, err = self._app.pm.validate_map_for_nav(map_path)
         if not ok:
             self._show_result(f"[red]{err}[/]")
             return
         import os
         map_path = os.path.expanduser(map_path)
-        if self.app.pm.start_nav2(map_path):
+        if self._app.pm.start_nav2(map_path):
             self._show_result(f"[green]Nav2 starting with {map_path}[/]")
         else:
             self._show_result("[red]Nav2 start failed[/]")
 
     def _toggle_foxglove(self):
-        status = self.app.pm.get_status()
+        status = self._app.pm.get_status()
         if status.get("foxglove") == "running":
-            self.app.pm.stop_foxglove()
+            self._app.pm.stop_foxglove()
             self._show_result("[yellow]Foxglove stopped[/]")
         else:
-            ok = self.app.pm.start_foxglove()
+            ok = self._app.pm.start_foxglove()
             self._show_result("[green]Foxglove started[/]" if ok else "[red]Foxglove failed[/]")
 
     def _toggle_tracker(self):
-        status = self.app.pm.get_status()
+        status = self._app.pm.get_status()
         if status.get("tracker") in ("running", "running (external)"):
-            self.app.pm.stop_coverage_tracker()
+            self._app.pm.stop_coverage_tracker()
             self._show_result("[yellow]Tracker stopped[/]")
         else:
-            ok = self.app.pm.start_coverage_tracker()
+            ok = self._app.pm.start_coverage_tracker()
             self._show_result("[green]Tracker started[/]" if ok else "[red]Tracker failed[/]")
 
     def _start_coverage(self, preview: bool):
-        status = self.app.pm.get_status()
+        status = self._app.pm.get_status()
         if status.get("coverage") in ("running", "running (external)"):
             self._show_result("[yellow]Coverage already running. Stop with X first.[/]")
             return
-        ok = self.app.pm.start_coverage(preview_only=preview)
+        ok = self._app.pm.start_coverage(preview_only=preview)
         mode = "PREVIEW" if preview else "LIVE"
         self._show_result(
             f"[green]Coverage {mode} dispatched[/]" if ok else f"[red]Coverage {mode} failed[/]"
@@ -323,7 +333,7 @@ class CoveragePanel(Widget):
         # The recovery runs in a worker thread (~25-35s). UI shouldn't
         # block waiting; the lifecycle indicators in the Nav2 panel will
         # flip back to active when it succeeds.
-        if self.app.pm.recover_nav2_lifecycle():
+        if self._app.pm.recover_nav2_lifecycle():
             self._show_result(
                 "[yellow]Nav2 RESET → STARTUP dispatched. "
                 "Watch the lifecycle column — nodes flip back to active in ~30s.[/]"
@@ -344,14 +354,14 @@ class CoveragePanel(Widget):
             # Also publish ONE explicit zero so any in-flight commands
             # are immediately neutralized instead of waiting for the
             # mux's 0.5s teleop_timeout.
-            if self.app.ros:
-                self.app.ros.publish_cmd_vel(0.0, 0.0)
+            if self._app.ros:
+                self._app.ros.publish_cmd_vel(0.0, 0.0)
             drive_stopped = True
         except Exception:
             pass
 
         # 2) Other teleop processes — keyboard_teleop.py on the Pi etc.
-        n = self.app.pm.kill_zombie_teleop()
+        n = self._app.pm.kill_zombie_teleop()
 
         bits = []
         if drive_stopped:
@@ -379,7 +389,7 @@ class CoveragePanel(Widget):
         inputs. Without this, AMCL refuses to publish map→odom TF and
         Nav2 won't navigate. The inputs let the user enter the robot's
         ACTUAL location (read off the map in Foxglove), not just (0,0,0)."""
-        if not self.app.ros:
+        if not self._app.ros:
             self._show_result("[red]ROS bridge not connected[/]")
             return
         try:
@@ -389,7 +399,7 @@ class CoveragePanel(Widget):
                 "[red]Pose values must be numbers (X m, Y m, Yaw °)[/]")
             return
         import math
-        ok = self.app.ros.publish_initial_pose(x, y, yaw_rad)
+        ok = self._app.ros.publish_initial_pose(x, y, yaw_rad)
         if ok:
             self._show_result(
                 f"[green]Published /initialpose at "
@@ -408,7 +418,7 @@ class CoveragePanel(Widget):
 
         Robot will travel ~10cm forward — small enough to be safe on
         a desk with the wheels off the floor."""
-        if not self.app.ros:
+        if not self._app.ros:
             self._show_result("[red]ROS bridge not connected[/]")
             return
         self._show_result(
@@ -423,15 +433,13 @@ class CoveragePanel(Widget):
             end_time = _time.monotonic() + 2.0
             while _time.monotonic() < end_time:
                 try:
-                    self.app.ros.publish_cmd_vel(0.05, 0.0)
+                    self._app.ros.publish_cmd_vel(0.05, 0.0)
                 except Exception:
                     break
                 _time.sleep(0.05)
             # Stop
-            try:
-                self.app.ros.publish_cmd_vel(0.0, 0.0)
-            except Exception:
-                pass
+            with contextlib.suppress(Exception):
+                self._app.ros.publish_cmd_vel(0.0, 0.0)
         threading.Thread(target=worker, daemon=True).start()
 
     def _dump_diagnostics(self):
@@ -480,23 +488,21 @@ class CoveragePanel(Widget):
                     )
                 else:
                     self._show_result("[red]Dump failed (see log)[/]")
-            try:
-                self.app.call_from_thread(update)
-            except Exception:
-                pass
+            with contextlib.suppress(Exception):
+                self._app.call_from_thread(update)
 
-        self.app.pm.dump_diagnostics(
-            ros_bridge=self.app.ros, callback=on_complete,
+        self._app.pm.dump_diagnostics(
+            ros_bridge=self._app.ros, callback=on_complete,
             ui_state=ui_state)
 
     def _calibrate_imu_yaw(self):
         """Snapshot the current AMCL yaw vs IMU yaw and save the offset.
         After calibration, future startups can auto-compute the robot's
         heading from the BNO055 magnetometer — no user input needed."""
-        if not self.app.ros:
+        if not self._app.ros:
             self._show_result("[red]ROS bridge not connected[/]")
             return
-        ok, offset, msg = self.app.ros.calibrate_yaw_offset()
+        ok, _offset, msg = self._app.ros.calibrate_yaw_offset()
         color = "green" if ok else "red"
         self._show_result(f"[{color}]{msg}[/]")
         # If calibration succeeded, immediately re-compute the yaw input
@@ -506,25 +512,23 @@ class CoveragePanel(Widget):
 
     def _refresh_yaw_input_from_imu(self):
         """Update the yaw input field from current IMU + saved offset."""
-        if not self.app.ros:
+        if not self._app.ros:
             return
-        yaw_deg = self.app.ros.get_map_yaw_from_imu_deg()
+        yaw_deg = self._app.ros.get_map_yaw_from_imu_deg()
         if yaw_deg is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#cov-pose-yaw", Input).value = f"{yaw_deg:.0f}"
-        except Exception:
-            pass
 
     def _global_localize(self):
         """Trigger AMCL global localization — scatters particles uniformly
         across the map. Use when you have NO IDEA where the robot is.
         Drive the robot afterward and particles converge as the LIDAR
         scan matches the map. Takes 30-60s of driving to converge."""
-        if not self.app.ros:
+        if not self._app.ros:
             self._show_result("[red]ROS bridge not connected[/]")
             return
-        if self.app.ros.trigger_global_localization():
+        if self._app.ros.trigger_global_localization():
             self._show_result(
                 "[yellow]AMCL global localization dispatched.\n"
                 "[dim]Drive the robot — particles converge as it moves. "
@@ -556,7 +560,7 @@ class CoveragePanel(Widget):
         import os
         name = os.path.splitext(os.path.basename(map_input))[0] or "rovac_map"
         # Async — worker thread runs map_saver_cli (5-15s).
-        self.app.pm.save_map(name)
+        self._app.pm.save_map(name)
         self._show_result(
             f"[yellow]Map save dispatched: ~/maps/{name}.yaml[/]\n"
             f"[dim]Watch the log for 'Map save \"{name}\": OK' (5-15s)[/]"
@@ -565,14 +569,12 @@ class CoveragePanel(Widget):
     def _stop_coverage(self):
         """Stop ONLY coverage_node — keep Nav2, EKF, tracker running so
         the user can re-run the planner without re-bringing-up the stack."""
-        self.app.pm.stop_coverage()
+        self._app.pm.stop_coverage()
         # Also kill any externally-spawned coverage_node we don't track
         import subprocess
-        try:
+        with contextlib.suppress(Exception):
             subprocess.run(['pkill', '-f', 'coverage_node.py'],
                            capture_output=True, timeout=2)
-        except Exception:
-            pass
         self._show_result(
             "[yellow]Coverage stopped. Nav2/EKF/tracker still running. "
             "Press 'p' or 'r' to start a new run.[/]"
@@ -581,27 +583,25 @@ class CoveragePanel(Widget):
     def _restart_foxglove(self):
         """Stop + start the Foxglove bridge. Useful when channel IDs go
         stale after a Nav2 lifecycle reset and the bridge holds them."""
-        self.app.pm.stop_foxglove()
+        self._app.pm.stop_foxglove()
         # Brief delay so the port frees up
         self.set_timer(1.5, self._restart_foxglove_step2)
         self._show_result("[yellow]Restarting Foxglove bridge…[/]")
 
     def _restart_foxglove_step2(self):
-        ok = self.app.pm.start_foxglove()
+        ok = self._app.pm.start_foxglove()
         self._show_result(
             "[green]Foxglove bridge restarted. Reload Foxglove client.[/]"
             if ok else "[red]Foxglove restart failed[/]"
         )
 
     def _kill_all(self):
-        self.app.pm.stop_all()
+        self._app.pm.stop_all()
         self._show_result("[yellow]Killed all Mac-side processes[/]")
 
     def _show_result(self, msg: str):
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#cov-result", Static).update(msg)
-        except Exception:
-            pass
 
     # ── Periodic refresh ──────────────────────────────────────────────
 
@@ -650,9 +650,9 @@ class CoveragePanel(Widget):
                      f"[dim]cov: {confidence}[/]")
 
         # IMU calibration state
-        if self.app.ros is not None:
-            offset_deg = self.app.ros.load_yaw_offset_deg()
-            imu_yaw_deg = self.app.ros.get_map_yaw_from_imu_deg()
+        if self._app.ros is not None:
+            offset_deg = self._app.ros.load_yaw_offset_deg()
+            imu_yaw_deg = self._app.ros.get_map_yaw_from_imu_deg()
         else:
             offset_deg = None
             imu_yaw_deg = None
@@ -667,20 +667,18 @@ class CoveragePanel(Widget):
             line2 = (f"[green]● IMU yaw→map: {imu_yaw_deg:+.0f}°[/] "
                      f"[dim](offset {offset_deg:+.0f}°, auto-yaw on)[/]")
 
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#cov-amcl-status", Static).update(
                 f"{line1}\n{line2}")
-        except Exception:
-            pass
 
     def _update_rosout_tail(self):
         """Render last ~8 WARN/ERROR/FATAL entries from /rosout, with
         consecutive-duplicate counts so a spammy AMCL doesn't drown out
         single-shot errors from other nodes."""
-        if not self.app.ros:
+        if not self._app.ros:
             return
         try:
-            entries = self.app.ros.get_rosout_tail()
+            entries = self._app.ros.get_rosout_tail()
         except Exception:
             entries = []
         if not entries:
@@ -702,16 +700,14 @@ class CoveragePanel(Widget):
                     level, node, msg = entry
                     count = 1
                 color = level_color.get(level, "white")
-                count_str = f" [dim](×{count})[/]" if count > 1 else ""
+                count_str = f" [dim](x{count})[/]" if count > 1 else ""
                 lines.append(
                     f"[{color}]{level:<5}[/] "
                     f"[dim]{node[:18]:<18}[/] {msg}{count_str}"
                 )
             text = "\n".join(lines)
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#cov-rosout", Static).update(text)
-        except Exception:
-            pass
 
     def _update_pi_services(self):
         # Pi service status is expensive (SSH). Cache between refreshes.
@@ -722,7 +718,7 @@ class CoveragePanel(Widget):
         # Refresh every 5 ticks (~5s)
         if self._pi_cache_tick % 5 == 1:
             try:
-                self._pi_cache = self.app.pm.pi_all_service_status()
+                self._pi_cache = self._app.pm.pi_all_service_status()
             except Exception:
                 self._pi_cache = {}
 
@@ -743,10 +739,8 @@ class CoveragePanel(Widget):
                     lines.append(
                         f"{RED_DOT} [red]{short}[/] [dim]({status})[/]")
             text = "\n".join(lines)
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#cov-pi-services", Static).update(text)
-        except Exception:
-            pass
 
     def _update_mac_procs(self, proc_status: dict):
         # 'idle_label' shown when the proc is stopped — explains WHY
@@ -764,7 +758,7 @@ class CoveragePanel(Widget):
         # process_status's "running" can lie if the bridge crashed
         # but Popen still has a record of it.
         try:
-            port_alive = self.app.pm.foxglove_bridge_alive()
+            port_alive = self._app.pm.foxglove_bridge_alive()
         except Exception:
             port_alive = False
 
@@ -790,10 +784,8 @@ class CoveragePanel(Widget):
                 lines.append(f"{RED_DOT} {label:<10} [red]{st}[/]")
             else:
                 lines.append(f"{GRAY_DOT} {label:<10} [dim]{idle_label}[/]")
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#cov-mac-procs", Static).update("\n".join(lines))
-        except Exception:
-            pass
 
     def _update_nav2_lifecycle(self):
         if not hasattr(self, "_nav_cache_tick"):
@@ -803,7 +795,7 @@ class CoveragePanel(Widget):
         # Lifecycle queries are expensive (8 service calls). Refresh every 6 ticks.
         if self._nav_cache_tick % 6 == 1:
             try:
-                self._nav_cache = self.app.pm.query_nav2_lifecycle()
+                self._nav_cache = self._app.pm.query_nav2_lifecycle()
             except Exception:
                 self._nav_cache = {}
 
@@ -822,10 +814,8 @@ class CoveragePanel(Widget):
                 else:
                     lines.append(f"{RED_DOT} {short:<18} [red]{state}[/]")
             text = "\n".join(lines)
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#cov-nav2-lifecycle", Static).update(text)
-        except Exception:
-            pass
 
     def _update_cmdvel(self, state: dict):
         teleop_hz = state.get("cmd_vel_teleop_hz", 0.0)
@@ -849,10 +839,8 @@ class CoveragePanel(Widget):
             f"  /cmd_vel             {hz_color(cmd_hz)} Hz\n"
             f"  active source: [bold]{active}[/]"
         )
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#cov-cmdvel", Static).update(text)
-        except Exception:
-            pass
 
     def _update_progress(self, state: dict, proc_status: dict):
         wp_total = state.get("coverage_total", 0)
@@ -869,10 +857,8 @@ class CoveragePanel(Widget):
                 f"Visited:      {visited} / {free} cells\n"
                 f"Floor cover:  [bold]{cov_pct:.1f}%[/]"
             )
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#cov-progress", Static).update(text)
-        except Exception:
-            pass
 
     def on_mount(self):
         """Pre-fill UI from persisted state.
@@ -890,19 +876,17 @@ class CoveragePanel(Widget):
         the user can rotate the robot while it's powered off, and the
         next startup still computes the correct map yaw.
         """
-        import os
         import math
+        import os
         # Map yaml
         try:
-            maps = self.app.pm.list_maps()
+            maps = self._app.pm.list_maps()
         except Exception:
             maps = []
         if maps:
             latest = max(maps, key=lambda p: os.path.getmtime(p))
-            try:
+            with contextlib.suppress(Exception):
                 self.query_one("#cov-map-input", Input).value = latest
-            except Exception:
-                pass
 
         # Pose: persisted X/Y always; yaw from IMU if calibrated.
         try:
@@ -911,8 +895,8 @@ class CoveragePanel(Widget):
             self.query_one("#cov-pose-x", Input).value = f"{x:.2f}"
             self.query_one("#cov-pose-y", Input).value = f"{y:.2f}"
             yaw_deg_default = math.degrees(yaw_rad)
-            if self.app.ros is not None:
-                imu_yaw_deg = self.app.ros.get_map_yaw_from_imu_deg()
+            if self._app.ros is not None:
+                imu_yaw_deg = self._app.ros.get_map_yaw_from_imu_deg()
                 if imu_yaw_deg is not None:
                     yaw_deg_default = imu_yaw_deg
             self.query_one("#cov-pose-yaw", Input).value = \
@@ -924,24 +908,20 @@ class CoveragePanel(Widget):
         # while AMCL isn't localized AND the user hasn't typed a value.
         # This way, if the robot rotates physically (someone moves it
         # before pressing 'A'), the seed yaw stays correct.
-        try:
+        with contextlib.suppress(Exception):
             self.set_interval(2.0, self._maybe_refresh_yaw_from_imu)
-        except Exception:
-            pass
 
     def _maybe_refresh_yaw_from_imu(self):
         """Auto-update the yaw input when AMCL isn't localized — keeps
         the input synced with the BNO055 in case the user rotates the
         robot before pressing 'A'. Skips if user is editing the field."""
-        if self.app.ros is None:
+        if self._app.ros is None:
             return
         # If AMCL is already localized, the user shouldn't need to edit
         # yaw — leave their value alone.
-        try:
-            if self.app.ros.is_amcl_localized():
+        with contextlib.suppress(Exception):
+            if self._app.ros.is_amcl_localized():
                 return
-        except Exception:
-            pass
         # If the user is currently focused on the yaw input, don't
         # clobber what they're typing.
         try:
@@ -973,7 +953,7 @@ class CoveragePanel(Widget):
 
         # Foxglove bridge dead — Foxglove client will show no data
         try:
-            fox_alive = self.app.pm.foxglove_bridge_alive()
+            fox_alive = self._app.pm.foxglove_bridge_alive()
         except Exception:
             fox_alive = False
         if not fox_alive:
@@ -1010,7 +990,5 @@ class CoveragePanel(Widget):
             )
 
         text = "\n".join(alerts) if alerts else "[green]✓ No alerts[/]"
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#cov-alerts", Static).update(text)
-        except Exception:
-            pass

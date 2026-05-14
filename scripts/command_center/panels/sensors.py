@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
-from textual.containers import Container, Horizontal
+
+from textual.containers import Container
 from textual.widget import Widget
 from textual.widgets import Static
 
@@ -103,10 +105,8 @@ class SensorsPanel(Widget):
             f"Distance    total: {dist:6.2f} m",
             f"Rate        {hz:5.1f} Hz",
         ]
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#sens-odom", Static).update("\n".join(lines))
-        except Exception:
-            pass
 
     def _update_lidar(self, state: dict) -> None:
         hz = state.get("scan_hz", 0)
@@ -124,10 +124,8 @@ class SensorsPanel(Widget):
             f"Range:   {scan_min:.2f} - {scan_max:.2f} m",
             f"Status:  {status}",
         ]
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#sens-lidar", Static).update("\n".join(lines))
-        except Exception:
-            pass
 
     def _update_ultra(self, state: dict) -> None:
         front = state.get("ultra_front", float("inf"))
@@ -148,20 +146,16 @@ class SensorsPanel(Widget):
             f"Left:   {_f(left)}    Right:  {_f(right)}",
             f"Cliff:  {cliff_text}",
         ]
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#sens-ultra", Static).update("\n".join(lines))
-        except Exception:
-            pass
 
     def _update_diag_motor(self, state: dict) -> None:
         diag = state.get("diag_motor", {})
         if not diag:
-            try:
+            with contextlib.suppress(Exception):
                 self.query_one("#sens-diag-motor", Static).update(
                     "[dim]No motor diagnostics[/]"
                 )
-            except Exception:
-                pass
             return
 
         rssi = diag.get("wifi_rssi", "---")
@@ -181,18 +175,14 @@ class SensorsPanel(Widget):
             rssi_text = f"[dim]{rssi}[/]"
 
         text = f"WiFi RSSI: {rssi_text}    Heap: {heap}    Up: {uptime}"
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#sens-diag-motor", Static).update(text)
-        except Exception:
-            pass
 
     def _update_bno055_imu(self, state: dict) -> None:
         hz = state.get("bno055_imu_hz", 0)
         if hz <= 0:
-            try:
+            with contextlib.suppress(Exception):
                 self.query_one("#sens-bno055-imu", Static).update("[dim]No BNO055 IMU data[/]")
-            except Exception:
-                pass
             return
 
         ax = state.get("bno055_accel_x", 0)
@@ -210,8 +200,6 @@ class SensorsPanel(Widget):
             f"Gyro    x:{gx:+7.2f}  y:{gy:+7.2f}  z:{gz:+7.2f} rad/s\n"
             f"Orient  R:{roll:+6.1f}°  P:{pitch:+6.1f}°  Y:{yaw:+6.1f}°"
         )
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#sens-bno055-imu", Static).update(text)
-        except Exception:
-            pass
 

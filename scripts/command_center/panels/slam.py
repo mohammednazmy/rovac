@@ -2,13 +2,27 @@
 
 from __future__ import annotations
 
+import contextlib
+from typing import TYPE_CHECKING, cast
+
 from textual.containers import Container, Horizontal
 from textual.widget import Widget
-from textual.widgets import Static, Input
+from textual.widgets import Input, Static
+
+if TYPE_CHECKING:
+    # Avoid the circular import at runtime — app.py imports SlamPanel.
+    from command_center.app import RovacCommandCenter
 
 
 class SlamPanel(Widget):
     """SLAM control — start/stop SLAM, Foxglove, save maps."""
+
+    @property
+    def _app(self) -> RovacCommandCenter:
+        """Typed accessor — Widget.app is App[Any] but we know it's our
+        subclass which exposes .pm and .log_message. Same pattern as
+        DrivePanel; centralises the cast in one place."""
+        return cast("RovacCommandCenter", self.app)
 
     def compose(self):
         with Horizontal(id="slam-layout"):
@@ -65,22 +79,22 @@ class SlamPanel(Widget):
         return True
 
     def _start_slam(self) -> None:
-        if self.app.pm.start_slam():
+        if self._app.pm.start_slam():
             self._show_result("[green]SLAM started[/]")
         else:
             self._show_result("[red]Failed to start SLAM[/]")
 
     def _stop_slam(self) -> None:
-        self.app.pm.stop_slam()
+        self._app.pm.stop_slam()
         self._show_result("[yellow]SLAM stopped[/]")
 
     def _toggle_foxglove(self) -> None:
-        status = self.app.pm.get_status()
+        status = self._app.pm.get_status()
         if status.get("foxglove") == "running":
-            self.app.pm.stop_foxglove()
+            self._app.pm.stop_foxglove()
             self._show_result("[yellow]Foxglove stopped[/]")
         else:
-            if self.app.pm.start_foxglove():
+            if self._app.pm.start_foxglove():
                 self._show_result("[green]Foxglove started[/]")
             else:
                 self._show_result("[red]Failed to start Foxglove[/]")
@@ -98,17 +112,15 @@ class SlamPanel(Widget):
 
         # save_map is now async (worker thread); UI shows pending status,
         # log line arrives 5-15s later when map_saver_cli completes.
-        self.app.pm.save_map(name)
+        self._app.pm.save_map(name)
         self._show_result(
             f"[yellow]Map save dispatched: ~/maps/{name}[/]\n"
             f"[dim]Watch log for 'Map save \"{name}\": OK'[/]"
         )
 
     def _show_result(self, msg: str) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#slam-save-result", Static).update(msg)
-        except Exception:
-            pass
 
     def update_state(self, state: dict, logs: list, proc_status: dict) -> None:
         self._update_status(proc_status)
@@ -144,10 +156,8 @@ class SlamPanel(Widget):
         else:
             parts.append("Nav2:     [dim]○ Stopped[/]")
 
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#slam-status", Static).update("\n".join(parts))
-        except Exception:
-            pass
 
     def _update_map_stats(self, state: dict) -> None:
         w = state.get("map_width", 0)
@@ -167,7 +177,5 @@ class SlamPanel(Widget):
                 f"Update Rate: {hz:.1f} Hz"
             )
 
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#slam-map-stats", Static).update(text)
-        except Exception:
-            pass

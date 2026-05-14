@@ -2,26 +2,36 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
 import re
+import time
+from typing import TYPE_CHECKING, ClassVar, cast
+
 from textual.containers import Container, Horizontal
+from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Static
-from textual.timer import Timer
+
+if TYPE_CHECKING:
+    # Only imported for typing — runtime would create a circular import
+    # (app.py imports DrivePanel).
+    from command_center.app import RovacCommandCenter
 
 # Strips Rich markup tags so we can compute the *visible* width of a
 # styled cell for column alignment (markup chars don't take space on
 # screen but len() counts them).
 _MARKUP_RE = re.compile(r'\[/?[^\]]*\]')
 
-# Same speed presets as keyboard_teleop.py (7 gears)
+# Speed presets — must match keyboard_teleop.py SPEED_STEPS/TURN_STEPS exactly
+# so the two teleops have identical feel.
 SPEED_PRESETS = [
     (0.05, 1.0),
     (0.10, 1.5),
     (0.15, 2.0),
     (0.20, 3.0),
-    (0.25, 4.0),
-    (0.35, 5.0),
+    (0.30, 4.0),
+    (0.40, 5.0),
     (0.50, 6.5),
 ]
 
@@ -29,13 +39,46 @@ SPEED_PRESETS = [
 PUBLISH_HZ = 20
 PUBLISH_INTERVAL = 1.0 / PUBLISH_HZ
 
-# How long after last key press to stop. Was 0.4s — too short for
-# users who TAP rather than hold, and for terminals that don't auto-
-# repeat in TUI mode (most macOS terminals don't, since Textual puts
-# stdin in raw mode and disables OS key-repeat). 1.5s gives a single
-# tap a meaningful drive distance (~22cm at 0.15 m/s gear 2).
-# To stop sooner, press SPACE.
-HOLD_TIMEOUT = 1.5  # seconds
+# Arc-turn (Q/E) angular = lin_speed * ARC_ANG_SCALE. Same scale as
+# keyboard_teleop.py — keeps the curve radius gear-independent.
+ARC_ANG_SCALE = 2.0
+
+# Adaptive hold window — long for the first key event, short once
+# auto-repeats start streaming in. macOS Terminal.app DOES auto-repeat
+# even in Textual raw mode, so this adaptive model works here too.
+#   HOLD_INITIAL bridges the ~300ms gap before terminal repeat kicks in.
+#   HOLD_REPEATING gives a tight stop once repeats flow.
+# To force a stop earlier, press SPACE.
+HOLD_INITIAL = 0.35      # seconds — single-tap hold window
+HOLD_REPEATING = 0.08    # seconds — once auto-repeat is streaming
+REPEAT_THRESHOLD = 2     # consecutive events to count as "repeating"
+
+# Angular tap-ramp — fine turns on first tap, full speed once held.
+# A single tap commands ANGULAR_RAMP_MIN * target; each successive event
+# multiplies by repeat_count/ANGULAR_RAMP_REPEATS until it hits 1.0.
+ANGULAR_RAMP_REPEATS = 6
+ANGULAR_RAMP_MIN = 0.25
+
+# If True, the tap-ramp also applies to turn-in-place (←/→) taps for even
+# finer control (~10° per tap at gear 2 vs ~33° with the ramp off).
+#
+# keyboard_teleop.py's original analysis worried that nerfing the first tap
+# to 25% angular would leave the motors below stiction break-out. Empirically
+# that doesn't happen on ROVAC — the ESP32 PID's integral term ramps PWM up
+# fast enough to break stiction even at 0.25 * commanded angular. Default
+# True after live testing confirmed finer control feels better.
+#
+# Runtime toggle: press 't' on the Drive tab to flip this for the session.
+# Edit this constant to change the default that the panel starts with.
+DEFAULT_TAP_RAMP_TURN_IN_PLACE = True
+
+# Output velocity smoothing — acceleration-limited ramping. Step changes
+# in target velocity (e.g. 0 → 2.0 rad/s on a tap) become smooth ramps
+# at these rates, which (a) cuts the integrated angle/distance of a tap
+# dramatically and (b) is gentler on the drivetrain.
+LINEAR_ACCEL = 1.5       # m/s² — linear ramp rate
+ANGULAR_ACCEL = 10.0     # rad/s² — angular ramp rate
+DECEL_SCALE = 2.5        # multiplier on accel when braking — faster stops
 
 
 def _range_color(distance: float) -> str:
@@ -55,8 +98,22 @@ class DrivePanel(Widget):
     def __init__(self) -> None:
         super().__init__()
         self.gear = 2  # Default gear index
+        # Target velocity (set by keys, with tap-ramp applied)
         self._target_linear = 0.0
         self._target_angular = 0.0
+        # Smoothed output velocity (what we actually publish — ramps toward
+        # target at LINEAR_ACCEL/ANGULAR_ACCEL).
+        self._smooth_linear = 0.0
+        self._smooth_angular = 0.0
+        self._last_pub_time = 0.0
+        # Tap-ramp state — count consecutive events for the same key so a
+        # held key ramps to full angular over ANGULAR_RAMP_REPEATS events,
+        # and a tap stays at ANGULAR_RAMP_MIN.
+        self._repeat_count = 0
+        self._last_key: str | None = None
+        # Whether to apply the tap-ramp to turn-in-place (←/→) taps too.
+        # Toggle live with 't' on the Drive tab; default lives at module top.
+        self._tap_ramp_turn_in_place = DEFAULT_TAP_RAMP_TURN_IN_PLACE
         self._publish_timer: Timer | None = None
         self._hold_timer: Timer | None = None
         self._driving = False
@@ -64,6 +121,36 @@ class DrivePanel(Widget):
         # rule etc.). Keyed by check name → monotonic timestamp when the
         # condition first became True, or None when it's currently False.
         self._sustained_state: dict[str, float | None] = {}
+
+    @property
+    def _app(self) -> RovacCommandCenter:
+        """Typed accessor for the host App.
+
+        Widget.app returns App[Any] (Textual's base class), but our app is
+        RovacCommandCenter which exposes .ros and .log_message. Casting via
+        a single accessor centralises the cost and lets mypy verify those
+        attribute accesses across drive.py.
+        """
+        return cast("RovacCommandCenter", self.app)
+
+    @staticmethod
+    def _step_toward(current: float, target: float,
+                     accel: float, dt: float) -> float:
+        """Move `current` toward `target` at acceleration-limited rate.
+
+        Brakes faster (DECEL_SCALE * accel) when reducing magnitude or
+        reversing direction, so stops are crisp. Ported verbatim from
+        keyboard_teleop.py — keep them in sync if you tune one.
+        """
+        diff = target - current
+        if abs(target) < abs(current) or target * current < 0:
+            rate = accel * DECEL_SCALE
+        else:
+            rate = accel
+        max_step = rate * dt
+        if abs(diff) <= max_step:
+            return target
+        return current + math.copysign(max_step, diff)
 
     def compose(self):
         with Container(classes="panel-box-green") as c:
@@ -102,122 +189,223 @@ class DrivePanel(Widget):
         self._refresh_controls_display()
 
     def process_key(self, key: str) -> bool:
-        """Handle drive key presses. Called by App dispatcher."""
+        """Handle drive key presses. Called by App dispatcher.
+
+        Computes a target velocity from the key + current gear, applies the
+        angular tap-ramp (so the first tap commands a fraction of full
+        angular speed), then hands off to _set_drive which manages the
+        publish timer and hold timeout.
+        """
         lin_speed, ang_speed = SPEED_PRESETS[self.gear]
 
+        # ── Decode key → raw target velocities ────────────────────────────
         if key in ("w", "up"):
-            self._set_drive(lin_speed, 0.0)
+            new_lin, new_ang = lin_speed, 0.0
         elif key in ("s", "down"):
-            self._set_drive(-lin_speed, 0.0)
+            new_lin, new_ang = -lin_speed, 0.0
         elif key in ("a", "left"):
-            self._set_drive(0.0, ang_speed)
+            new_lin, new_ang = 0.0, ang_speed
         elif key in ("d", "right"):
-            self._set_drive(0.0, -ang_speed)
+            new_lin, new_ang = 0.0, -ang_speed
         elif key == "q":
-            self._set_drive(lin_speed, ang_speed * 0.5)
+            new_lin, new_ang = lin_speed, lin_speed * ARC_ANG_SCALE
         elif key == "e":
-            self._set_drive(lin_speed, -ang_speed * 0.5)
+            new_lin, new_ang = lin_speed, -lin_speed * ARC_ANG_SCALE
         elif key == "space":
-            self._stop_driving()
+            self._stop_immediately()
+            return True
         elif key in ("equal", "plus"):
             self.gear = min(self.gear + 1, len(SPEED_PRESETS) - 1)
-            # Update target if currently driving
             if self._driving:
-                self._update_speed_while_driving()
+                self._rescale_targets_for_new_gear()
             self._refresh_controls_display()
+            return True
         elif key in ("minus", "underscore"):
             self.gear = max(self.gear - 1, 0)
             if self._driving:
-                self._update_speed_while_driving()
+                self._rescale_targets_for_new_gear()
             self._refresh_controls_display()
+            return True
+        elif key == "t":
+            # Toggle whether turn-in-place taps get the angular tap-ramp.
+            # ON  (default) → tap-in-place commands ANGULAR_RAMP_MIN fraction
+            #                 (~10° at gear 2 — finer control)
+            # OFF           → tap-in-place commands full angular speed,
+            #                 smoothed only by accel/decel limits (~26° at
+            #                 gear 2). Flip to OFF if you want bigger nudges.
+            self._tap_ramp_turn_in_place = not self._tap_ramp_turn_in_place
+            state = "ON" if self._tap_ramp_turn_in_place else "OFF"
+            with contextlib.suppress(Exception):
+                self._app.log_message(
+                    f"Drive: turn-in-place tap-ramp -> {state}"
+                )
+            self._refresh_controls_display()
+            return True
         else:
             return False
+
+        # ── Track repeat count for the same key ───────────────────────────
+        # Same key → growing repeat_count (drives both adaptive hold AND
+        # the angular ramp). Different key → reset to 1.
+        if key == self._last_key:
+            self._repeat_count += 1
+        else:
+            self._repeat_count = 1
+            self._last_key = key
+
+        # ── Apply angular tap-ramp ────────────────────────────────────────
+        # Turn-in-place (pure rotation): skip the ramp by default — kb_teleop
+        # comment notes that 25% angular at low gears can't break stiction.
+        # Press 't' to toggle live; edit DEFAULT_TAP_RAMP_TURN_IN_PLACE at
+        # module top to change the panel's startup default.
+        is_turn_in_place = abs(new_lin) < 1e-3
+        apply_ramp = (new_ang != 0.0
+                      and (not is_turn_in_place
+                           or self._tap_ramp_turn_in_place))
+        if apply_ramp:
+            ramp = max(ANGULAR_RAMP_MIN,
+                       min(1.0, self._repeat_count / ANGULAR_RAMP_REPEATS))
+            new_ang *= ramp
+
+        self._set_drive(new_lin, new_ang)
         return True
 
     def _set_drive(self, linear: float, angular: float) -> None:
-        """Set drive target and start continuous publishing."""
+        """Latch a new target and (re)arm the publish timer + hold timeout."""
         self._target_linear = linear
         self._target_angular = angular
         self._driving = True
 
-        # Publish immediately
-        if self.app.ros:
-            self.app.ros.publish_cmd_vel(linear, angular)
-
-        # Start continuous publish timer (if not already running)
+        # Start the smoothing/publish loop if it's not already running.
         if self._publish_timer is None:
+            self._last_pub_time = 0.0  # reset so the first dt is sane
             self._publish_timer = self.set_interval(
                 PUBLISH_INTERVAL, self._publish_tick
             )
 
-        # Reset the hold timeout (stop after no key press)
-        self._reset_hold_timer()
+        # Adaptive hold: long window on the first event, short once terminal
+        # auto-repeat is streaming in.
+        hold_window = (HOLD_REPEATING
+                       if self._repeat_count >= REPEAT_THRESHOLD
+                       else HOLD_INITIAL)
+        self._reset_hold_timer(hold_window)
+
+        # Publish the first smoothed value immediately (otherwise we wait
+        # PUBLISH_INTERVAL = 50ms for the timer's first tick, adding noticeable
+        # latency to a key press).
+        self._publish_tick()
         self._refresh_controls_display()
 
     def _publish_tick(self) -> None:
-        """Continuous publish at 20Hz while driving.
+        """Smooth output velocity toward target, publish, self-cancel on idle.
 
-        SELF-CANCELING: if both targets are zero OR _driving became False
-        by any path (tab switch, hold-timer, panel hide), this tick
-        stops the timer entirely. Without this safety, the timer kept
-        firing publish_cmd_vel(0,0) at 20Hz forever, which the mux
-        treats as 'TELEOP active' (priority 1) and silently overrode
-        Nav2 — the failure mode that caused 'A pressed but robot won't
-        move' in the live test.
+        The smoother turns a step change (e.g. 0 → 2.0 rad/s on a tap) into
+        a ramp at ANGULAR_ACCEL rad/s². On the trailing edge (hold timer
+        expires → target = 0), output decays at DECEL_SCALE * accel and the
+        timer self-cancels once both target and smoothed values are ~zero.
+
+        SELF-CANCELING: only cancels when target AND smoothed are both at
+        rest. This is critical — if we cancelled the moment _driving went
+        False, we'd leave the last non-zero velocity published and the ESP32
+        watchdog would have to time it out abruptly.
         """
-        zero_velocity = (abs(self._target_linear) < 1e-4
-                         and abs(self._target_angular) < 1e-4)
-        if not self._driving or zero_velocity:
-            # Self-destruct: stop the timer and don't publish.
+        now = time.monotonic()
+        dt = (now - self._last_pub_time
+              if self._last_pub_time > 0 else PUBLISH_INTERVAL)
+        self._last_pub_time = now
+        dt = min(dt, 0.1)  # cap to prevent jumps after pauses (tab switch)
+
+        self._smooth_linear = self._step_toward(
+            self._smooth_linear, self._target_linear, LINEAR_ACCEL, dt)
+        self._smooth_angular = self._step_toward(
+            self._smooth_angular, self._target_angular, ANGULAR_ACCEL, dt)
+
+        fully_stopped = (
+            not self._driving
+            and abs(self._smooth_linear) < 1e-3
+            and abs(self._smooth_angular) < 1e-3
+            and abs(self._target_linear) < 1e-4
+            and abs(self._target_angular) < 1e-4
+        )
+        if fully_stopped:
+            # One final zero so the mux sees an explicit stop (otherwise the
+            # last published value just stops being refreshed, and mux would
+            # treat the connection as 'TELEOP still active' until its 0.5s
+            # timeout — which then drops priority to /cmd_vel_joy or /nav).
+            if self._app.ros:
+                self._app.ros.publish_cmd_vel(0.0, 0.0)
             if self._publish_timer is not None:
                 self._publish_timer.stop()
                 self._publish_timer = None
-            self._driving = False
+            self._last_pub_time = 0.0
             return
-        if self.app.ros:
-            self.app.ros.publish_cmd_vel(
-                self._target_linear, self._target_angular)
 
-    def _reset_hold_timer(self) -> None:
-        """Reset the hold timeout — stops driving if no key arrives within window."""
+        if self._app.ros:
+            self._app.ros.publish_cmd_vel(
+                self._smooth_linear, self._smooth_angular)
+
+    def _reset_hold_timer(self, duration: float) -> None:
+        """Restart the hold timeout — fires _hold_timer_expired after `duration`
+        seconds of no key events. Duration is supplied by caller so the
+        adaptive HOLD_INITIAL vs HOLD_REPEATING decision lives in process_key.
+        """
         if self._hold_timer is not None:
             self._hold_timer.stop()
-        self._hold_timer = self.set_timer(HOLD_TIMEOUT, self._stop_driving)
+        self._hold_timer = self.set_timer(duration, self._hold_timer_expired)
 
-    def _stop_driving(self) -> None:
-        """Stop the robot and cancel continuous publishing."""
+    def _hold_timer_expired(self) -> None:
+        """No key events arrived within the hold window — release the throttle
+        but let the smoother decelerate gracefully. Resets the tap-ramp state
+        so the next press starts fresh.
+        """
         self._target_linear = 0.0
         self._target_angular = 0.0
         self._driving = False
+        self._repeat_count = 0
+        self._last_key = None
+        # DON'T stop the publish timer — it'll self-cancel from _publish_tick
+        # once smoothed values decay to zero. That's what makes the stop
+        # smooth instead of an abrupt cut.
+        self._refresh_controls_display()
 
-        # Send zero cmd_vel
-        if self.app.ros:
-            self.app.ros.publish_cmd_vel(0.0, 0.0)
+    def _stop_immediately(self) -> None:
+        """Hard stop — for SPACE (E-stop). Zero everything, kill timers,
+        publish one final zero. No deceleration ramp.
+        """
+        self._target_linear = 0.0
+        self._target_angular = 0.0
+        self._smooth_linear = 0.0
+        self._smooth_angular = 0.0
+        self._driving = False
+        self._repeat_count = 0
+        self._last_key = None
 
-        # Stop the continuous publish timer
+        if self._app.ros:
+            self._app.ros.publish_cmd_vel(0.0, 0.0)
+
         if self._publish_timer is not None:
             self._publish_timer.stop()
             self._publish_timer = None
-
         if self._hold_timer is not None:
             self._hold_timer.stop()
             self._hold_timer = None
-
+        self._last_pub_time = 0.0
         self._refresh_controls_display()
 
-    def _update_speed_while_driving(self) -> None:
-        """Update target speed when gear changes during active driving."""
+    def _rescale_targets_for_new_gear(self) -> None:
+        """When the user changes gear mid-drive, scale current target velocities
+        to match the new preset, preserving direction.
+        """
         lin_speed, ang_speed = SPEED_PRESETS[self.gear]
-        # Scale the current direction to the new speed
         if abs(self._target_linear) > 0.001:
             sign = 1.0 if self._target_linear > 0 else -1.0
             self._target_linear = sign * lin_speed
         if abs(self._target_angular) > 0.001:
             sign = 1.0 if self._target_angular > 0 else -1.0
-            # For pure turns, use full angular speed
-            # For arcs, use half angular speed
+            # Arc turns (linear != 0) use lin_speed * ARC_ANG_SCALE so the
+            # curve radius stays consistent; pure rotation uses full angular.
             if abs(self._target_linear) > 0.001:
-                self._target_angular = sign * ang_speed * 0.5
+                self._target_angular = sign * lin_speed * ARC_ANG_SCALE
             else:
                 self._target_angular = sign * ang_speed
 
@@ -226,12 +414,20 @@ class DrivePanel(Widget):
         gear_num = self.gear + 1
         total_gears = len(SPEED_PRESETS)
 
-        lin_out = self._target_linear
-        ang_out = self._target_angular
-        if self._driving:
-            out_color = "green"
+        # Show the smoothed output (what we're actually publishing) so the
+        # display tracks reality during the accel/decel ramps. kb_teleop
+        # shows this same value as 'Out:'.
+        lin_out = self._smooth_linear
+        ang_out = self._smooth_angular
+        moving = abs(lin_out) > 0.005 or abs(ang_out) > 0.005
+        out_color = "green" if (self._driving or moving) else "dim"
+
+        # Tap-ramp toggle indicator — green when ON (finer ←/→ taps),
+        # dim when OFF (full angular on tap, smoothed only by accel limit).
+        if self._tap_ramp_turn_in_place:
+            tap_state = "[green bold]ON [/]"
         else:
-            out_color = "dim"
+            tap_state = "[dim]OFF[/]"
 
         text = (
             "        [bold]W/Up[/] Fwd     [bold]Q[/] Arc-L     "
@@ -239,12 +435,11 @@ class DrivePanel(Widget):
             f"[bold]{lin_speed:.2f}[/] m/s  [bold]{ang_speed:.1f}[/] rad/s\n"
             "  [bold]A/Left[/] [bold]SPACE[/] [bold]D/Right[/]   [bold]E[/] Arc-R     "
             f"[{out_color}]Out: lin={lin_out:+.2f} ang={ang_out:+.2f}[/]\n"
-            f"        [bold]S/Down[/] Rev    [bold]+/-[/] Speed"
+            f"        [bold]S/Down[/] Rev    [bold]+/-[/] Speed     "
+            f"[bold]T[/] Tap-ramp ←/→: {tap_state}"
         )
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#drive-controls", Static).update(text)
-        except Exception:
-            pass
 
     def update_state(self, state: dict, logs: list, proc_status: dict) -> None:
         self._update_odom(state)
@@ -265,10 +460,8 @@ class DrivePanel(Widget):
             f"v={vx:+.2f} m/s  \u03c9={wz:+.2f} r/s",
             f"dist {dist:.1f}m  odom {hz:.1f}Hz",
         ]
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#drive-odom", Static).update("\n".join(lines))
-        except Exception:
-            pass
 
     def _update_proximity(self, state: dict) -> None:
         ft = state.get("ultra_front_top", float("inf"))
@@ -284,10 +477,8 @@ class DrivePanel(Widget):
             "\n"
             f" Status: {'[red bold]OBSTACLE[/]' if obstacle else '[green]CLEAR[/]'}"
         )
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#drive-proximity", Static).update(text)
-        except Exception:
-            pass
 
     # \u2500\u2500\u2500 Pipeline Health \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # Diagnoses the 5-hop chain from a keypress in this panel to a motor
@@ -301,9 +492,11 @@ class DrivePanel(Widget):
     # column-align cleanly.
     _PIPELINE_COL_WIDTH = 14
 
-    # Status \u2192 Rich color name. 'red' is also bolded by callers so the
+    # Status -> Rich color name. 'red' is also bolded by callers so the
     # severity hierarchy reads correctly even on monochrome terminals.
-    _STATUS_COLORS = {
+    # ClassVar so static analyzers know we never reassign this on an
+    # instance \u2014 it's an immutable lookup table.
+    _STATUS_COLORS: ClassVar[dict[str, str]] = {
         "green": "green",
         "yellow": "yellow",
         "red": "red",
@@ -532,7 +725,7 @@ class DrivePanel(Widget):
         # on _hz, not in state, because state stores cached scalars and
         # these are derived metrics. Tolerant of missing keys for the
         # window between bridge thread start and first subscription.
-        bridge = self.app.ros
+        bridge = self._app.ros
         teleop_hz = 0.0
         cmd_vel_hz = 0.0
         ros_connected = False
@@ -580,8 +773,10 @@ class DrivePanel(Widget):
 
         # \u2500\u2500 Row 1: cells (label + glyph), column-aligned \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         row1_cells = []
+        # strict=True: defensive — we just padded `statuses` to length 5 to
+        # match the 5-label tuple, so a mismatch here would be a real bug.
         for i, (label, status) in enumerate(
-                zip(self._PIPELINE_LABELS, statuses)):
+                zip(self._PIPELINE_LABELS, statuses, strict=True)):
             is_lr = (i == leftmost_red)
             cell = (f"{self._color_label(label, status, is_lr)} "
                     f"{self._glyph(status, is_lr)}")
@@ -610,12 +805,10 @@ class DrivePanel(Widget):
                 "[dim]idle \u2014 press a drive key to test the full pipeline[/]"
             )
 
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#drive-pipeline", Static).update(
                 f"{row1}\n{row2}\n{row3}\n{hint_line}"
             )
-        except Exception:
-            pass
 
     def _build_pipeline_metrics(
         self, sig: dict, statuses: list

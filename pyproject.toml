@@ -1,0 +1,122 @@
+# ROVAC project — Python tooling configuration.
+#
+# This file is the single source of truth for pytest, coverage, ruff, and
+# mypy. Run with:
+#   pytest                                  # all tests
+#   pytest tests/command_center/test_drive.py  # one file
+#   pytest --cov-report=html                # coverage report at htmlcov/
+#   ruff check scripts/command_center       # lint
+#   ruff format scripts/command_center      # auto-format
+#   mypy scripts/command_center             # type-check
+#
+# The coverage threshold (--cov-fail-under) is intentionally NOT set as a
+# default — we tighten it as Phase N rolls out. Use it on the CLI:
+#   pytest --cov-fail-under=85 tests/command_center/
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+# --strict-markers: typos in pytest marks become errors, not silent skips.
+# --tb=short: tracebacks fit on screen.
+# Cov on by default but no threshold — see comment above.
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=scripts/command_center",
+    "--cov-report=term-missing",
+]
+# Pilot tests (Phase 3) are async; auto mode means we don't need to mark
+# every test with @pytest.mark.asyncio.
+asyncio_mode = "auto"
+# Custom marks declared up-front so --strict-markers is happy when used.
+markers = [
+    "slow: tests that take >1s (e.g. Textual Pilot tests)",
+    "integration: end-to-end tests requiring real ROS or hardware",
+]
+
+[tool.coverage.run]
+source = ["scripts/command_center"]
+# Don't measure the test files themselves or the entry point shim.
+omit = [
+    "scripts/command_center/__main__.py",
+    "*/__pycache__/*",
+    "tests/*",
+]
+branch = true  # count branch coverage, not just lines — catches missed elif
+
+[tool.coverage.report]
+# Show lines that aren't covered so we know what to test next.
+show_missing = true
+skip_covered = false
+# Don't count these as missed coverage — they're trivial / unreachable
+# defensive plumbing.
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "\\.\\.\\.",  # `...` ellipsis bodies
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Match the existing source layout. exclude __pycache__ + legacy archive.
+src = ["scripts", "tests"]
+exclude = [
+    "archive",
+    "**/.pytest_cache",
+    "**/__pycache__",
+    # ROS-generated stuff and external repos we don't control.
+    "ros2_ws/build",
+    "ros2_ws/install",
+    "ros2_ws/src/rplidar_ros",
+    "ros2_ws/src/external_patches",
+]
+
+[tool.ruff.lint]
+# Curated rule sets — covers real bugs and modernization without nitpicking
+# style purely for taste. Add more as Phase 2/3 proceed.
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes (unused imports, undefined names, etc.)
+    "I",    # isort (import ordering)
+    "B",    # flake8-bugbear (common bug patterns)
+    "C4",   # flake8-comprehensions (suboptimal comprehensions)
+    "UP",   # pyupgrade (use modern syntax — f-strings, type unions)
+    "SIM",  # flake8-simplify (redundant boolean conditions, etc.)
+    "RUF",  # ruff-specific (catches misc issues)
+]
+ignore = [
+    "E501",  # line-too-long — handled by formatter, not lint
+    "B008",  # function-call-in-default-arg — Textual uses this idiomatically
+    "SIM108", # ternary-when-trivial — sometimes clearer as if/else
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can use bare asserts and don't need full typing.
+"tests/**/*.py" = ["F841"]  # F841: unused local — common in test setup
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.12"
+files = ["scripts/command_center"]
+# Lenient defaults — this codebase has no type annotations yet. Tighten
+# module-by-module as we add hints in refactors.
+warn_redundant_casts = true
+warn_unused_ignores = false       # textual stubs trigger many of these
+warn_unreachable = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+# We can't typecheck rclpy / textual without their stubs (textual ships
+# .pyi files but rclpy doesn't). Ignore the import resolution failures
+# so mypy can still check our own code.
+ignore_missing_imports = true
+# Don't fail on no-annotation functions — yet.
+strict_optional = false

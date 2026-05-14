@@ -10,12 +10,14 @@ the kinds of incidents that have actually broken live runs:
 
 Use these as primitives from any panel.
 """
+import contextlib
 import os
 import signal
 import socket
 import subprocess
 import threading
 import time
+from typing import ClassVar
 
 ROVAC_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -66,11 +68,22 @@ PI_SERVICES = [
 
 
 class ProcessManager:
-    def __init__(self, pi_host='192.168.1.200', pi_user='pi', log_fn=None):
+    def __init__(self, pi_host='192.168.1.200', pi_user='pi', log_fn=None,
+                 start_updater: bool = True):
+        """
+        Args:
+            pi_host, pi_user: SSH target for Pi service queries.
+            log_fn: receives ``str`` log lines; defaults to no-op.
+            start_updater: if True (default, used in production), spawn the
+                background updater thread that polls Pi services and Nav2
+                lifecycle every 5s. Tests pass ``False`` to avoid the
+                implicit thread + real SSH calls during construction.
+        """
         self.pi_host = pi_host
         self.pi_user = pi_user
         self._log_fn = log_fn or (lambda msg: None)
-        self.processes = {}  # name -> subprocess.Popen
+        # name -> subprocess.Popen for spawned Mac-side processes
+        self.processes: dict[str, subprocess.Popen] = {}
 
         # ── Thread safety ──────────────────────────────────────────────
         # `processes` mutated by Popen-spawning calls + Popen.poll() reads
@@ -102,8 +115,11 @@ class ProcessManager:
         # _stop_updater MUST be initialized before any worker thread can
         # call self.log() — log() reads it as the shutdown guard.
         self._stop_updater = threading.Event()
-        self._updater = threading.Thread(target=self._update_loop, daemon=True)
-        self._updater.start()
+        self._updater: threading.Thread | None = None
+        if start_updater:
+            self._updater = threading.Thread(target=self._update_loop,
+                                             daemon=True)
+            self._updater.start()
 
     def log(self, msg: str):
         """Log a message, but only if we're not shutting down. Worker
@@ -111,10 +127,8 @@ class ProcessManager:
         down; this guard prevents a late log from crashing the worker."""
         if self._stop_updater.is_set():
             return
-        try:
+        with contextlib.suppress(Exception):
             self._log_fn(msg)
-        except Exception:
-            pass
 
     def stop(self):
         """Stop the background updater. Call before exiting."""
@@ -194,7 +208,9 @@ class ProcessManager:
             try:
                 # Open the log fresh each spawn — old contents would be
                 # confusing if the previous run crashed and left errors.
-                log_fd = open(log_path, 'w')
+                # SIM115 not applicable: the fd is intentionally handed off
+                # to Popen and must outlive this scope.
+                log_fd = open(log_path, 'w')  # noqa: SIM115
                 proc = subprocess.Popen(
                     cmd,
                     stdout=log_fd,
@@ -216,17 +232,16 @@ class ProcessManager:
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
                 proc.wait(timeout=5)
             except Exception:
-                try:
+                with contextlib.suppress(Exception):
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except Exception:
-                    pass
             self.log(f'Stopped {name}')
         self.processes.pop(name, None)
 
     # Patterns we recognize for external-process kill on `X`. Mirrors the
     # detection in get_status() so what the panel shows as "running" is
     # what actually gets killed.
-    _EXTERNAL_KILL_PATTERNS = [
+    # ClassVar — immutable lookup table, never mutated on instances.
+    _EXTERNAL_KILL_PATTERNS: ClassVar[list[tuple[str, str]]] = [
         ('foxglove', 'foxglove_bridge'),
         ('slam', 'slam_toolbox'),
         ('nav2', 'nav2_launch.py'),
@@ -253,10 +268,8 @@ class ProcessManager:
                     capture_output=True, text=True, timeout=2)
                 for pid in r.stdout.strip().split('\n'):
                     if pid.strip().isdigit() and int(pid) != os.getpid():
-                        try:
+                        with contextlib.suppress(Exception):
                             os.kill(int(pid), signal.SIGTERM)
-                        except Exception:
-                            pass
             except Exception:
                 pass
 
@@ -286,10 +299,8 @@ class ProcessManager:
 
         def report(label, status):
             if on_step:
-                try:
+                with contextlib.suppress(Exception):
                     on_step(label, status)
-                except Exception:
-                    pass
             self.log(f'auto-start: {label} = {status}')
 
         def worker():
@@ -326,7 +337,7 @@ class ProcessManager:
                 report('Nav2', 'pending')
                 self._stop_pi_map_tf()  # async
                 ok = self._start_process('nav2',
-                    NAV2_CMD_TEMPLATE + [f'map:={map_file}'])
+                    [*NAV2_CMD_TEMPLATE, f'map:={map_file}'])
                 report('Nav2', 'ok' if ok else 'failed')
                 if not ok:
                     return
@@ -646,7 +657,7 @@ class ProcessManager:
 
     def start_nav2(self, map_file: str) -> bool:
         self._stop_pi_map_tf()
-        cmd = NAV2_CMD_TEMPLATE + [f'map:={map_file}']
+        cmd = [*NAV2_CMD_TEMPLATE, f'map:={map_file}']
         return self._start_process('nav2', cmd)
 
     def stop_nav2(self):
@@ -690,10 +701,8 @@ class ProcessManager:
         def worker():
             ok, out = self._ssh(cmd, timeout=8)
             if on_done:
-                try:
+                with contextlib.suppress(Exception):
                     on_done(ok, out)
-                except Exception:
-                    pass
         threading.Thread(target=worker, daemon=True).start()
 
     def pi_ssh_ok(self) -> bool:
@@ -717,7 +726,7 @@ class ProcessManager:
         )
         ok, out = self._ssh(cmd, timeout=10)
         if not ok:
-            return {svc: 'unknown' for svc in PI_SERVICES}
+            return dict.fromkeys(PI_SERVICES, 'unknown')
         result = {}
         for line in out.strip().split('\n'):
             if ':' in line:
@@ -925,7 +934,7 @@ class ProcessManager:
         nodes = ['/map_server', '/amcl', '/controller_server',
                  '/planner_server', '/behavior_server', '/velocity_smoother',
                  '/waypoint_follower', '/bt_navigator']
-        result = {n: 'unknown' for n in nodes}
+        result = dict.fromkeys(nodes, 'unknown')
         env_prefix = 'source ~/robots/rovac/config/ros2_env.sh 2>/dev/null; '
         label_re = re.compile(r"label='([a-z]+)'")
         for n in nodes:
@@ -970,7 +979,6 @@ class ProcessManager:
         zero screenshot ferrying.
         """
         import datetime
-        import tempfile
         ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         filepath = f'/tmp/rovac_diag_{ts}.txt'
 
@@ -1104,7 +1112,7 @@ class ProcessManager:
                         else:
                             lvl, node, msg = entry
                             count = 1
-                        cnt = f" (×{count})" if count > 1 else ""
+                        cnt = f" (x{count})" if count > 1 else ""
                         lines.append(f"  [{lvl}] {node}: {msg}{cnt}")
                     sections.append(_section(
                         '/rosout tail (last 50 WARN+)', '\n'.join(lines)))
