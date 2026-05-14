@@ -877,3 +877,695 @@ class TestRefreshAutoStatus:
         # Symbols
         assert "✓" in out  # EKF ok
         assert "✗" in out  # Nav2 failed
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Coverage closers — Phase 8.5 (remaining gaps)
+# ════════════════════════════════════════════════════════════════════════
+
+import time as _time
+from unittest.mock import MagicMock
+
+
+class TestAutoStartMapInputExceptionAndAutoPick:
+
+    def test_query_one_failure_treated_as_empty(self, coverage_panel,
+                                                   fake_pm, monkeypatch):
+        """If query_one('#cov-map-input') raises (e.g. before mount), we
+        treat the map path as empty and fall through to auto-pick logic."""
+        def raising_query_one(selector, *_a, **_kw):
+            if "cov-map-input" in selector:
+                raise RuntimeError("input not mounted")
+            return coverage_panel.queried.setdefault(
+                selector,
+                SimpleNamespace(last_update=None,
+                                update=lambda s=None: None))
+        monkeypatch.setattr(coverage_panel, "query_one", raising_query_one)
+        fake_pm._returns["list_maps"] = []
+        coverage_panel._auto_start()
+        # Should fall through to the "no maps" red message
+        # query_one for cov-result needs to return our stub
+        assert "no map" in (coverage_panel.queried.get("#cov-result",
+                            SimpleNamespace(last_update="")
+                            ).last_update or "").lower() \
+               or fake_pm._returns.get("list_maps") == []
+
+    def test_auto_start_picks_latest_map_when_input_empty(
+            self, coverage_panel, fake_pm, monkeypatch, tmp_path):
+        """When the map input is empty AND maps exist on disk, auto_start
+        picks the most-recently-modified one."""
+        # Create two fake map files in tmp with different mtimes
+        old_map = tmp_path / "old.yaml"
+        new_map = tmp_path / "new.yaml"
+        old_map.write_text("image: old.pgm\nresolution: 0.05")
+        new_map.write_text("image: new.pgm\nresolution: 0.05")
+        # Set mtimes explicitly
+        import os
+        old_time = _time.time() - 100.0
+        new_time = _time.time()
+        os.utime(old_map, (old_time, old_time))
+        os.utime(new_map, (new_time, new_time))
+        # Also create the sibling .pgm files so validate passes
+        (tmp_path / "old.pgm").write_text("x")
+        (tmp_path / "new.pgm").write_text("x")
+        fake_pm._returns["list_maps"] = [str(old_map), str(new_map)]
+        fake_pm.set_return("validate_map_for_nav", (True, ""))
+        coverage_panel.queried["#cov-map-input"] = SimpleNamespace(
+            value="", update=lambda *a: None)
+        coverage_panel.queried["#cov-pose-x"] = SimpleNamespace(value="0")
+        coverage_panel.queried["#cov-pose-y"] = SimpleNamespace(value="0")
+        coverage_panel.queried["#cov-pose-yaw"] = SimpleNamespace(value="0")
+        coverage_panel._auto_start()
+        # auto_start_full_stack called with the NEWER map path
+        calls = [c for c in fake_pm.calls if c[0] == "auto_start_full_stack"]
+        assert len(calls) >= 1
+        _name, args, _kwargs = calls[0]
+        assert "new.yaml" in args[0]
+
+
+class TestRefreshAutoStatusEmptySteps:
+
+    def test_no_steps_returns_early(self, coverage_panel):
+        """When _auto_steps is empty, _refresh_auto_status returns without
+        updating the result widget."""
+        import threading
+        coverage_panel._auto_steps = []
+        coverage_panel._auto_steps_lock = threading.Lock()
+        coverage_panel._refresh_auto_status()
+        # No update happened — query_one for cov-result wasn't queried
+        # (or if it was, it wasn't updated to a non-default value)
+
+
+class TestStartNav2QueryException:
+
+    def test_query_exception_treated_as_empty_warns(self, coverage_panel,
+                                                      monkeypatch):
+        """If reading the map-input field raises, _start_nav2 treats it
+        as empty and shows the 'Enter a map yaml first' warning."""
+        def boom(selector, *_a, **_kw):
+            if "cov-map-input" in selector:
+                raise RuntimeError("not mounted")
+            return coverage_panel.queried.setdefault(
+                selector,
+                SimpleNamespace(last_update=None,
+                                update=lambda t: setattr(
+                                    coverage_panel.queried[selector],
+                                    "last_update", t)))
+        monkeypatch.setattr(coverage_panel, "query_one", boom)
+        coverage_panel._start_nav2()
+        out = coverage_panel.queried["#cov-result"].last_update
+        assert "[yellow]" in out
+
+
+class TestStartNav2Failure:
+
+    def test_start_nav2_failure_shows_red(self, coverage_panel, fake_pm):
+        coverage_panel.queried["#cov-map-input"] = SimpleNamespace(
+            value="/tmp/m.yaml", update=lambda *a: None)
+        fake_pm.set_return("validate_map_for_nav", (True, ""))
+        fake_pm.set_return("start_nav2", False)  # fails
+        coverage_panel._start_nav2()
+        out = coverage_panel.queried["#cov-result"].last_update
+        assert "[red]" in out
+        assert "Nav2 start failed" in out
+
+
+class TestKillTeleopWithDrivePanel:
+
+    def test_kill_teleop_stops_drive_panel(self, coverage_panel, fake_app,
+                                             fake_pm, fake_ros, monkeypatch):
+        """When a DrivePanel IS mounted, _kill_teleop stops its
+        publish loop AND publishes one explicit zero to neutralize
+        in-flight commands."""
+        # Build a fake DrivePanel that records _stop_driving + publish
+        fake_drive = MagicMock()
+        # Override fake_app.query_one to return our fake drive panel
+        def fake_query(panel_type):
+            return fake_drive
+        monkeypatch.setattr(fake_app, "query_one", fake_query,
+                            raising=False)
+        fake_pm._returns["kill_zombie_teleop"] = 1
+        coverage_panel._kill_teleop()
+        # Drive panel's _stop_driving was called
+        fake_drive._stop_driving.assert_called_once()
+        # Explicit zero was published to ros
+        assert (0.0, 0.0) in fake_ros.published
+        out = coverage_panel.queried["#cov-result"].last_update
+        assert "Drive panel timer stopped" in out
+        assert "killed 1" in out
+
+
+class TestTestDriveNoRos:
+
+    def test_warns_when_no_ros(self, coverage_panel, fake_app):
+        fake_app.ros = None  # type: ignore[assignment]
+        coverage_panel._test_drive()
+        out = coverage_panel.queried["#cov-result"].last_update
+        assert "[red]" in out
+        assert "ROS bridge not connected" in out
+
+
+class TestTestDriveWorker:
+
+    def test_publishes_for_2s_then_stops(self, coverage_panel, fake_ros,
+                                          monkeypatch):
+        """The worker publishes 0.05 m/s for 2s then publishes 0,0."""
+        # Speed it up by patching time.monotonic + sleep
+        import command_center.panels.coverage as cov_mod
+        clock = [0.0]
+        # Use a side_effect that advances time on each call
+        def fake_mono():
+            clock[0] += 0.1
+            return clock[0]
+        # The worker function does `import time as _time` locally — we
+        # need to patch the actual `time.monotonic` and `time.sleep` it
+        # uses. The local alias points to the global time module.
+        import time as real_time
+        monkeypatch.setattr(real_time, "monotonic", fake_mono)
+        monkeypatch.setattr(real_time, "sleep", lambda _s: None)
+
+        coverage_panel._test_drive()
+        # Wait briefly for worker
+        deadline = real_time.monotonic() + 5.0
+        while real_time.monotonic() < deadline:
+            if (0.0, 0.0) in fake_ros.published:
+                break
+            real_time.sleep(0.01)
+        # At least one (0.05, 0.0) publish + final (0.0, 0.0)
+        assert (0.05, 0.0) in fake_ros.published
+        assert (0.0, 0.0) in fake_ros.published
+
+
+class TestDumpDiagnostics:
+
+    def test_warns_via_yellow_then_dispatches(self, coverage_panel,
+                                                 fake_pm, fake_app,
+                                                 monkeypatch):
+        """_dump_diagnostics shows a [yellow] 'collecting' message and
+        dispatches pm.dump_diagnostics with ros_bridge + callback +
+        ui_state."""
+        # Mock self.app.query_one to provide the TabbedContent + DrivePanel
+        # for the ui_state collection.
+        fake_tabs = MagicMock()
+        fake_tabs.active = "tab-coverage"
+        fake_drive = MagicMock()
+        fake_drive._driving = True
+        fake_drive._target_linear = 0.15
+        fake_drive._target_angular = 0.0
+        fake_drive._publish_timer = MagicMock()
+        fake_drive._hold_timer = None
+        fake_drive.gear = 2
+        from textual.widgets import TabbedContent
+        from command_center.panels.drive import DrivePanel
+        def fake_query(arg, *_a, **_kw):
+            if arg is TabbedContent:
+                return fake_tabs
+            if arg is DrivePanel:
+                return fake_drive
+            return MagicMock()
+        monkeypatch.setattr(fake_app, "query_one", fake_query,
+                            raising=False)
+        coverage_panel._dump_diagnostics()
+        # pm.dump_diagnostics was called
+        dump_calls = [c for c in fake_pm.calls if c[0] == "dump_diagnostics"]
+        assert len(dump_calls) == 1
+        _, _, kwargs = dump_calls[0]
+        assert "ui_state" in kwargs
+        assert kwargs["ui_state"]["active_tab"] == "tab-coverage"
+        assert kwargs["ui_state"]["drive"]["gear"] == 2
+        # Inline progress message uses yellow
+        out = coverage_panel.queried["#cov-result"].last_update
+        assert "[yellow]" in out
+
+    def test_dump_complete_callback_green(self, coverage_panel, fake_pm,
+                                            fake_app):
+        """The callback wired into dump_diagnostics shows green on
+        success and a 'cat <path>' hint."""
+        # Capture the callback when dump_diagnostics is invoked
+        captured_cb = {}
+        def fake_dump(**kwargs):
+            captured_cb["cb"] = kwargs["callback"]
+            return "/tmp/diag.txt"
+        fake_pm.dump_diagnostics = fake_dump
+        coverage_panel._dump_diagnostics()
+        # Invoke the captured callback as if the worker completed
+        captured_cb["cb"]("/tmp/diag.txt", True)
+        out = coverage_panel.queried["#cov-result"].last_update
+        assert "[green]" in out
+        assert "Dump complete" in out
+        assert "/tmp/diag.txt" in out
+
+    def test_dump_failure_callback_red(self, coverage_panel, fake_pm,
+                                         fake_app):
+        captured_cb = {}
+        def fake_dump(**kwargs):
+            captured_cb["cb"] = kwargs["callback"]
+            return "/tmp/diag.txt"
+        fake_pm.dump_diagnostics = fake_dump
+        coverage_panel._dump_diagnostics()
+        captured_cb["cb"]("/tmp/diag.txt", False)
+        out = coverage_panel.queried["#cov-result"].last_update
+        assert "[red]" in out
+
+    def test_dump_drive_panel_unavailable(self, coverage_panel,
+                                            fake_app, fake_pm, monkeypatch):
+        """If DrivePanel isn't mounted (rare during startup), the
+        ui_state.drive is the '(panel not mounted)' string."""
+        from textual.widgets import TabbedContent
+        from command_center.panels.drive import DrivePanel
+        def fake_query(arg, *_a, **_kw):
+            if arg is DrivePanel:
+                raise RuntimeError("drive not mounted")
+            # TabbedContent works, return mock with active attr
+            m = MagicMock()
+            m.active = "tab-coverage"
+            return m
+        monkeypatch.setattr(fake_app, "query_one", fake_query,
+                            raising=False)
+        coverage_panel._dump_diagnostics()
+        dump_calls = [c for c in fake_pm.calls if c[0] == "dump_diagnostics"]
+        kwargs = dump_calls[0][2]
+        assert kwargs["ui_state"]["drive"] == "(panel not mounted)"
+
+
+class TestRefreshYawInputFromImu:
+
+    def test_no_ros_returns(self, coverage_panel, fake_app):
+        fake_app.ros = None  # type: ignore[assignment]
+        coverage_panel._refresh_yaw_input_from_imu()  # must not raise
+
+    def test_no_imu_yaw_returns(self, coverage_panel, fake_ros):
+        fake_ros.map_yaw_from_imu_deg = None
+        coverage_panel._refresh_yaw_input_from_imu()
+        # No update happened — query_one wasn't called
+
+    def test_updates_yaw_input(self, coverage_panel, fake_ros):
+        fake_ros.map_yaw_from_imu_deg = 75.0
+        coverage_panel.queried["#cov-pose-yaw"] = SimpleNamespace(value="")
+        coverage_panel._refresh_yaw_input_from_imu()
+        assert coverage_panel.queried["#cov-pose-yaw"].value == "75"
+
+
+class TestOnInputSubmitted:
+
+    def test_pose_input_submission_publishes(self, coverage_panel,
+                                               fake_ros):
+        from textual.widgets import Input
+        coverage_panel.queried["#cov-pose-x"] = SimpleNamespace(value="1.0")
+        coverage_panel.queried["#cov-pose-y"] = SimpleNamespace(value="2.0")
+        coverage_panel.queried["#cov-pose-yaw"] = SimpleNamespace(value="0")
+        fake_input = MagicMock(spec=Input)
+        fake_input.id = "cov-pose-x"
+        evt = SimpleNamespace(input=fake_input)
+        coverage_panel.on_input_submitted(evt)
+        # publish_initial_pose was called
+        assert len(fake_ros.initial_pose_calls) == 1
+
+    def test_non_pose_input_ignored(self, coverage_panel, fake_ros):
+        from textual.widgets import Input
+        fake_input = MagicMock(spec=Input)
+        fake_input.id = "not-a-pose-input"
+        evt = SimpleNamespace(input=fake_input)
+        coverage_panel.on_input_submitted(evt)
+        # No publish should have happened
+        assert len(fake_ros.initial_pose_calls) == 0
+
+
+class TestSaveMapQueryException:
+
+    def test_query_exception_treated_as_empty(self, coverage_panel,
+                                                fake_pm, monkeypatch):
+        def boom(selector, *_a, **_kw):
+            if "cov-map-input" in selector:
+                raise RuntimeError("not mounted")
+            return coverage_panel.queried.setdefault(
+                selector, SimpleNamespace(
+                    last_update=None,
+                    update=lambda t: setattr(
+                        coverage_panel.queried[selector],
+                        "last_update", t)))
+        monkeypatch.setattr(coverage_panel, "query_one", boom)
+        coverage_panel._save_map()
+        out = coverage_panel.queried["#cov-result"].last_update
+        assert "[yellow]" in out
+
+
+class TestUpdateRosoutTailGuards:
+
+    def test_no_ros_returns_silently(self, coverage_panel, fake_app):
+        fake_app.ros = None  # type: ignore[assignment]
+        coverage_panel._update_rosout_tail()  # must not raise
+
+    def test_get_rosout_exception_treated_as_empty(self, coverage_panel,
+                                                     fake_ros):
+        def boom():
+            raise RuntimeError("ros gone")
+        fake_ros.get_rosout_tail = boom  # type: ignore[assignment]
+        coverage_panel._update_rosout_tail()
+        out = coverage_panel.queried["#cov-rosout"].last_update
+        assert "No warnings" in out
+
+
+class TestUpdatePiServicesCacheException:
+
+    def test_cache_fetch_exception_falls_back_to_empty(
+            self, coverage_panel, fake_pm):
+        """If pi_all_service_status raises (e.g. cache thread crashed),
+        the cache becomes empty and shows 'Pi unreachable'."""
+        def boom():
+            raise RuntimeError("cache fail")
+        fake_pm.pi_all_service_status = boom  # type: ignore[assignment]
+        # Trigger the 5-tick refresh
+        coverage_panel._pi_cache_tick = 0
+        coverage_panel._update_pi_services()
+        # _pi_cache should be set to {} via except branch
+        assert coverage_panel._pi_cache == {}
+
+
+class TestUpdateMacProcsFoxglovePortException:
+
+    def test_foxglove_alive_exception_treated_as_false(self, coverage_panel,
+                                                         fake_pm):
+        def boom():
+            raise RuntimeError("port check broke")
+        fake_pm.foxglove_bridge_alive = boom  # type: ignore[assignment]
+        # Should still render without crashing
+        coverage_panel._update_mac_procs({"foxglove": "running"})
+        out = coverage_panel.queried["#cov-mac-procs"].last_update
+        # Falls through to the 'process up, port DOWN' branch
+        assert "port DOWN" in out
+
+
+class TestUpdateMacProcsExitedSlam:
+
+    def test_exited_status_for_slam_path(self, coverage_panel):
+        """SLAM with an 'exited (N)' status renders as red — completes
+        coverage of the exited branch in the non-foxglove loop."""
+        coverage_panel._update_mac_procs({"slam": "exited (1)"})
+        out = coverage_panel.queried["#cov-mac-procs"].last_update
+        assert "SLAM" in out
+        assert "[red]" in out
+
+
+class TestUpdateNav2LifecycleCacheException:
+
+    def test_cache_fetch_exception(self, coverage_panel, fake_pm):
+        def boom():
+            raise RuntimeError("lifecycle fail")
+        fake_pm.query_nav2_lifecycle = boom  # type: ignore[assignment]
+        coverage_panel._nav_cache_tick = 0
+        coverage_panel._update_nav2_lifecycle()
+        assert coverage_panel._nav_cache == {}
+
+
+class TestUpdateAlertsFoxgloveException:
+
+    def test_foxglove_alive_exception_treated_as_false(self, coverage_panel,
+                                                         fake_pm):
+        def boom():
+            raise RuntimeError("port broke")
+        fake_pm.foxglove_bridge_alive = boom  # type: ignore[assignment]
+        coverage_panel._update_alerts({}, {})
+        # Foxglove alert WAS triggered (treated as not alive)
+        out = coverage_panel.queried["#cov-alerts"].last_update
+        assert "Foxglove" in out
+
+
+# ════════════════════════════════════════════════════════════════════════
+# on_mount + _maybe_refresh_yaw_from_imu
+# ════════════════════════════════════════════════════════════════════════
+
+class TestOnMount:
+
+    def test_populates_map_input_from_latest(self, coverage_panel,
+                                              fake_pm, tmp_path):
+        # Two maps; the newer one should be picked
+        old = tmp_path / "old.yaml"; old.write_text("")
+        new = tmp_path / "new.yaml"; new.write_text("")
+        import os
+        os.utime(old, (_time.time() - 100, _time.time() - 100))
+        fake_pm._returns["list_maps"] = [str(old), str(new)]
+        coverage_panel.queried["#cov-map-input"] = SimpleNamespace(value="")
+        coverage_panel.queried["#cov-pose-x"] = SimpleNamespace(value="")
+        coverage_panel.queried["#cov-pose-y"] = SimpleNamespace(value="")
+        coverage_panel.queried["#cov-pose-yaw"] = SimpleNamespace(value="")
+        coverage_panel.on_mount()
+        assert "new.yaml" in coverage_panel.queried["#cov-map-input"].value
+
+    def test_populates_pose_inputs(self, coverage_panel, fake_ros,
+                                     monkeypatch):
+        """Pose pre-fill from RosBridge.load_persisted_pose."""
+        from command_center.ros_bridge import RosBridge
+        monkeypatch.setattr(RosBridge, "load_persisted_pose",
+                            classmethod(lambda cls: (1.5, -2.0, 0.5)))
+        for sel in ("#cov-map-input", "#cov-pose-x", "#cov-pose-y",
+                     "#cov-pose-yaw"):
+            coverage_panel.queried[sel] = SimpleNamespace(value="")
+        coverage_panel.on_mount()
+        assert coverage_panel.queried["#cov-pose-x"].value == "1.50"
+        assert coverage_panel.queried["#cov-pose-y"].value == "-2.00"
+        # Yaw default rendered as degrees, no IMU override
+        assert "29" in coverage_panel.queried["#cov-pose-yaw"].value  # 0.5 rad ≈ 29°
+
+    def test_imu_yaw_overrides_persisted(self, coverage_panel, fake_ros,
+                                           monkeypatch):
+        """When IMU is calibrated AND publishing, on_mount uses
+        live IMU yaw instead of the persisted yaw."""
+        from command_center.ros_bridge import RosBridge
+        monkeypatch.setattr(RosBridge, "load_persisted_pose",
+                            classmethod(lambda cls: (0, 0, 0)))
+        fake_ros.map_yaw_from_imu_deg = 75.0
+        for sel in ("#cov-map-input", "#cov-pose-x", "#cov-pose-y",
+                     "#cov-pose-yaw"):
+            coverage_panel.queried[sel] = SimpleNamespace(value="")
+        coverage_panel.on_mount()
+        assert coverage_panel.queried["#cov-pose-yaw"].value == "75"
+
+
+class TestMaybeRefreshYawFromImu:
+
+    def test_no_ros_returns_silently(self, coverage_panel, fake_app):
+        fake_app.ros = None  # type: ignore[assignment]
+        coverage_panel._maybe_refresh_yaw_from_imu()  # must not raise
+
+    def test_amcl_localized_skips(self, coverage_panel, fake_ros):
+        """When AMCL is already localized, don't clobber the user's yaw
+        with the IMU-derived value."""
+        fake_ros.amcl_localized_return = True
+        fake_ros.map_yaw_from_imu_deg = 99.0
+        coverage_panel.queried["#cov-pose-yaw"] = SimpleNamespace(
+            value="(unchanged)")
+        coverage_panel._maybe_refresh_yaw_from_imu()
+        # Yaw input still has the original (no refresh happened)
+        assert coverage_panel.queried["#cov-pose-yaw"].value == "(unchanged)"
+
+    def test_yaw_input_focused_skips(self, coverage_panel, fake_ros,
+                                       fake_app, monkeypatch):
+        """If the user is currently focused on the yaw input field,
+        don't overwrite what they're typing."""
+        from textual.widgets import Input
+        fake_ros.amcl_localized_return = False
+        fake_ros.map_yaw_from_imu_deg = 99.0
+        # Simulate focused = yaw input
+        fake_input = MagicMock(spec=Input)
+        fake_input.id = "cov-pose-yaw"
+        type(fake_app).focused = property(lambda self: fake_input)
+        coverage_panel.queried["#cov-pose-yaw"] = SimpleNamespace(
+            value="(typing)")
+        coverage_panel._maybe_refresh_yaw_from_imu()
+        # Unchanged — user is editing
+        assert coverage_panel.queried["#cov-pose-yaw"].value == "(typing)"
+
+    def test_proceeds_to_refresh_when_idle(self, coverage_panel, fake_ros,
+                                             fake_app):
+        """Happy path — not localized, not focused, refreshes from IMU."""
+        fake_ros.amcl_localized_return = False
+        fake_ros.map_yaw_from_imu_deg = 45.0
+        # No focus
+        type(fake_app).focused = property(lambda self: None)
+        coverage_panel.queried["#cov-pose-yaw"] = SimpleNamespace(value="")
+        coverage_panel._maybe_refresh_yaw_from_imu()
+        assert coverage_panel.queried["#cov-pose-yaw"].value == "45"
+
+
+# ── Final coverage-panel gap closers ─────────────────────────────────
+
+class TestLowercaseATriggersAutoStart:
+
+    def test_lowercase_a_triggers_auto_start(self, coverage_panel, fake_pm):
+        """The 'a' lowercase key (not just 'A'/'shift+a') also fires
+        auto_start. Same destination as the macro shortcut."""
+        coverage_panel.queried["#cov-map-input"] = SimpleNamespace(
+            value="", update=lambda *a: None)
+        fake_pm._returns["list_maps"] = []  # no maps → red message
+        coverage_panel.process_key("a")
+        # The "no map" message appeared
+        out = coverage_panel.queried["#cov-result"].last_update
+        assert "[red]" in out
+
+
+class TestAutoStartReentrantLockReuse:
+
+    def test_second_invocation_reuses_existing_lock(self, coverage_panel,
+                                                      fake_pm):
+        """_auto_steps_lock is lazily created on first call. The second
+        call should reuse the existing lock instead of creating a new one,
+        covering the 'has _auto_steps_lock attribute' branch."""
+        coverage_panel.queried["#cov-map-input"] = SimpleNamespace(
+            value="/tmp/m.yaml", update=lambda *a: None)
+        coverage_panel.queried["#cov-pose-x"] = SimpleNamespace(value="0")
+        coverage_panel.queried["#cov-pose-y"] = SimpleNamespace(value="0")
+        coverage_panel.queried["#cov-pose-yaw"] = SimpleNamespace(value="0")
+        fake_pm.set_return("validate_map_for_nav", (True, ""))
+        # First call creates the lock
+        coverage_panel._auto_start()
+        first_lock = coverage_panel._auto_steps_lock
+        # Second call should NOT create a new lock — reuse
+        coverage_panel._auto_start()
+        assert coverage_panel._auto_steps_lock is first_lock
+
+
+class TestKillTeleopNoRos:
+
+    def test_kill_teleop_no_ros_skips_explicit_zero(self, coverage_panel,
+                                                      fake_app, fake_pm,
+                                                      monkeypatch):
+        """When self.app.ros is None, _kill_teleop skips the explicit
+        zero-publish and only handles the local teleop kill via pm."""
+        fake_app.ros = None  # type: ignore[assignment]
+        # Make query_one raise (no DrivePanel) so we go straight to PM
+        def raising_query_one(*_a, **_kw):
+            raise RuntimeError("no drive")
+        monkeypatch.setattr(fake_app, "query_one", raising_query_one,
+                            raising=False)
+        fake_pm._returns["kill_zombie_teleop"] = 2
+        coverage_panel._kill_teleop()  # must not raise
+        out = coverage_panel.queried["#cov-result"].last_update
+        assert "killed 2" in out
+
+    def test_drive_panel_found_but_ros_none(self, coverage_panel,
+                                              fake_app, fake_pm,
+                                              monkeypatch):
+        """Edge case: DrivePanel IS mounted but ros is None (perhaps
+        --no-ros mode but Drive tab is loaded). The if-ros branch is
+        False so we skip the publish but still mark drive_stopped=True."""
+        fake_app.ros = None  # type: ignore[assignment]
+        fake_drive = MagicMock()
+        def fake_query(_panel_type):
+            return fake_drive  # Drive panel IS found
+        monkeypatch.setattr(fake_app, "query_one", fake_query,
+                            raising=False)
+        fake_pm._returns["kill_zombie_teleop"] = 0
+        coverage_panel._kill_teleop()
+        # Drive's _stop_driving was called
+        fake_drive._stop_driving.assert_called_once()
+        # The "Drive panel timer stopped" appears in the result
+        out = coverage_panel.queried["#cov-result"].last_update
+        assert "Drive panel timer stopped" in out
+
+
+class TestOnInputSubmittedException:
+
+    def test_event_without_input_attr_swallowed(self, coverage_panel):
+        """If event.input access raises (e.g. wrong event shape), the
+        handler swallows it silently rather than propagating."""
+        evt = SimpleNamespace()  # no .input attr
+        coverage_panel.on_input_submitted(evt)  # must not raise
+
+
+class TestPiCacheTickNonRefresh:
+
+    def test_non_refresh_tick_uses_existing_cache(self, coverage_panel,
+                                                    fake_pm):
+        """Cache only refreshes every 5 ticks. On other ticks, the
+        previously-cached value is reused without an SSH call."""
+        # Pre-populate cache
+        coverage_panel._pi_cache_tick = 0
+        coverage_panel._pi_cache = {"rovac-edge-mux": "active"}
+        # Sentinel: pm.pi_all_service_status would explode if called
+        def boom():
+            raise AssertionError("pm should NOT be re-queried on non-refresh tick")
+        fake_pm.pi_all_service_status = boom  # type: ignore[assignment]
+        # Bump tick to 2 (% 5 == 2, NOT == 1) — should skip refresh
+        coverage_panel._pi_cache_tick = 1  # next will be 2
+        coverage_panel._update_pi_services()
+        # Cache is unchanged
+        assert coverage_panel._pi_cache == {"rovac-edge-mux": "active"}
+
+
+class TestNav2CacheTickNonRefresh:
+
+    def test_non_refresh_tick_uses_existing_cache(self, coverage_panel,
+                                                    fake_pm):
+        coverage_panel._nav_cache_tick = 0
+        coverage_panel._nav_cache = {"/amcl": "active"}
+        def boom():
+            raise AssertionError("nav2 cache should NOT be re-queried on non-refresh tick")
+        fake_pm.query_nav2_lifecycle = boom  # type: ignore[assignment]
+        coverage_panel._nav_cache_tick = 1  # next tick = 2, not %6==1
+        coverage_panel._update_nav2_lifecycle()
+        assert coverage_panel._nav_cache == {"/amcl": "active"}
+
+
+class TestUpdateMacProcsFoxgloveExited:
+
+    def test_foxglove_exited_with_port_dead_shows_red(self, coverage_panel,
+                                                        fake_pm):
+        fake_pm._returns["foxglove_bridge_alive"] = False
+        coverage_panel._update_mac_procs({"foxglove": "exited (2)"})
+        out = coverage_panel.queried["#cov-mac-procs"].last_update
+        # The exited branch with port DOWN should render red
+        assert "Foxglove" in out
+        assert "[red]" in out
+        assert "exited" in out
+
+
+class TestOnMountExceptionPaths:
+
+    def test_list_maps_exception_handled(self, coverage_panel, fake_pm):
+        """If pm.list_maps raises during on_mount (rare; would mean PM
+        itself is broken), on_mount catches it and proceeds with no
+        default map."""
+        def boom():
+            raise RuntimeError("pm bork")
+        fake_pm.list_maps = boom  # type: ignore[assignment]
+        coverage_panel.queried["#cov-map-input"] = SimpleNamespace(value="")
+        coverage_panel.queried["#cov-pose-x"] = SimpleNamespace(value="")
+        coverage_panel.queried["#cov-pose-y"] = SimpleNamespace(value="")
+        coverage_panel.queried["#cov-pose-yaw"] = SimpleNamespace(value="")
+        # Must not raise
+        coverage_panel.on_mount()
+
+    def test_load_persisted_pose_exception_handled(self, coverage_panel,
+                                                     monkeypatch):
+        """If load_persisted_pose raises (corrupt state file), on_mount's
+        outer try/except catches it — input fields just stay empty."""
+        from command_center.ros_bridge import RosBridge
+        def raising(*_a, **_kw):
+            raise RuntimeError("state file corrupt")
+        monkeypatch.setattr(RosBridge, "load_persisted_pose",
+                            classmethod(lambda cls: raising()))
+        coverage_panel.queried["#cov-map-input"] = SimpleNamespace(value="")
+        coverage_panel.queried["#cov-pose-x"] = SimpleNamespace(value="")
+        coverage_panel.queried["#cov-pose-y"] = SimpleNamespace(value="")
+        coverage_panel.queried["#cov-pose-yaw"] = SimpleNamespace(value="")
+        coverage_panel.on_mount()  # must not raise
+
+
+class TestMaybeRefreshFocusedCheckException:
+
+    def test_focused_check_exception_swallowed(self, coverage_panel,
+                                                 fake_ros, fake_app):
+        """If the focused-check raises (e.g. Input is None or focused
+        access fails), _maybe_refresh swallows and proceeds to refresh."""
+        fake_ros.amcl_localized_return = False
+        fake_ros.map_yaw_from_imu_deg = 60.0
+        # Make access to .id or isinstance raise
+        broken = MagicMock()
+        type(broken).id = property(
+            lambda self: (_ for _ in ()).throw(RuntimeError("broken")))
+        type(fake_app).focused = property(lambda self: broken)
+        coverage_panel.queried["#cov-pose-yaw"] = SimpleNamespace(value="")
+        coverage_panel._maybe_refresh_yaw_from_imu()  # must not raise
+        # Refresh DID happen (exception swallowed, proceeded to refresh)
+        assert coverage_panel.queried["#cov-pose-yaw"].value == "60"

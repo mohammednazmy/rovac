@@ -845,3 +845,244 @@ class TestTapDisplacement:
         assert deg > 2, (
             f"gear {gear+1}: tap rotates only {deg:.1f}° (~nothing). "
             "Has the ramp_min been clobbered or HOLD_INITIAL set too low?")
+
+
+# ── Coverage closer: gear-down while driving rescales targets ──────────
+
+class TestGearDownWhileDriving:
+
+    def test_gear_down_while_driving_rescales_targets(self, drive_panel):
+        # Drive forward at gear 2, then gear down
+        drive_panel.process_key("w")
+        assert drive_panel._target_linear == pytest.approx(
+            drive.SPEED_PRESETS[2][0])
+        drive_panel.process_key("minus")
+        # After gear down (now gear 1), the target should be rescaled to
+        # gear 1's lin_speed
+        assert drive_panel._target_linear == pytest.approx(
+            drive.SPEED_PRESETS[1][0])
+
+
+# ── Coverage closer: pipeline hint paths for MUX red ───────────────────
+
+class TestPipelineHintForMuxRed:
+
+    def _baseline(self, **overrides):
+        sig = {
+            "ros_connected": True, "driving": True,
+            "cmd_lin": 0.15, "cmd_ang": 0.0,
+            "odom_vx": 0.14, "odom_wz": 0.0,
+            "teleop_hz": 20.0, "cmd_vel_hz": 20.0,
+            "mux_active": "TELEOP", "odom_hz": 20.0,
+        }
+        sig.update(overrides)
+        return sig
+
+    def test_mux_idle_sustained_hint(self, drive_panel, monkeypatch):
+        """When MUX shows IDLE while driving for sustain duration, hint
+        explains 'teleop msgs not reaching mux (QoS mismatch?)'."""
+        clock = [0.0]
+        monkeypatch.setattr(drive.time, "monotonic", lambda: clock[0])
+        sig = self._baseline(mux_active="IDLE")
+        drive_panel._compute_pipeline_status(sig)  # start sustained timer
+        clock[0] += 3.0  # > 2.0s threshold for silent → red
+        _, hint = drive_panel._compute_pipeline_status(sig)
+        assert "IDLE" in hint
+        assert "QoS mismatch" in hint
+
+    def test_mux_empty_sustained_hint(self, drive_panel, monkeypatch):
+        """When mux_active is '' (mux service down, no value received),
+        sustained → red with 'service likely down' hint."""
+        clock = [0.0]
+        monkeypatch.setattr(drive.time, "monotonic", lambda: clock[0])
+        sig = self._baseline(mux_active="")
+        drive_panel._compute_pipeline_status(sig)
+        clock[0] += 3.0
+        _, hint = drive_panel._compute_pipeline_status(sig)
+        assert "service likely down" in hint
+
+
+# ── Coverage closer: pipeline rendering branches ───────────────────────
+
+class TestPipelineRendering:
+
+    def test_pipeline_diagnostic_error_swallowed(self, drive_panel,
+                                                   monkeypatch):
+        """If _compute_pipeline_status raises, the panel renders all-red
+        with a 'pipeline diagnostic error' hint rather than crashing."""
+        def boom(_sig):
+            raise RuntimeError("compute boom")
+        monkeypatch.setattr(drive_panel, "_compute_pipeline_status", boom)
+        drive_panel.update_state(
+            {"ros_connected": True, "cmd_vel_linear": 0.1}, [], {})
+        # Should not raise — pipeline panel still updates (with red fallback)
+        out = drive_panel.queried["#drive-pipeline"].last_update
+        assert "pipeline diagnostic error" in out
+
+    def test_pipeline_idle_hint(self, drive_panel):
+        """When not driving AND no upstream cell is red (esp32 is green
+        because odom is flowing), the hint line shows 'idle — press a
+        drive key to test the full pipeline'."""
+        drive_panel.update_state(
+            {"ros_connected": True, "odom_hz": 20.0}, [], {})
+        out = drive_panel.queried["#drive-pipeline"].last_update
+        assert "idle" in out
+        assert "press a drive key" in out
+
+    def test_pipeline_nominal_hint_when_all_green(self, drive_panel):
+        """When driving and every cell is green, the hint shows 'all
+        checkpoints nominal'."""
+        state = {
+            "ros_connected": True,
+            "cmd_vel_linear": 0.15, "cmd_vel_angular": 0.0,
+            "odom_vx": 0.14, "odom_wz": 0.0,
+            "odom_hz": 20.0,
+            "mux_active": "TELEOP",
+            "cmd_vel_teleop_hz": 20.0, "cmd_vel_hz": 20.0,
+        }
+        # Drive the bridge's Hz trackers to report 20 Hz
+        drive_panel._app.ros._hz["cmd_vel_teleop"]._hz = 20.0
+        drive_panel._app.ros._hz["cmd_vel"]._hz = 20.0
+        drive_panel.update_state(state, [], {})
+        out = drive_panel.queried["#drive-pipeline"].last_update
+        assert "all checkpoints nominal" in out
+
+
+# ── Coverage closer: build_pipeline_metrics MUX-yellow countdown ───────
+
+class TestBuildPipelineMetricsCountdown:
+
+    def test_mux_yellow_silent_shows_countdown(self, drive_panel,
+                                                 monkeypatch):
+        """When MUX is yellow (IDLE during drive, not yet sustained), the
+        metric cell shows a 'IDLE 0.5/2.0s' countdown so the user can
+        predict when it'll flip red."""
+        clock = [0.0]
+        monkeypatch.setattr(drive.time, "monotonic", lambda: clock[0])
+        sig = {
+            "ros_connected": True, "driving": True,
+            "cmd_lin": 0.15, "cmd_ang": 0.0,
+            "odom_vx": 0.14, "odom_wz": 0.0,
+            "teleop_hz": 20.0, "cmd_vel_hz": 20.0,
+            "mux_active": "IDLE", "odom_hz": 20.0,
+        }
+        statuses, _ = drive_panel._compute_pipeline_status(sig)
+        # MUX should be yellow (not yet sustained)
+        assert statuses[2] == "yellow"
+        clock[0] += 0.5
+        metrics = drive_panel._build_pipeline_metrics(sig, statuses)
+        mux_metric = metrics[2]
+        assert "IDLE" in mux_metric
+        assert "/2.0s" in mux_metric
+
+    def test_mux_yellow_wrong_source_shows_countdown(self, drive_panel,
+                                                       monkeypatch):
+        """MUX yellow with a wrong source (JOYSTICK during drive, not yet
+        sustained) shows truncated source + countdown to red (0.5s)."""
+        clock = [0.0]
+        monkeypatch.setattr(drive.time, "monotonic", lambda: clock[0])
+        sig = {
+            "ros_connected": True, "driving": True,
+            "cmd_lin": 0.15, "cmd_ang": 0.0,
+            "odom_vx": 0.14, "odom_wz": 0.0,
+            "teleop_hz": 20.0, "cmd_vel_hz": 20.0,
+            "mux_active": "JOYSTICK", "odom_hz": 20.0,
+        }
+        statuses, _ = drive_panel._compute_pipeline_status(sig)
+        assert statuses[2] == "yellow"
+        clock[0] += 0.2
+        metrics = drive_panel._build_pipeline_metrics(sig, statuses)
+        mux_metric = metrics[2]
+        assert "JOYSTICK" in mux_metric or "JOYSTIC" in mux_metric
+        assert "/.5s" in mux_metric
+
+
+# ── Coverage closer: _build_motor_metric zero-command path ─────────────
+
+class TestBuildMotorMetricZeroCommand:
+
+    def test_zero_command_returns_dash(self, drive_panel):
+        """If both linear and angular commands are below the threshold
+        (e.g. driving=True but the smoother hasn't yet stepped), the
+        motor metric is a dash since there's no meaningful axis to track."""
+        sig = {
+            "driving": True,
+            "cmd_lin": 0.0, "cmd_ang": 0.0,  # both axes zero
+            "odom_vx": 0.0, "odom_wz": 0.0,
+        }
+        out = drive_panel._build_motor_metric(sig, "green")
+        # Should be a dash (not specific to either axis)
+        assert "[dim]" in out or "—" in out
+
+
+# ── Coverage closer: safety row 'active is None' branch ────────────────
+
+class TestSafetyRowUnknownService:
+
+    def test_service_unknown_state(self, drive_panel):
+        """If a service's health entry has active=None (e.g. JSON parse
+        edge case), render as dim instead of red/green."""
+        state = {"edge_health": {"services": {
+            "rovac-edge-motor-driver": {"active": None},  # unknown
+            "rovac-edge-mux": {"active": True},
+            "rovac-edge-obstacle": {"active": True},
+        }}}
+        out = drive_panel._build_pipeline_safety_row(state)
+        # Motor short-name appears dim (○ glyph) for unknown
+        assert "motor" in out
+        assert "○" in out
+
+
+# ── Coverage closer: _publish_tick fully-stopped branches ─────────────
+
+class TestPublishTickFullyStoppedBranches:
+
+    def test_self_cancel_without_ros(self, drive_panel, fake_app):
+        """Branch 335→337: when fully stopped AND app.ros is None, we
+        skip the publish_cmd_vel call but still stop the timer."""
+        fake_app.ros = None  # type: ignore[assignment]
+        # Pre-arm with a timer to verify we still stop it
+        from command_center.panels.drive import Timer  # noqa: F401
+        class _FakeTimer:
+            def __init__(self): self.stopped = False
+            def stop(self): self.stopped = True
+        t = _FakeTimer()
+        drive_panel._publish_timer = t  # type: ignore[assignment]
+        drive_panel._driving = False
+        drive_panel._target_linear = 0.0
+        drive_panel._target_angular = 0.0
+        drive_panel._smooth_linear = 0.0
+        drive_panel._smooth_angular = 0.0
+        drive_panel._publish_tick()
+        assert t.stopped is True
+        assert drive_panel._publish_timer is None
+
+    def test_self_cancel_without_timer(self, drive_panel):
+        """Branch 337→340: fully-stopped AND no publish_timer means we
+        skip the timer-stop code (return early)."""
+        drive_panel._publish_timer = None
+        drive_panel._driving = False
+        drive_panel._target_linear = 0.0
+        drive_panel._target_angular = 0.0
+        drive_panel._smooth_linear = 0.0
+        drive_panel._smooth_angular = 0.0
+        # Must not raise — even with no timer
+        drive_panel._publish_tick()
+        assert drive_panel._publish_timer is None
+
+
+# ── Coverage closer: _update_pipeline_health defensive except ─────────
+
+class TestPipelineHealthDefensiveExcept:
+
+    def test_missing_hz_keys_swallowed(self, drive_panel, fake_ros):
+        """Defensive: if bridge._hz is missing the cmd_vel_teleop or
+        cmd_vel keys (e.g. during the window between bridge thread start
+        and first subscription), the rendering must not crash."""
+        del fake_ros._hz["cmd_vel_teleop"]
+        del fake_ros._hz["cmd_vel"]
+        # Should render fine, falling back to zero Hz
+        drive_panel.update_state(
+            {"ros_connected": True, "odom_hz": 20.0}, [], {})
+        # No exception means the except branch was hit and swallowed
+        assert drive_panel.queried["#drive-pipeline"].last_update is not None

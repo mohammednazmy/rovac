@@ -9,9 +9,10 @@
 #   ruff format scripts/command_center      # auto-format
 #   mypy scripts/command_center             # type-check
 #
-# The coverage threshold (--cov-fail-under) is intentionally NOT set as a
-# default — we tighten it as Phase N rolls out. Use it on the CLI:
-#   pytest --cov-fail-under=85 tests/command_center/
+# Coverage threshold: 100%. Phase 8 closed every line + branch gap;
+# any drop from full coverage on a PR fails the gate. Use
+# `# pragma: no cover` (with a comment justifying why) for genuinely
+# unreachable code instead of weakening this threshold.
 
 [tool.pytest.ini_options]
 minversion = "8.0"
@@ -25,6 +26,7 @@ addopts = [
     "--tb=short",
     "--cov=scripts/command_center",
     "--cov-report=term-missing",
+    "--cov-fail-under=100",
 ]
 # Pilot tests (Phase 3) are async; auto mode means we don't need to mark
 # every test with @pytest.mark.asyncio.

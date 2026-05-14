@@ -138,3 +138,205 @@ class TestUpdateStateSmoke:
 
     def test_minimal_state_no_crash(self, edge_panel):
         edge_panel.update_state({}, [], {})
+
+
+# ── Coverage closers ───────────────────────────────────────────────────
+
+import time as _time
+
+
+def _wait_for_flag_clear(edge_panel, attr="_refreshing", timeout=2.0):
+    """Wait until edge_panel.<attr> becomes falsy (worker finished)."""
+    deadline = _time.monotonic() + timeout
+    while _time.monotonic() < deadline:
+        if not getattr(edge_panel, attr):
+            return
+        _time.sleep(0.02)
+    raise AssertionError(f"{attr} never cleared within {timeout}s")
+
+
+class TestRefreshFailurePath:
+
+    def test_refresh_failure_logs_red(self, edge_panel, fake_pm):
+        """If pi_all_service_status raises, the refresh path catches it
+        and shows '[red]SSH refresh failed[/]' via call_from_thread."""
+        def boom():
+            raise RuntimeError("ssh down")
+        # Override pm.pi_all_service_status to raise
+        fake_pm.pi_all_service_status = boom  # type: ignore[assignment]
+        edge_panel._trigger_refresh()
+        _wait_for_flag_clear(edge_panel)
+        out = edge_panel.queried["#edge-action-result"].last_update
+        assert "[red]" in out
+        assert "failed" in out.lower()
+
+
+class TestRestartAll:
+
+    def test_restart_all_success(self, edge_panel, fake_pm):
+        fake_pm._returns["pi_service_action"] = True
+        edge_panel._restart_all()
+        _wait_for_flag_clear(edge_panel, timeout=4.0)
+        # The success message should have been shown at some point
+        # (could be overwritten by the post-refresh, so check pm.calls)
+        assert any(
+            c[0] == "pi_service_action"
+            and c[1] == ("rovac-edge.target", "restart")
+            for c in fake_pm.calls)
+
+    def test_restart_all_failure(self, edge_panel, fake_pm):
+        """When pi_service_action returns False, the failure path fires
+        — call_from_thread with the [red] message."""
+        fake_pm._returns["pi_service_action"] = False
+        edge_panel._restart_all()
+        _wait_for_flag_clear(edge_panel, timeout=4.0)
+        # The failure path was hit; pm was called
+        assert any(c[0] == "pi_service_action" for c in fake_pm.calls)
+
+
+class TestRestartSelected:
+
+    def test_restart_selected_valid_cursor(self, edge_panel, fake_pm):
+        # Pre-populate the queried widget with cursor_row pointing to
+        # the first service.
+        from types import SimpleNamespace
+        edge_panel.queried["#edge-services-table"] = SimpleNamespace(
+            cursor_row=0, cursor_type="row")
+        fake_pm._returns["pi_service_action"] = True
+        edge_panel._restart_selected()
+        _wait_for_flag_clear(edge_panel, timeout=4.0)
+        assert any(
+            c[0] == "pi_service_action"
+            and c[1][1] == "restart"
+            for c in fake_pm.calls)
+
+    def test_restart_selected_cursor_out_of_range(self, edge_panel,
+                                                    fake_pm):
+        """If cursor_row is outside PI_SERVICES, return without action."""
+        from types import SimpleNamespace
+        edge_panel.queried["#edge-services-table"] = SimpleNamespace(
+            cursor_row=9999, cursor_type="row")
+        edge_panel._restart_selected()
+        # No pi_service_action call should have happened
+        assert not any(c[0] == "pi_service_action" for c in fake_pm.calls)
+
+    def test_restart_selected_negative_cursor(self, edge_panel, fake_pm):
+        from types import SimpleNamespace
+        edge_panel.queried["#edge-services-table"] = SimpleNamespace(
+            cursor_row=-1, cursor_type="row")
+        edge_panel._restart_selected()
+        assert not any(c[0] == "pi_service_action" for c in fake_pm.calls)
+
+    def test_restart_selected_query_exception(self, edge_panel, fake_pm,
+                                                monkeypatch):
+        """If query_one fails (no DataTable mounted), the bounds-check
+        try/except returns silently."""
+        def boom(*_a, **_kw):
+            raise RuntimeError("table not mounted")
+        monkeypatch.setattr(edge_panel, "query_one", boom)
+        edge_panel._restart_selected()  # must not raise
+        assert not any(c[0] == "pi_service_action" for c in fake_pm.calls)
+
+    def test_restart_selected_failure_shows_red(self, edge_panel, fake_pm):
+        from types import SimpleNamespace
+        edge_panel.queried["#edge-services-table"] = SimpleNamespace(
+            cursor_row=0, cursor_type="row")
+        fake_pm._returns["pi_service_action"] = False
+        edge_panel._restart_selected()
+        _wait_for_flag_clear(edge_panel, timeout=4.0)
+        # Failure path executed via pm being called with returncode=False
+        assert any(c[0] == "pi_service_action" for c in fake_pm.calls)
+
+
+class TestUpdateServicesNonDict:
+
+    def test_non_dict_service_entry_treated_as_unknown(self, edge_panel):
+        """If services contains a non-dict entry (corrupted health JSON?),
+        render as 'unknown' instead of crashing."""
+        state = {"edge_health": {"services": {
+            "rovac-edge-motor-driver": "not-a-dict",  # malformed
+            "rovac-edge-mux": {"active": True},
+        }}}
+        edge_panel.update_state(state, [], {})
+        # Should complete without exception
+
+
+class TestApplyServiceStatusesDefensive:
+
+    def test_query_one_failure_swallowed(self, edge_panel, monkeypatch):
+        """If query_one raises (e.g. during teardown), _apply_service_statuses
+        swallows it."""
+        def boom(*_a, **_kw):
+            raise RuntimeError("during teardown")
+        monkeypatch.setattr(edge_panel, "query_one", boom)
+        # Must not raise
+        edge_panel._apply_service_statuses()
+
+    def test_update_services_from_health_query_one_failure(
+            self, edge_panel, monkeypatch):
+        """Outer except in _update_services_from_health swallows
+        query_one failures."""
+        def boom(*_a, **_kw):
+            raise RuntimeError("teardown")
+        monkeypatch.setattr(edge_panel, "query_one", boom)
+        # Set up state with services so we get past the early return
+        state = {"edge_health": {"services": {"rovac-edge-mux": {"active": True}}}}
+        edge_panel.update_state(state, [], {})  # must not raise
+
+
+class TestApplyServiceStatusesUpdateCellException:
+
+    def test_update_cell_exception_swallowed(self, edge_panel):
+        """When DataTable.update_cell raises (row key not in table — can
+        happen briefly during table re-population), it's swallowed."""
+        from types import SimpleNamespace
+        def raising_update_cell(*_a, **_kw):
+            raise RuntimeError("row key not found")
+        table = SimpleNamespace(update_cell=raising_update_cell)
+        edge_panel.queried["#edge-services-table"] = table
+        edge_panel._service_statuses = {"rovac-edge-motor-driver": "active"}
+        edge_panel._apply_service_statuses()  # must not raise
+
+
+class TestUpdateServicesUpdateCellException:
+
+    def test_update_cell_exception_swallowed_in_health_update(
+            self, edge_panel):
+        from types import SimpleNamespace
+        def raising_update_cell(*_a, **_kw):
+            raise RuntimeError("row key not found")
+        table = SimpleNamespace(update_cell=raising_update_cell)
+        edge_panel.queried["#edge-services-table"] = table
+        state = {"edge_health": {"services": {
+            "rovac-edge-mux": {"active": True}}}}
+        edge_panel.update_state(state, [], {})  # must not raise
+
+
+class TestRefreshUiCallFromThreadException:
+
+    def test_refresh_callback_exception_in_app_swallowed(
+            self, edge_panel, fake_app):
+        """If call_from_thread raises (e.g. app shut down mid-refresh),
+        the inner try/except in _do_refresh swallows it. This covers
+        the 'pass  # App may have shut down' branch."""
+        # Make call_from_thread raise to trigger the inner except
+        def boom(_fn, *_a, **_kw):
+            raise RuntimeError("app shutdown")
+        fake_app.call_from_thread = boom  # type: ignore[assignment]
+        edge_panel._trigger_refresh()
+        _wait_for_flag_clear(edge_panel, timeout=2.0)
+        # No exception escaped to the test thread
+
+    def test_refresh_failure_call_from_thread_exception_swallowed(
+            self, edge_panel, fake_pm, fake_app):
+        """The failure-path also has its own try/except around
+        call_from_thread for double-fault safety."""
+        def pm_boom():
+            raise RuntimeError("ssh down")
+        fake_pm.pi_all_service_status = pm_boom  # type: ignore[assignment]
+        def app_boom(_fn, *_a, **_kw):
+            raise RuntimeError("app shutdown")
+        fake_app.call_from_thread = app_boom  # type: ignore[assignment]
+        edge_panel._trigger_refresh()
+        _wait_for_flag_clear(edge_panel, timeout=2.0)
+        # Both faults swallowed; no exception escaped

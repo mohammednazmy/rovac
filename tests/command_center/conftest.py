@@ -22,6 +22,7 @@ example. Those live in their own files marked with ``@pytest.mark.slow``.
 from __future__ import annotations
 
 import os
+from unittest.mock import MagicMock
 import sys
 from dataclasses import dataclass, field
 
@@ -108,6 +109,12 @@ class FakeRosBridge:
         self.global_localize_calls += 1
         return self.global_localize_return
 
+    def has_yaw_calibration(self) -> bool:
+        return self.yaw_offset_deg is not None
+
+    def save_current_pose(self) -> bool:
+        return self.amcl_localized_return
+
 
 class _FakeHzTracker:
     """Stand-in for the ros_bridge's HzTracker — returns a fixed value."""
@@ -173,6 +180,7 @@ class FakePm:
         return self._record("auto_start_full_stack", *a, **k)
     def stop_all(self): return self._record("stop_all")
     def dump_diagnostics(self, **k):
+        self.calls.append(("dump_diagnostics", (), k))
         return self._returns.get("dump_diagnostics", "/tmp/diag.txt")
 
 
@@ -497,6 +505,191 @@ def bridge():
     """
     from command_center.ros_bridge import RosBridge
     return RosBridge()
+
+
+# ── Fake rclpy module hierarchy ─────────────────────────────────────────
+#
+# `RosBridge._run`, `publish_cmd_vel`, `publish_initial_pose`, and
+# `trigger_global_localization` all do deferred imports of rclpy and the
+# ROS message packages. The `fake_rclpy` fixture installs lightweight
+# stand-ins in sys.modules so these methods can run end-to-end without
+# real rclpy, real DDS, or a running ROS2 daemon.
+#
+# FakeNode records every subscription / publisher / client created so
+# tests can assert on the wiring (topic names, QoS, callbacks).
+
+
+class FakePublisher:
+    """Records published messages instead of sending them over DDS."""
+    def __init__(self, msg_type, topic, qos):
+        self.msg_type = msg_type
+        self.topic = topic
+        self.qos = qos
+        self.published: list = []
+
+    def publish(self, msg):
+        self.published.append(msg)
+
+
+class FakeClient:
+    """Records async service calls. ``service_ready`` controls whether
+    wait_for_service() returns True (the service is reachable) or False.
+    """
+    def __init__(self, srv_type, name):
+        self.srv_type = srv_type
+        self.name = name
+        self.service_ready = True
+        self.calls: list = []
+
+    def wait_for_service(self, timeout_sec=None):
+        return self.service_ready
+
+    def call_async(self, req):
+        self.calls.append(req)
+        return SimpleNamespace()  # opaque future
+
+
+class FakeClock:
+    def now(self):
+        return SimpleNamespace(to_msg=lambda: SimpleNamespace())
+
+
+class FakeNode:
+    """Records subscriptions, publishers, and clients. The real Node has
+    many more methods, but ros_bridge only uses these four."""
+
+    def __init__(self, name=""):
+        self.name = name
+        self.subscriptions: list = []
+        self.publishers: list = []
+        self.clients: list = []
+        self.destroyed = False
+
+    def create_subscription(self, msg_type, topic, callback, qos):
+        sub = SimpleNamespace(msg_type=msg_type, topic=topic,
+                              callback=callback, qos=qos)
+        self.subscriptions.append(sub)
+        return sub
+
+    def create_publisher(self, msg_type, topic, qos):
+        pub = FakePublisher(msg_type, topic, qos)
+        self.publishers.append(pub)
+        return pub
+
+    def create_client(self, srv_type, name):
+        client = FakeClient(srv_type, name)
+        self.clients.append(client)
+        return client
+
+    def destroy_publisher(self, pub):
+        if pub in self.publishers:
+            self.publishers.remove(pub)
+
+    def destroy_node(self):
+        self.destroyed = True
+
+    def get_clock(self):
+        return FakeClock()
+
+
+def _make_twist():
+    return SimpleNamespace(
+        linear=SimpleNamespace(x=0.0, y=0.0, z=0.0),
+        angular=SimpleNamespace(x=0.0, y=0.0, z=0.0))
+
+
+def _make_pose_cov_stamped():
+    return SimpleNamespace(
+        header=SimpleNamespace(frame_id="", stamp=SimpleNamespace()),
+        pose=SimpleNamespace(
+            pose=SimpleNamespace(
+                position=SimpleNamespace(x=0.0, y=0.0, z=0.0),
+                orientation=SimpleNamespace(x=0.0, y=0.0, z=0.0, w=1.0)),
+            covariance=[0.0] * 36))
+
+
+@pytest.fixture
+def fake_rclpy(monkeypatch):
+    """Install fake rclpy / rclpy.qos / *_msgs.msg / std_srvs.srv modules
+    in sys.modules so RosBridge's deferred imports pick them up.
+
+    Returns the top-level fake ``rclpy`` module. Tests can inspect
+    ``rclpy.created_nodes`` for FakeNode instances, or read
+    ``rclpy.init.mock_calls`` etc. since ``init/shutdown/ok/spin`` are
+    MagicMocks.
+    """
+    import sys as _sys
+    import types as _types
+
+    # Top-level rclpy
+    rclpy = _types.ModuleType("rclpy")
+    rclpy.init = MagicMock(name="rclpy.init")
+    rclpy.shutdown = MagicMock(name="rclpy.shutdown")
+    rclpy.ok = MagicMock(name="rclpy.ok", return_value=True)
+    rclpy.spin = MagicMock(name="rclpy.spin")  # real spin blocks; fake returns
+    rclpy.created_nodes = []  # populated by create_node below
+
+    def create_node(name):
+        node = FakeNode(name)
+        rclpy.created_nodes.append(node)
+        return node
+
+    rclpy.create_node = create_node
+
+    # rclpy.qos — QoSProfile is callable and returns a namespace of its kwargs
+    qos = _types.ModuleType("rclpy.qos")
+    qos.ReliabilityPolicy = type("ReliabilityPolicy", (), {
+        "BEST_EFFORT": "best_effort", "RELIABLE": "reliable"})
+    qos.HistoryPolicy = type("HistoryPolicy", (), {"KEEP_LAST": "keep_last"})
+    qos.DurabilityPolicy = type("DurabilityPolicy", (), {
+        "VOLATILE": "volatile", "TRANSIENT_LOCAL": "transient_local"})
+    qos.QoSProfile = lambda **kwargs: SimpleNamespace(**kwargs)
+
+    # Message constructors — most just need to be importable and callable.
+    # Twist + PoseWithCovarianceStamped need real nested fields because
+    # publish_* writes to them.
+    def _empty_msg():
+        return SimpleNamespace()
+
+    msg_specs = {
+        "nav_msgs.msg": [
+            ("Odometry", _empty_msg),
+            ("OccupancyGrid", _empty_msg),
+            ("Path", _empty_msg),
+        ],
+        "sensor_msgs.msg": [
+            ("LaserScan", _empty_msg),
+            ("Range", _empty_msg),
+            ("Imu", _empty_msg),
+        ],
+        "diagnostic_msgs.msg": [("DiagnosticArray", _empty_msg)],
+        "std_msgs.msg": [
+            ("String", _empty_msg),
+            ("Bool", _empty_msg),
+            ("Int32MultiArray", _empty_msg),
+        ],
+        "geometry_msgs.msg": [
+            ("Twist", _make_twist),
+            ("PoseWithCovarianceStamped", _make_pose_cov_stamped),
+        ],
+        "rcl_interfaces.msg": [("Log", _empty_msg)],
+    }
+    fake_modules = {"rclpy": rclpy, "rclpy.qos": qos}
+    for mod_name, classes in msg_specs.items():
+        mod = _types.ModuleType(mod_name)
+        for cls_name, factory in classes:
+            setattr(mod, cls_name, factory)
+        fake_modules[mod_name] = mod
+
+    # std_srvs.srv.Empty needs a .Request inner class
+    srv = _types.ModuleType("std_srvs.srv")
+    srv.Empty = type("Empty", (), {"Request": lambda: SimpleNamespace()})
+    fake_modules["std_srvs.srv"] = srv
+
+    for name, mod in fake_modules.items():
+        monkeypatch.setitem(_sys.modules, name, mod)
+
+    return rclpy
 
 
 # ── process_manager fixtures ────────────────────────────────────────────

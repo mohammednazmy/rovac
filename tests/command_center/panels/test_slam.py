@@ -150,6 +150,18 @@ class TestUpdateStatus:
         out = slam_panel.queried["#slam-status"].last_update
         assert "Foxglove:" in out and "[green]" in out
 
+    def test_foxglove_exited_shows_red(self, slam_panel):
+        """When Foxglove crashes (exited with non-zero) the status shows
+        the failure reason in red — not just a generic 'stopped'."""
+        slam_panel.update_state({}, [], {"foxglove": "exited (1)"})
+        out = slam_panel.queried["#slam-status"].last_update
+        assert "Foxglove:" in out and "[red]" in out and "exited" in out
+
+    def test_nav2_exited_shows_red(self, slam_panel):
+        slam_panel.update_state({}, [], {"nav2": "exited (2)"})
+        out = slam_panel.queried["#slam-status"].last_update
+        assert "Nav2:" in out and "[red]" in out and "exited" in out
+
 
 class TestUpdateMapStats:
 
