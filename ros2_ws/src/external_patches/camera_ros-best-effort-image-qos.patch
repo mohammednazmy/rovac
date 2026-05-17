@@ -1,0 +1,21 @@
+diff --git a/src/CameraNode.cpp b/src/CameraNode.cpp
+index 60497a7..e6d9c75 100644
+--- a/src/CameraNode.cpp
++++ b/src/CameraNode.cpp
+@@ -325,10 +325,13 @@ CameraNode::CameraNode(const rclcpp::NodeOptions &options)
+   use_node_time = declare_parameter<bool>("use_node_time", false, param_descr_use_node_time);
+
+   // publisher for raw and compressed image
+-  pub_image = this->create_publisher<sensor_msgs::msg::Image>("~/image_raw", 1);
++  // ROVAC: best-effort QoS — RELIABLE over WiFi caused a retransmit storm
++  // (1.6s latency, ~50% frame loss). See external_patches/ for rationale.
++  const rclcpp::QoS image_qos = rclcpp::SensorDataQoS();
++  pub_image = this->create_publisher<sensor_msgs::msg::Image>("~/image_raw", image_qos);
+   pub_image_compressed =
+-    this->create_publisher<sensor_msgs::msg::CompressedImage>("~/image_raw/compressed", 1);
+-  pub_ci = this->create_publisher<sensor_msgs::msg::CameraInfo>("~/camera_info", 1);
++    this->create_publisher<sensor_msgs::msg::CompressedImage>("~/image_raw/compressed", image_qos);
++  pub_ci = this->create_publisher<sensor_msgs::msg::CameraInfo>("~/camera_info", image_qos);
+
+   // start camera manager and check for cameras
+   camera_manager.start();

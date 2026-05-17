@@ -21,6 +21,7 @@ costs more than the patch. Tracking patches in-tree gives us:
 | Patch | Target | What it fixes |
 |---|---|---|
 | `rplidar_ros-rxthread-eagain-fix.patch` | `rplidar_ros` (Slamtec) | RX thread dies on `select()`-then-`read()`-returns-0 race (EAGAIN with `O_NDELAY` non-blocking I/O). Replaces the kill-thread-on-zero-bytes branch with a 10ms sleep + retry. Without this, the LIDAR stops publishing scans intermittently after seconds-to-minutes. |
+| `camera_ros-best-effort-image-qos.patch` | `camera_ros` (christianrauch) | Image / compressed / camera_info publishers were created with `create_publisher(..., 1)` — a RELIABLE, depth-1 QoS. Over WiFi this caused a DDS retransmit storm (~1.6s latency, ~50% frame loss). Switches all three to best-effort `rclcpp::SensorDataQoS()` so stale frames are dropped instead of retransmitted — the newest frame always arrives fast. |
 
 ## Applying patches manually (debug)
 

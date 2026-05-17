@@ -67,6 +67,33 @@ def _camera_container(side, cam_id, width, height,
                     'format': 'BGR888',
                     'frame_id': frame_id,
                     'camera_info_url': info_url,
+                    # --- Image quality / FOV / framerate tuning ---
+                    # sensor_mode: pin the OV5647 2x2-binned full-FOV raw mode.
+                    # libcamera otherwise auto-picks the 1920x1080 mode, which is
+                    # a narrow CENTER CROP of the sensor. 1296x972 reads the whole
+                    # sensor (wide FOV) and bins 4 photosites per pixel (better
+                    # low-light SNR). Format is "width:height" (CameraNode.cpp).
+                    'sensor_mode': '1296:972',
+                    # FrameDurationLimits [min,max] in microseconds; 33333 = 30fps.
+                    # The binned mode sustains well above 30fps, so this caps it.
+                    'FrameDurationLimits': [33333, 33333],
+                    # NoiseReductionMode 1 = Fast (PiSP-accelerated, video-grade).
+                    # Was 0 (Off) — noise reduction left disabled by default.
+                    'NoiseReductionMode': 1,
+                    # --- ISP polish (applied after the lenses were focused) ---
+                    # Sharpness 1.5: mild ISP edge enhancement (1.0 = none).
+                    'Sharpness': 1.5,
+                    # Contrast 1.1: gentle lift (1.0 = neutral); the NoIR
+                    # sensor's daylight output is a little hazy/flat.
+                    'Contrast': 1.1,
+                    # jpeg_quality 80: the Pi->Mac WiFi link tops out near
+                    # ~25 Mbps for this dual stream. Measured: at jpeg 88 each
+                    # frame grew to ~85KB and the delivered rate collapsed to
+                    # ~18fps; 80 (~60KB/frame) sustains the full ~30fps. The
+                    # visible quality win is the Sharpness/Contrast tuning above
+                    # — that costs almost no bandwidth. Raise jpeg_quality only
+                    # if you are willing to accept a lower framerate.
+                    'jpeg_quality': 80,
                 }],
             ),
         ],

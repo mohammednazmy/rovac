@@ -23,6 +23,11 @@ Environment=CYCLONEDDS_URI=file:///home/pi/robots/rovac/config/cyclonedds_pi.xml
 Environment=LD_LIBRARY_PATH=/opt/rpi-libcamera/lib/aarch64-linux-gnu
 Environment=LIBCAMERA_IPA_MODULE_PATH=/opt/rpi-libcamera/lib/aarch64-linux-gnu/libcamera
 Environment=LIBCAMERA_IPA_CONFIG_PATH=/opt/rpi-libcamera/share/libcamera/ipa
+# Force the NoIR tuning file. These are OV5647 *NoIR* sensors (no IR-cut
+# filter); libcamera otherwise auto-selects ov5647.json — the IR-filtered
+# profile, whose AWB/colour calibration is wrong for an IR-flooded sensor and
+# worsens the magenta daylight cast. ov5647_noir.json is calibrated for NoIR.
+Environment=LIBCAMERA_RPI_TUNING_FILE=/opt/rpi-libcamera/share/libcamera/ipa/rpi/pisp/ov5647_noir.json
 
 ExecStartPre=/bin/sleep 2
 ExecStart=/bin/bash -lc "source /opt/ros/jazzy/setup.bash; source /home/pi/robots/rovac/ros2_ws/install/setup.bash; [ -f /home/pi/robots/rovac/config/ros2_env.sh ] && source /home/pi/robots/rovac/config/ros2_env.sh; exec ros2 launch rovac_stereo_camera stereo_cameras.launch.py"
