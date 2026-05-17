@@ -7,6 +7,9 @@
 //   • Added 2mm fillet at stem→plate junction (audit #1: eliminates sharp
 //     90° stress concentration that would crack across FDM layer lines)
 //   • Ball remains printed; recommendations for slicer settings in comments
+//   • ball_stem_overlap (2026-05-17): the stem now embeds 4mm INTO the ball.
+//     It was previously tangent to the ball — a single-point contact that
+//     exported as a disconnected 2-piece mesh; the ball would snap off.
 //
 // Provides a center ball-on-stem on top of a flat plate.
 // Pairs with rovac_stereo_yoke.scad (matching socket, baseline = 78mm).
@@ -33,8 +36,12 @@ bar_thickness      = 4;
 // === Ball on stem (center of bar top) ===
 ball_dia           = 16;     // joint ball — pairs with yoke's socket (must match)
 stem_dia           = 12;     // bumped from 9 → 12 (audit fix #4)
-stem_height        = 6;      // height of stem before ball begins
+stem_height        = 6;      // exposed stem height between plate and ball
 fillet_r           = 2;      // fillet radius at stem→plate transition (audit fix #1)
+ball_stem_overlap  = 4;      // stem embeds this far INTO the ball so the two fuse
+                             // into ONE solid. A ball merely tangent to the stem
+                             // top touches at a single point — that exports as a
+                             // 2-piece mesh and the ball snaps off when printed.
 
 // === CSI ribbon relief on the back edge (same as v2) ===
 cable_relief_width = 70;
@@ -64,8 +71,9 @@ module ball_on_stem() {
     // concentration that was the primary failure mode.
     rotate_extrude($fn = $fn)
         union() {
-            // Main stem rectangle (radial × vertical cross-section)
-            square([stem_dia / 2, stem_height]);
+            // Stem (radial × vertical cross-section). Extends ball_stem_overlap
+            // past stem_height so it embeds into the ball for a solid weld.
+            square([stem_dia / 2, stem_height + ball_stem_overlap]);
             // Fillet: the "corner piece" between cylinder side and plate top.
             // Material outside a quarter-circle of radius fillet_r centered
             // at (stem_dia/2 + fillet_r, fillet_r), bounded by the square
