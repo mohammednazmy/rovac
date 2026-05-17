@@ -146,6 +146,10 @@ CMD_reference.rtf
 3D-prints/**/*.jpg
 3D-prints/**/model_a/
 3D-prints/**/model_b/
+# Third-party camera-case STL downloads (~83MB) the stereo camera mount
+# was derived from. The cleaned, committed output STLs live in printable/.
+3D-prints/vision/original/
+3D-prints/vision/raspberry-pi-night-vision-camera-case-model_files/
 
 # === Runtime IP stamp ===
 .rovac_mac_ip
