@@ -159,6 +159,7 @@ CMD_reference.rtf
 # ros2_env.sh sed-mutates them on every Mac DHCP IP change.
 config/cyclonedds_mac.xml
 config/cyclonedds_pi.xml
+config/cyclonedds_*.xml.tmp.*
 
 # === Playwright MCP browser logs (ephemeral debug output) ===
 .playwright-mcp/
