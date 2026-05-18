@@ -1,7 +1,25 @@
 <?xml version="1.0"?>
 <robot name="rovac_tank">
 
-  <!-- Base Link - Center of robot chassis at motor shaft height (20mm from ground) -->
+  <!-- ============================================================
+       ROVAC tank URDF — frame conventions (REP-103)
+         +X = FORWARD    +Y = LEFT    +Z = UP
+
+       The robot drives forward toward base_link +X. The bare front
+       (+X) carries only the red front_indicator; the LIDAR / camera
+       / RPi / battery stack sits on the REAR deck (-X).
+
+       Odometry: the ESP32 motor firmware applies the body-frame
+       correction in serial_transport.c; `rovac_motor_driver` on the Pi
+       is a clean raw passthrough (no odom params). The published /odom
+       and odom->base_link TF are REP-103-correct (+X = forward = red
+       box) — verified against the physical robot on 2026-05-18.
+
+       Box sizes and X/Z offsets are still estimates pending physical
+       measurement.
+       ============================================================ -->
+
+  <!-- Base Link — robot chassis, origin at motor-shaft height (20mm from ground) -->
   <link name="base_link">
     <visual>
       <geometry>
@@ -13,7 +31,8 @@
     </visual>
   </link>
 
-  <!-- Front indicator — red wedge showing forward direction (+X) -->
+  <!-- Front indicator — red marker at the robot's FRONT, base_link +X
+       (the direction the robot drives forward, REP-103). -->
   <link name="front_indicator">
     <visual>
       <geometry>
@@ -29,7 +48,6 @@
   <joint name="front_indicator_joint" type="fixed">
     <parent link="base_link"/>
     <child link="front_indicator"/>
-    <!-- FRONT = LIDAR side = +X per docs/robot_dimensions.md -->
     <origin xyz="0.13 0 0.04" rpy="0 0 0"/>
   </joint>
 
@@ -41,54 +59,6 @@
     <child link="base_footprint"/>
     <!-- Motor shaft at 20mm from ground -->
     <origin xyz="0 0 -0.02" rpy="0 0 0"/>
-  </joint>
-
-  <!-- ==================== Vacuum Suction Pad ==================== -->
-  <!-- Dimensions per measurements (inch->mm):
-       width  = 4.125" = 104.775 mm  (Y / lateral)
-       depth  = 2.125" =  53.975 mm  (X / fore-aft)
-       Rear edge sits 50.8 mm (2") in front of front edge of tracks.
-       Front of tracks ~ base_link X = +0.110 m (chassis is 0.22 m long,
-       base_link at center). So:
-         pad rear edge  = +0.110 + 0.0508    = +0.1608 m  (base_link)
-         pad center  X  = +0.1608 + 0.05398/2 = +0.1878 m
-       Pad is dead-center laterally (Y=0). Parented to base_footprint so
-       Z = 0 is the floor; pad center Z = half pad thickness ≈ 0.0025 m. -->
-  <link name="vacuum_pad_link">
-    <visual>
-      <geometry>
-        <box size="0.05398 0.10478 0.005"/>
-      </geometry>
-      <material name="vacuum_pad">
-        <color rgba="0.15 0.15 0.15 0.85"/>
-      </material>
-    </visual>
-  </link>
-
-  <joint name="vacuum_pad_joint" type="fixed">
-    <parent link="base_footprint"/>
-    <child link="vacuum_pad_link"/>
-    <origin xyz="0.1878 0 0.0025" rpy="0 0 0"/>
-  </joint>
-
-  <!-- ==================== RPLIDAR C1 ==================== -->
-  <!-- SLAMTEC RPLIDAR C1 DTOF, 55.6x55.6x41.3mm, scan height 23.1mm from base -->
-  <link name="laser_frame">
-    <visual>
-      <geometry>
-        <box size="0.0556 0.0556 0.0413"/>
-      </geometry>
-      <material name="black">
-        <color rgba="0 0 0 1"/>
-      </material>
-    </visual>
-  </link>
-
-  <joint name="laser_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="laser_frame"/>
-    <!-- LIDAR scan plane 140mm from ground, 120mm above base_link -->
-    <origin xyz="0.015 0 0.12" rpy="0 0 0"/>
   </joint>
 
   <!-- ==================== IMU ==================== -->
@@ -106,48 +76,110 @@
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child link="imu_link"/>
-    <!-- BNO055 mounted face-down on main board, upper edge toward front.
-         180° rotation around X flips Z-axis from down (board face) to up (ROS). -->
+    <!-- BNO055 on the ESP32 motor board, face-down. 180 deg rotation
+         around X flips Z from down (board face) to up (ROS). Position
+         is approximate, near chassis centre. -->
     <origin xyz="0 0 0.02" rpy="3.14159 0 0"/>
   </joint>
 
-  <!-- Phone IMU + Super Sensor links removed 2026-04-26 — retired hardware
-       was producing labels in Foxglove that cluttered the 3D view. The
-       BNO055 (imu_link above) replaced the phone IMU; the sensor hub
-       (4×HC-SR04 + 2×IR cliff) replaced super_sensor. The actual sensor
-       hub mount frames (us_front_link etc.) are publisher-side static TFs
-       from rovac_sensor_driver, not URDF — see ros2_ws/src/rovac_sensor_driver. -->
+  <!-- ============================================================
+       REAR DECK STACK  (chassis top deck, -X / REAR end)
+       Physical stack, bottom to top:
+         rpi_battery_link, rpi_link, laser_frame, stereo cameras
+       All four share X and Y; Z climbs through the stack.
+       Magnitudes below are best-estimates pending measurement.
+       ============================================================ -->
+
+  <!-- Raspberry Pi battery — bottom of the stack, on the chassis deck.
+       Box size ESTIMATED — refine with measured battery dimensions. -->
+  <link name="rpi_battery_link">
+    <visual>
+      <geometry>
+        <box size="0.090 0.070 0.025"/>
+      </geometry>
+      <material name="battery_dark">
+        <color rgba="0.2 0.2 0.2 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="rpi_battery_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="rpi_battery_link"/>
+    <origin xyz="-0.065 0 0.0625" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Raspberry Pi 5 — on top of the battery. Board 85 x 56 mm;
+       box height ESTIMATED (includes headers / components). -->
+  <link name="rpi_link">
+    <visual>
+      <geometry>
+        <box size="0.085 0.056 0.020"/>
+      </geometry>
+      <material name="rpi_green">
+        <color rgba="0.0 0.45 0.2 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="rpi_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="rpi_link"/>
+    <origin xyz="-0.065 0 0.085" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ==================== RPLIDAR C1 ==================== -->
+  <!-- SLAMTEC RPLIDAR C1 DTOF, 55.6x55.6x41.3mm, scan plane 23.1mm from
+       its base. Mounted on the REAR deck (-X), stacked above the RPi.
+       laser_frame = scan plane. The RPLIDAR's 0deg azimuth points toward
+       the lidar-stack end; since the 2026-05-18 front/rear redefinition
+       that end is the robot REAR (-X), so laser_joint carries a 180deg
+       yaw (rpy 0 0 pi) to align the scan with base_link (+X = front =
+       red box). Verified 2026-05-18 with a rear-approach scan test:
+       a person behind the robot must register behind the model. -->
+  <link name="laser_frame">
+    <visual>
+      <geometry>
+        <box size="0.0556 0.0556 0.0413"/>
+      </geometry>
+      <material name="black">
+        <color rgba="0 0 0 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_frame"/>
+    <origin xyz="-0.065 0 0.118" rpy="0 0 3.14159"/>
+  </joint>
 
   <!-- ==================== Stereo Camera Rig (dual OV5647 NoIR on Pi 5 CSI) ====================
-       Two Raspberry Pi NoIR Camera Module v1 (OV5647) sensors connected via CSI
-       ribbon to Pi 5 CAM0 (left) and CAM1 (right). Driven by camera_ros + libcamera.
+       Two Raspberry Pi NoIR Camera Module v1 (OV5647) sensors on Pi 5
+       CAM0 (left) / CAM1 (right). Mounted directly ABOVE the RPLIDAR,
+       on the REAR deck (-X).
 
-       PLACEHOLDER GEOMETRY — positions, orientation, and baseline below are
-       defaults that will be refined when the physical 3D-printed mount is
-       fabricated (Phase 2). The frame tree topology and naming conventions are
-       fixed; only the joint origins/baseline will change post-mount.
-
-       Frame tree (REP-103 compliant):
+       Frame tree:
          base_link
-           └── stereo_camera_link            (rig center, virtual)
-                 ├── stereo_left_camera_link            (sensor body, +Y from rig center)
-                 │     └── stereo_left_camera_optical_frame   (X-right, Y-down, Z-fwd)
-                 └── stereo_right_camera_link           (sensor body, -Y from rig center)
-                       └── stereo_right_camera_optical_frame  (X-right, Y-down, Z-fwd)
+           +- stereo_camera_link           (rig centre, virtual)
+              +- stereo_left_camera_link          (+Y from rig centre)
+              |    +- stereo_left_camera_optical_frame   (X-right, Y-down, Z-fwd)
+              +- stereo_right_camera_link         (-Y from rig centre)
+                   +- stereo_right_camera_optical_frame  (X-right, Y-down, Z-fwd)
 
-       The image messages reference the *_optical_frame (per REP-103), and the
-       _link frames are for visualization + body-frame TF lookups. -->
+       Baseline (30mm each side) and rig height ESTIMATED, refine with
+       mount measurements. Image messages reference the *_optical_frame. -->
 
   <link name="stereo_camera_link"/>
 
   <joint name="stereo_camera_joint" type="fixed">
     <parent link="base_link"/>
     <child link="stereo_camera_link"/>
-    <!-- PLACEHOLDER: 100mm forward of chassis center, 100mm above base_link. -->
-    <origin xyz="0.10 0 0.10" rpy="0 0 0"/>
+    <!-- Directly above the LIDAR on the rear deck (-X). Z ESTIMATED. -->
+    <origin xyz="-0.065 0 0.150" rpy="0 0 0"/>
   </joint>
 
-  <!-- LEFT camera body (Pi 5 CAM0). OV5647 module dimensions ≈ 25×24×9 mm. -->
+  <!-- LEFT camera body (Pi 5 CAM0). OV5647 module ~ 25x24x9 mm. -->
   <link name="stereo_left_camera_link">
     <visual>
       <geometry>
@@ -162,13 +194,12 @@
   <joint name="stereo_left_camera_joint" type="fixed">
     <parent link="stereo_camera_link"/>
     <child link="stereo_left_camera_link"/>
-    <!-- PLACEHOLDER baseline = 60mm; left camera at +30mm Y from rig center. -->
+    <!-- PLACEHOLDER baseline = 60mm; left camera at +30mm Y from rig centre. -->
     <origin xyz="0 0.030 0" rpy="0 0 0"/>
   </joint>
 
   <!-- LEFT optical frame (REP-103): X-right, Y-down, Z-forward.
-       Rotation from camera_link (X-fwd, Y-left, Z-up) to camera_optical_frame is
-       RPY = (-π/2, 0, -π/2). All image message headers reference this frame. -->
+       Rotation from camera_link to camera_optical_frame = RPY(-pi/2,0,-pi/2). -->
   <link name="stereo_left_camera_optical_frame"/>
 
   <joint name="stereo_left_camera_optical_joint" type="fixed">
@@ -190,7 +221,7 @@
   <joint name="stereo_right_camera_joint" type="fixed">
     <parent link="stereo_camera_link"/>
     <child link="stereo_right_camera_link"/>
-    <!-- PLACEHOLDER: right camera at -30mm Y from rig center (60mm total baseline). -->
+    <!-- PLACEHOLDER: right camera at -30mm Y from rig centre (60mm baseline). -->
     <origin xyz="0 -0.030 0" rpy="0 0 0"/>
   </joint>
 
