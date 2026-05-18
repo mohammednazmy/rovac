@@ -15,15 +15,16 @@
        and odom->base_link TF are REP-103-correct (+X = forward = red
        box) — verified against the physical robot on 2026-05-18.
 
-       Box sizes and X/Z offsets are still estimates pending physical
-       measurement.
+       Robot length/width, IMU X, rear-stack X, stereo-camera height,
+       and sensor X/Y are measured (2026-05-18). Stack/sensor Z offsets
+       (other than the camera) and box heights remain estimates.
        ============================================================ -->
 
   <!-- Base Link — robot chassis, origin at motor-shaft height (20mm from ground) -->
   <link name="base_link">
     <visual>
       <geometry>
-        <box size="0.22 0.245 0.10"/>
+        <box size="0.2413 0.240 0.10"/>
       </geometry>
       <material name="blue">
         <color rgba="0 0 0.8 1"/>
@@ -77,9 +78,9 @@
     <parent link="base_link"/>
     <child link="imu_link"/>
     <!-- BNO055 on the ESP32 motor board, face-down. 180 deg rotation
-         around X flips Z from down (board face) to up (ROS). Position
-         is approximate, near chassis centre. -->
-    <origin xyz="0 0 0.02" rpy="3.14159 0 0"/>
+         around X flips Z from down (board face) to up (ROS). Seated
+         95.25mm forward of centre (+X), measured 2026-05-18. Z est. -->
+    <origin xyz="0.09525 0 0.02" rpy="3.14159 0 0"/>
   </joint>
 
   <!-- ============================================================
@@ -106,7 +107,7 @@
   <joint name="rpi_battery_joint" type="fixed">
     <parent link="base_link"/>
     <child link="rpi_battery_link"/>
-    <origin xyz="-0.065 0 0.0625" rpy="0 0 0"/>
+    <origin xyz="-0.0762 0 0.0625" rpy="0 0 0"/>
   </joint>
 
   <!-- Raspberry Pi 5 — on top of the battery. Board 85 x 56 mm;
@@ -125,7 +126,7 @@
   <joint name="rpi_joint" type="fixed">
     <parent link="base_link"/>
     <child link="rpi_link"/>
-    <origin xyz="-0.065 0 0.085" rpy="0 0 0"/>
+    <origin xyz="-0.0762 0 0.085" rpy="0 0 0"/>
   </joint>
 
   <!-- ==================== RPLIDAR C1 ==================== -->
@@ -151,7 +152,7 @@
   <joint name="laser_joint" type="fixed">
     <parent link="base_link"/>
     <child link="laser_frame"/>
-    <origin xyz="-0.065 0 0.118" rpy="0 0 3.14159"/>
+    <origin xyz="-0.0762 0 0.118" rpy="0 0 3.14159"/>
   </joint>
 
   <!-- ==================== Stereo Camera Rig (dual OV5647 NoIR on Pi 5 CSI) ====================
@@ -175,8 +176,10 @@
   <joint name="stereo_camera_joint" type="fixed">
     <parent link="base_link"/>
     <child link="stereo_camera_link"/>
-    <!-- Directly above the LIDAR on the rear deck (-X). Z ESTIMATED. -->
-    <origin xyz="-0.065 0 0.150" rpy="0 0 0"/>
+    <!-- Above the LIDAR on the rear deck (-X). Cameras measured at
+         355.6mm above the floor (2026-05-18); base_link is 20mm above
+         the floor, so Z = 0.3556 - 0.020 = 0.3356 m. -->
+    <origin xyz="-0.0762 0 0.3356" rpy="0 0 0"/>
   </joint>
 
   <!-- LEFT camera body (Pi 5 CAM0). OV5647 module ~ 25x24x9 mm. -->
@@ -231,6 +234,98 @@
     <parent link="stereo_right_camera_link"/>
     <child link="stereo_right_camera_optical_frame"/>
     <origin xyz="0 0 0" rpy="-1.5707963 0 -1.5707963"/>
+  </joint>
+
+  <!-- ============================================================
+       SENSOR HUB FRAMES — 4x HC-SR04 ultrasonic + 2x Sharp IR cliff.
+       Frame ids match rovac_sensor_driver: us_front_link, us_rear_link,
+       us_left_link, us_right_link, cliff_front_link, cliff_rear_link.
+
+       sensor_msgs/Range projects along each frame's +X axis, so the
+       joint rpy aims the detection cone:
+         us_front  +X -> +X  (forward)        rpy 0 0 0
+         us_rear   +X -> -X  (rear)           rpy 0 0 pi
+         us_left   +X -> +Y  (left)           rpy 0 0 +pi/2
+         us_right  +X -> -Y  (right)          rpy 0 0 -pi/2
+         cliff_*   +X -> -Z  (down at floor)  rpy 0 +pi/2 0
+
+       X/Y measured 2026-05-18: front/rear sensors at the +-120.65mm
+       edges (robot 241.3mm long); left/right at the +-70mm body edges
+       (140mm-wide body; treads sit outboard). Z = measured height above
+       floor minus 20mm (base_link sits 20mm up): us front/left/right
+       0.0562, us rear 0.195, cliff front/rear 0.0308. (2026-05-18)
+       ============================================================ -->
+
+  <link name="us_front_link">
+    <visual>
+      <geometry><box size="0.020 0.045 0.015"/></geometry>
+      <material name="us_cyan"><color rgba="0.1 0.7 0.9 1"/></material>
+    </visual>
+  </link>
+  <joint name="us_front_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="us_front_link"/>
+    <origin xyz="0.12065 0 0.0562" rpy="0 0 0"/>
+  </joint>
+
+  <link name="us_rear_link">
+    <visual>
+      <geometry><box size="0.020 0.045 0.015"/></geometry>
+      <material name="us_cyan"/>
+    </visual>
+  </link>
+  <joint name="us_rear_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="us_rear_link"/>
+    <origin xyz="-0.12065 0 0.195" rpy="0 0 3.14159"/>
+  </joint>
+
+  <link name="us_left_link">
+    <visual>
+      <geometry><box size="0.020 0.045 0.015"/></geometry>
+      <material name="us_cyan"/>
+    </visual>
+  </link>
+  <joint name="us_left_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="us_left_link"/>
+    <origin xyz="0 0.070 0.0562" rpy="0 0 1.5707963"/>
+  </joint>
+
+  <link name="us_right_link">
+    <visual>
+      <geometry><box size="0.020 0.045 0.015"/></geometry>
+      <material name="us_cyan"/>
+    </visual>
+  </link>
+  <joint name="us_right_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="us_right_link"/>
+    <origin xyz="0 -0.070 0.0562" rpy="0 0 -1.5707963"/>
+  </joint>
+
+  <link name="cliff_front_link">
+    <visual>
+      <geometry><box size="0.020 0.011 0.007"/></geometry>
+      <material name="cliff_orange"><color rgba="0.95 0.55 0.1 1"/></material>
+    </visual>
+  </link>
+  <joint name="cliff_front_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="cliff_front_link"/>
+    <origin xyz="0.12065 0 0.0308" rpy="0 1.5707963 0"/>
+  </joint>
+
+  <link name="cliff_rear_link">
+    <visual>
+      <geometry><box size="0.020 0.011 0.007"/></geometry>
+      <material name="cliff_orange"/>
+    </visual>
+  </link>
+  <joint name="cliff_rear_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="cliff_rear_link"/>
+    <origin xyz="-0.12065 0 0.0308" rpy="0 1.5707963 0"/>
   </joint>
 
 </robot>

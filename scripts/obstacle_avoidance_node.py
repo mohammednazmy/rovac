@@ -6,6 +6,10 @@ Subscribes to 4x ultrasonic Range + cliff detected Bool from the ESP32
 sensor hub, publishes zero-velocity Twist on emergency stop or cliff
 detection, and obstacle PointCloud2 for Nav2 costmap integration.
 
+Sensor mounting geometry (position + facing direction) is read live from
+the TF tree (base_link -> us_<name>_link), so the URDF is the single
+source of truth — no hardcoded sensor coordinates.
+
 Replaces the legacy super_sensor obstacle_avoidance_node.py.
 """
 
@@ -16,29 +20,36 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Range, PointCloud2, PointField
 from std_msgs.msg import Bool
+import tf2_ros
 
 
 class ObstacleAvoidanceNode(Node):
     """Obstacle avoidance using sensor hub ultrasonic + cliff data."""
 
-    # Sensor mounting positions relative to base_link (meters).
-    # Measured 2026-04-20 after physical mounting on Yahboom G1 Tank chassis.
+    # TF frame published by robot_state_publisher for each ultrasonic.
+    SENSOR_FRAMES = {
+        "front": "us_front_link",
+        "rear":  "us_rear_link",
+        "left":  "us_left_link",
+        "right": "us_right_link",
+    }
+    BASE_FRAME = "base_link"
+
+    # Per-sensor min_valid: the floor for accepting a reading — anything
+    # below it is filtered out (treated as no obstacle). An ultrasonic
+    # mounted above the ground sees floor-bounce within a geometric range;
+    # without this filter that floor reading tripped a permanent emergency
+    # stop. min_valid is TUNING, not geometry, so it stays hardcoded here.
     #
-    # min_valid: per-sensor floor for accepting a reading. Anything below
-    # this is filtered out (treated as no obstacle). The front sensor sits
-    # 4cm above the floor with a 30° forward cone; geometrically the floor
-    # enters its cone at ~14cm, so any reading <13cm is floor-bounce, not
-    # a real obstacle. Without this filter the floor reading triggered
-    # permanent emergency stop. Tune per-sensor based on its mount.
-    SENSOR_CONFIG = {
-        "front": {"pos": (0.250, 0.0, 0.04), "dir": (1.0, 0.0, 0.0),
-                  "min_valid": 0.13},
-        "rear":  {"pos": (-0.115, 0.0, 0.04), "dir": (-1.0, 0.0, 0.0),
-                  "min_valid": 0.05},
-        "left":  {"pos": (0.0, 0.067, 0.04), "dir": (0.0, 1.0, 0.0),
-                  "min_valid": 0.05},
-        "right": {"pos": (0.0, -0.067, 0.04), "dir": (0.0, -1.0, 0.0),
-                  "min_valid": 0.05},
+    # NOTE: it depends on mount height. The front sensor moved from ~40mm
+    # to 76mm above the floor on 2026-05-18, which pushes floor-bounce out
+    # to roughly 0.29m. The 0.13 below is the OLD 40mm value — re-tune it
+    # against the new mount before relying on autonomous runs.
+    MIN_VALID = {
+        "front": 0.13,
+        "rear":  0.05,
+        "left":  0.05,
+        "right": 0.05,
     }
 
     def __init__(self):
@@ -64,6 +75,15 @@ class ObstacleAvoidanceNode(Node):
                           "left": float("inf"), "right": float("inf")}
         self.cliff_detected = False
         self.emergency_stop = False
+
+        # Sensor geometry resolved from TF: name -> {"pos": (x,y,z),
+        # "dir": (dx,dy,dz)}, expressed in base_link. Populated lazily once
+        # the static transforms are available. Emergency stop does NOT
+        # depend on this (it needs only ranges + min_valid) — only the
+        # costmap point cloud does, so a missing TF degrades gracefully.
+        self.sensor_geom = {}
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         # Subscribe to sensor hub ultrasonic Range topics
         reliable_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
@@ -97,10 +117,50 @@ class ObstacleAvoidanceNode(Node):
         # 10 Hz safety check timer
         self.create_timer(0.1, self._safety_check)
 
+        # 1 Hz timer: resolve sensor mount frames from TF. Static
+        # transforms never change, so each is looked up once and cached;
+        # the timer cancels itself once all four are known.
+        self._frame_timer = self.create_timer(1.0, self._resolve_sensor_frames)
+
         self.get_logger().info("Obstacle avoidance initialized (sensor hub edition)")
         self.get_logger().info(
             f"  Emergency stop: {self.emergency_stop_dist}m, "
             f"slow down: {self.slow_down_dist}m")
+
+    def _resolve_sensor_frames(self):
+        """Look up any not-yet-resolved ultrasonic frames from TF and cache
+        their pose. Cancels the timer once all four are resolved."""
+        for name, frame in self.SENSOR_FRAMES.items():
+            if name in self.sensor_geom:
+                continue
+            try:
+                tf = self.tf_buffer.lookup_transform(
+                    self.BASE_FRAME, frame, rclpy.time.Time())
+            except tf2_ros.TransformException:
+                continue  # frame not published yet — retry next tick
+            t = tf.transform.translation
+            self.sensor_geom[name] = {
+                "pos": (t.x, t.y, t.z),
+                "dir": self._quat_x_axis(tf.transform.rotation),
+            }
+            self.get_logger().info(
+                f"Resolved '{name}' from TF frame '{frame}': "
+                f"pos=({t.x:.3f}, {t.y:.3f}, {t.z:.3f})")
+        if len(self.sensor_geom) == len(self.SENSOR_FRAMES):
+            self.get_logger().info("All ultrasonic frames resolved from TF")
+            self._frame_timer.cancel()
+
+    @staticmethod
+    def _quat_x_axis(q):
+        """Return the +X axis of a quaternion's frame, expressed in the
+        parent frame. sensor_msgs/Range projects along the sensor frame's
+        +X axis, so this is the direction the sensor points."""
+        x, y, z, w = q.x, q.y, q.z, q.w
+        return (
+            1.0 - 2.0 * (y * y + z * z),
+            2.0 * (x * y + z * w),
+            2.0 * (x * z - y * w),
+        )
 
     def _us_callback(self, name: str, msg: Range):
         """Update ultrasonic range for a given sensor."""
@@ -118,7 +178,7 @@ class ObstacleAvoidanceNode(Node):
         # the user which physical sensor needs investigation.
         valid_ranges = []
         for name, r in self.us_ranges.items():
-            min_valid = self.SENSOR_CONFIG[name].get("min_valid", 0.0)
+            min_valid = self.MIN_VALID.get(name, 0.0)
             if min_valid <= r < float("inf"):
                 valid_ranges.append((r, name))
         if valid_ranges:
@@ -147,19 +207,21 @@ class ObstacleAvoidanceNode(Node):
             self._publish_obstacle_points()
 
     def _publish_obstacle_points(self):
-        """Publish ultrasonic readings as PointCloud2 for Nav2 costmap."""
+        """Publish ultrasonic readings as PointCloud2 for Nav2 costmap.
+        Only sensors whose mount frame has been resolved from TF are
+        included; until then the cloud is simply empty."""
         points = []
 
-        for name, config in self.SENSOR_CONFIG.items():
+        for name, geom in self.sensor_geom.items():
             range_m = self.us_ranges[name]
-            min_valid = config.get("min_valid", 0.0)
+            min_valid = self.MIN_VALID.get(name, 0.0)
             # Same filter as _safety_check — don't seed costmap with
             # geometric artifacts that would create phantom obstacles.
             if range_m < min_valid or range_m >= 4.0:
                 continue
 
-            pos = config["pos"]
-            direction = config["dir"]
+            pos = geom["pos"]
+            direction = geom["dir"]
             x = pos[0] + direction[0] * range_m
             y = pos[1] + direction[1] * range_m
             z = pos[2] + direction[2] * range_m
