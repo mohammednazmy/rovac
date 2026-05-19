@@ -115,7 +115,6 @@ shared/
 
 # === Session / Temp Files ===
 *-this-session-is-being-continued-from-*.txt
-TODO.md
 
 # === Legacy Config (abandoned experiments) ===
 config/fastdds_agent.xml
