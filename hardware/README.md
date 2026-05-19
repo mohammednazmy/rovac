@@ -139,8 +139,6 @@ part of the current bringup path. Path references should point at `archive/`.
 - Hiwonder ROS controller → `archive/legacy_hardware/hiwonder-ros-controller/`
 - WiFi micro-ROS / XV11 lidar bridges → `archive/legacy_hardware/esp32_lidar_wireless/`,
   `archive/legacy_hardware/esp32_xv11_bridge/`
-- 8× Delta BCB1012GJ-01 blower motors (v2-chassis exploration inventory) →
-  `archive/legacy_hardware/delta-bcb1012gj-01-blower-motor/`
 
 ## Power Budget
 

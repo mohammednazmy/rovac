@@ -50,11 +50,6 @@ _Last consolidated: 2026-05-18 (full sweep of code + docs for forgotten TODOs)._
 
 ## Major projects (detailed checklists in their own docs)
 
-- [ ] **v2 Chassis Migration** — Neato D5 donor. Planned, not started, and **needs
-  re-scoping**: v2 was premised on a vacuum subsystem (8× Delta blower motors), which
-  was retired 2026-05-17. Sections of `docs/v2_chassis_migration/` now carry a
-  `> NOTE: v2 scope under revision` marker — decide v2's purpose before proceeding.
-
 - [ ] **v3 Custom 3D-Printed Chassis** — round 250 mm platform. CAD in progress;
   Iter-4 print-prep (split STLs + Bambu project) and first-print fitment validation
   pending. See `rovac_v3/`.
@@ -107,6 +102,8 @@ speed-dependent tracking error.
 
 ## Done
 
+- 2026-05-18 — Abandoned the v2 chassis migration entirely (the Neato vacuum-donor
+  direction is closed); archived `docs/v2_chassis_migration/` and the XV11 Neato lidar.
 - 2026-05-18 — Documentation realignment: ROVAC re-described as a general-purpose
   autonomous robot (vacuum framing retired); core, architecture, guide, hardware, and
   sub-project docs swept to current reality; retired hardware archived to

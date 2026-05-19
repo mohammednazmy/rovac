@@ -2,25 +2,15 @@
 
 **Status:** Iter-3 + Audit-1 (manual) + Audit-2 (hardcore tooling) — all clean (2026-05-04)
 **Started:** 2026-05-02
-**Relationship to v2:** **Parallel exploration**, not a replacement.
 
-## Why a v3 when v2 isn't built yet?
+## Why a v3?
 
-v2 (Neato Botvac D5 donor) was the practical, time-efficient path to a low-profile
-chassis — buy a $40 chassis with pre-engineered drive geometry, bumper, and cliff
-sensor cutouts.
-
-> NOTE: v2 scope is under revision — the v2 plan was premised on a vacuum donor and
-> vacuum subsystem, both now retired. v2's re-scoping is a maintainer decision; v3
-> remains an independent custom-chassis exploration regardless of v2's status.
-
-v3 explores the **opposite** approach: a fully custom, ground-up 3D-printed
-chassis where every mounting feature is purpose-designed for our exact stack
-(Pi 5, NULLLAB Maker-ESP32 motor controller, ESP32 sensor hub, BNO055,
-RPLIDAR C1, Greartisan ZGB37RG motors). v2 wins on time-to-floor; v3 wins on
-*fit* and *understanding*.
-
-Both tracks can coexist; v3 is a learning + next-generation platform exploration.
+v3 explores a fully custom, ground-up 3D-printed chassis where every mounting
+feature is purpose-designed for our exact stack (Pi 5, NULLLAB Maker-ESP32 motor
+controller, ESP32 sensor hub, BNO055, RPLIDAR C1, Greartisan ZGB37RG motors).
+It is the next-generation platform exploration — a learning effort to design a
+chassis that fits the ROVAC stack precisely, rather than adapting to an
+off-the-shelf chassis.
 
 ## Folder layout
 
