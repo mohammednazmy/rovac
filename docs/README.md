@@ -34,6 +34,7 @@ This directory now separates current operator documentation from archived iterat
 
 ## Documentation Policy
 
+- ROVAC is a general-purpose autonomous mobile robot (the vacuum/cleaning function was retired 2026-05-17). Docs should not frame it as a vacuum or cleaning robot.
 - Current runtime documentation should match the active ESP32 USB serial + Pi edge + Mac brain architecture.
 - Historical plans, phase summaries, and superseded wiring or wireless-architecture docs belong under [`archive/`](archive/README.md).
 - When runtime behavior changes, update both the operator-facing docs and the architecture snapshot in the same change.

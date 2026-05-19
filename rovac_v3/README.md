@@ -6,9 +6,13 @@
 
 ## Why a v3 when v2 isn't built yet?
 
-v2 (Neato Botvac D5 donor) is the practical, time-efficient path to a low-profile
-chassis — buy a $40 chassis with pre-engineered drive geometry, dust path,
-bumper, and cliff sensor cutouts. We're committed to v2; hardware ships May 6–13.
+v2 (Neato Botvac D5 donor) was the practical, time-efficient path to a low-profile
+chassis — buy a $40 chassis with pre-engineered drive geometry, bumper, and cliff
+sensor cutouts.
+
+> NOTE: v2 scope is under revision — the v2 plan was premised on a vacuum donor and
+> vacuum subsystem, both now retired. v2's re-scoping is a maintainer decision; v3
+> remains an independent custom-chassis exploration regardless of v2's status.
 
 v3 explores the **opposite** approach: a fully custom, ground-up 3D-printed
 chassis where every mounting feature is purpose-designed for our exact stack
@@ -16,7 +20,7 @@ chassis where every mounting feature is purpose-designed for our exact stack
 RPLIDAR C1, Greartisan ZGB37RG motors). v2 wins on time-to-floor; v3 wins on
 *fit* and *understanding*.
 
-Both can coexist. v2 ships first; v3 is learning + second-generation platform.
+Both tracks can coexist; v3 is a learning + next-generation platform exploration.
 
 ## Folder layout
 
@@ -63,7 +67,7 @@ rovac_v3/
 
 | ID | Decision | Value |
 |---|---|---|
-| D1 | Vacuum vs platform | **Pure nav/sensor platform** |
+| D1 | Form/function | **Pure nav/sensor platform** — general-purpose autonomous mobile robot |
 | D2 | Form factor | **Round** |
 | D3 | Outer diameter | **250 mm** (single-piece print on Bambu P2S 256 mm bed) |
 | D4 | Height interpretation | **95 mm chassis** + recessed LIDAR (total robot ≈ 113 mm) |

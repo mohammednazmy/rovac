@@ -6,14 +6,13 @@ For operator steps, see `docs/guides/bringup.md`.
 
 ## System Overview
 
-ROVAC is split into four operational layers:
+ROVAC is a general-purpose autonomous mobile robot, split into three operational layers:
 
 | Layer | Location | Responsibility |
 |------|----------|----------------|
 | Motor controller | ESP32 on robot | Closed-loop motor control, encoder odometry, BNO055 IMU, USB serial transport |
-| Edge | Raspberry Pi 5 on robot | Sensor drivers, motor driver bridge, TF, mux, safety nodes, rosbridge, service orchestration |
+| Edge | Raspberry Pi 5 on robot | Motor driver bridge, sensor hub driver, lidar, stereo cameras, TF, mux, safety nodes, Sense HAT panel, service orchestration |
 | Brain | MacBook Pro | SLAM, Nav2, EKF, Foxglove, teleop, development |
-| Optional sensor package | Android phone | GPS, IMU, magnetometer, camera streams |
 
 ## Communication Boundaries
 
@@ -31,12 +30,14 @@ ROVAC is split into four operational layers:
 - Profiles: `config/cyclonedds_mac.xml` and `config/cyclonedds_pi.xml`
 - Bootstrap: `config/ros2_env.sh`
 
-### Phone to Pi
+### Sensor hub to Pi
 
-- Transport: rosbridge WebSocket on Pi port 9090
-- App source: `hardware/android_phone_sensors/`
-- ROS topics: `/phone/imu` (50Hz), `/phone/gps/fix` (1Hz), `/phone/camera/image_raw/compressed` (~2FPS)
-- DDS exposes these to the Mac automatically
+- Physical link: USB serial
+- Transport: COBS-framed binary protocol (same `common/serial_protocol.h`)
+- Pi consumer: `ros2_ws/src/rovac_sensor_driver/`
+- Publishes 4x HC-SR04 ultrasonic ranges, 2x Sharp IR cliff ranges, and `/obstacle/points`
+
+> The Android phone sensor package and its rosbridge bridge were retired 2026-04-11; the BNO055 on the ESP32 replaced the phone IMU. See `archive/legacy_hardware/`.
 
 ## Runtime Ownership
 
@@ -46,18 +47,20 @@ The Pi is the always-on runtime owner for robot-local services:
 
 - `rovac-edge.target`
 - `rovac-edge-motor-driver.service`
+- `rovac-edge-sensor-hub.service`
 - `rovac-edge-rplidar-c1.service`
 - `rovac-edge-mux.service`
 - `rovac-edge-tf.service`
 - `rovac-edge-map-tf.service`
 - `rovac-edge-obstacle.service`
-- `rovac-edge-supersensor.service`
 - `rovac-edge-health.service`
-- `rovac-edge-rosbridge.service`
 - `rovac-edge-ps2-joy.service`
 - `rovac-edge-ps2-mapper.service`
+- `rovac-edge-sense-hat-panel.service`
+- `rovac-edge-stereo-cameras.service`
+- `rovac-edge-diagnostics-splitter.service`
 
-Optional peripherals such as phone sensors, phone cameras, stereo depth, and webcam live outside the default edge target but are still part of the active repository.
+`rovac-edge-ekf.service` exists but is disabled — EKF runs on the Mac.
 
 ### Mac brain stack
 
@@ -67,7 +70,6 @@ The Mac starts and stops session-oriented workflows:
 - `scripts/mac_brain_launch.sh slam-ekf`
 - `scripts/mac_brain_launch.sh nav <map>`
 - `scripts/mac_brain_launch.sh ekf`
-- `scripts/mac_brain_launch.sh ekf-gps`
 - `scripts/mac_brain_launch.sh foxglove`
 
 The Mac also coordinates with the Pi by:

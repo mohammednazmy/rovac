@@ -91,18 +91,20 @@ By default the teleop script SSHes to the Pi and publishes to `/cmd_vel_teleop`.
 `rovac-edge.target` currently starts:
 
 - `rovac-edge-motor-driver.service`
+- `rovac-edge-sensor-hub.service`
 - `rovac-edge-rplidar-c1.service`
 - `rovac-edge-mux.service`
 - `rovac-edge-tf.service`
 - `rovac-edge-map-tf.service`
-- `rovac-edge-obstacle.service`
-- `rovac-edge-supersensor.service`
 - `rovac-edge-health.service`
-- `rovac-edge-rosbridge.service`
+- `rovac-edge-obstacle.service`
 - `rovac-edge-ps2-joy.service`
 - `rovac-edge-ps2-mapper.service`
+- `rovac-edge-sense-hat-panel.service`
+- `rovac-edge-stereo-cameras.service`
+- `rovac-edge-diagnostics-splitter.service`
 
-Optional services for phone sensors, phone cameras, stereo, and webcam are available but are not part of the default edge target.
+`rovac-edge-ekf.service` exists but is **DISABLED** — EKF runs on the Mac.
 
 ## Primary Verification Commands
 
@@ -135,26 +137,6 @@ ssh pi@192.168.1.200 'sudo systemctl restart rovac-edge-rplidar-c1.service'
 
 # Show recent logs
 ssh pi@192.168.1.200 'sudo journalctl -u rovac-edge-motor-driver.service -n 100 --no-pager'
-```
-
-## Optional Sensor Workflows
-
-### Phone sensors
-
-```bash
-ssh pi@192.168.1.200 'sudo systemctl start rovac-edge-phone-sensors.service'
-```
-
-### Phone cameras
-
-```bash
-ssh pi@192.168.1.200 'sudo systemctl start rovac-phone-cameras.service'
-```
-
-### Stereo
-
-```bash
-ssh pi@192.168.1.200 'sudo systemctl start rovac-edge-stereo.target'
 ```
 
 ## Note on rplidar_ros

@@ -2,7 +2,7 @@
 
 ## Overview
 
-ROVAC is a mobile robot (built using Yahboom G1 Tank chassis) with a USB serial architecture:
+ROVAC is a general-purpose autonomous mobile robot (built on a Yahboom G1 Tank chassis) with a USB serial architecture:
 - **ESP32 Motor Controller** (Maker-ESP32 Dev Board on robot): USB serial COBS binary protocol — runs PID motor control, BNO055 IMU, publishes odom/tf/imu/diagnostics
 - **ESP32 Sensor Hub** (on robot): USB serial COBS binary protocol — 4x HC-SR04 ultrasonic + 2x Sharp IR cliff sensors, publishes range/cliff/diagnostics
 - **Raspberry Pi 5 (Edge)**: C++ motor driver node + C++ sensor driver node + sensor services at `192.168.1.200` (hostname: `rovac-pi`, user: `pi`)
@@ -180,7 +180,6 @@ Without this, the LED matrix will be dark even though the panel service runs wit
 │   └── cobs.h                         # COBS header
 ├── hardware/
 │   ├── esp32_motor_wireless/          # ACTIVE — USB serial motor firmware (ESP-IDF v5.2)
-│   ├── esp32_at8236_driver/           # Legacy Python USB serial driver (replaced by C++ node)
 │   ├── esp32_sensor_hub/              # ACTIVE — USB serial sensor hub firmware (ESP-IDF v5.2)
 │   ├── hc-sr04-ultrasonic/            # HC-SR04 ultrasonic sensor docs
 │   ├── sharp-gp2y0a51sk0f-ir-distance/ # Sharp IR cliff sensor docs + datasheet
@@ -188,8 +187,7 @@ Without this, the LED matrix will be dark even though the panel service runs wit
 │   ├── greartisan-zgb37rg-motor/      # Motor specs + AS5600 integration data
 │   ├── rplidar_c1/                    # RPLIDAR C1 docs + SDK reference
 │   ├── maker_esp32/                   # Board docs + wiring guide
-│   ├── super_sensor/                  # LEGACY — replaced by esp32_sensor_hub
-│   ├── android_phone_sensors/          # RETIRED — BNO055 replaces phone IMU, no GPS needed
+│   │                                  # (retired hardware lives in archive/legacy_hardware/)
 ├── scripts/
 │   ├── keyboard_teleop.py             # Keyboard teleop (auto-SSHes to Pi)
 │   ├── install_pi_systemd.sh          # Pi setup (install/status/restart/udev/uninstall) — also wipes legacy udev rules, runs vcs import, applies patches, verifies USB symlinks
@@ -224,7 +222,7 @@ Without this, the LED matrix will be dark even though the panel service runs wit
 │       ├── rovac-edge-ps2-mapper.service    # PS2 → velocity commands
 │       ├── rovac-edge-sense-hat-panel.service # Sense HAT panel (status display + joystick)
 │       ├── rovac-edge-ekf.service           # EKF (DISABLED — run from Mac)
-│       └── ...                              # stereo, webcam services
+│       └── ...                              # + stereo-cameras, diagnostics-splitter
 ├── ros2_ws/src/
 │   ├── rovac_motor_driver/            # C++ USB serial motor driver (ament_cmake)
 │   ├── rovac_sensor_driver/           # C++ USB serial sensor hub driver (ament_cmake)
@@ -240,12 +238,16 @@ Without this, the LED matrix will be dark even though the panel service runs wit
 │   ├── pid_step_response.py           # PID step response analyzer
 │   └── latency_probe.py              # Network latency measurement
 ├── robot_mcp_server/                  # 35+ tool MCP server
-├── super_sensor/                      # Super Sensor desktop app + firmware
 ├── foxglove_layouts/                  # Foxglove Studio layout configs
 ├── archive/                           # All legacy/deprecated code
-│   ├── legacy_hardware/               # L298N, Hiwonder, BST-4WD, esp32_lidar_wireless, etc.
-│   ├── legacy_scripts/                # QoS relays, Agent watchdog, health_monitor, etc.
-│   └── legacy_launch/                 # Pre-systemd launch files (vorwerk_lidar era)
+│   ├── legacy_hardware/               # Retired hardware: phone sensors, Super Sensor, XV11
+│   │                                  #  bridge, AT8236 driver, webcam, L298N, Hiwonder, etc.
+│   ├── legacy_drivers/                # Retired driver code
+│   ├── legacy_ros_packages/           # Retired ROS2 packages
+│   ├── legacy_systemd/                # Retired systemd units (e.g. supersensor)
+│   ├── legacy_scripts/                # QoS relays, watchdogs, health_monitor, etc.
+│   ├── legacy_launch/                 # Pre-systemd launch files
+│   └── experiments/                   # Archived experiment rigs (incl. super-vacuum)
 └── docs/
     ├── ros2_reference_card.md         # ROS2 command cheatsheet
     ├── architecture/

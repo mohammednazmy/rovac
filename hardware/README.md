@@ -1,6 +1,9 @@
 # ROVAC Hardware
 
-This document describes the hardware that matches the current USB-serial ESP32 + Pi edge architecture and points away from older iteration-era hardware that remains in the repository.
+ROVAC is a general-purpose autonomous mobile robot built on a Yahboom G1 Tank
+(tracked) chassis. This document is the hardware index for the current
+USB-serial ESP32 + Pi edge architecture and points away from older
+iteration-era hardware now kept under `archive/`.
 
 ## Current Hardware Stack
 
@@ -10,10 +13,9 @@ This document describes the hardware that matches the current USB-serial ESP32 +
 | BNO055 IMU | I2C on ESP32 | ESP32 firmware | Core | `hardware/esp32_motor_wireless/main/bno055.*` |
 | JGB37-520R60-12 motors + encoders | Direct to ESP32 motor board | ESP32 firmware | Core | `hardware/greartisan-zgb37rg-motor/` |
 | RPLIDAR C1 | USB serial `/dev/rplidar_c1` | Pi edge stack | Core, external ROS driver expected | `hardware/rplidar_c1/` |
-| Super Sensor | USB serial `/dev/super_sensor` | Pi edge stack | Optional but integrated | `super_sensor/`, `hardware/super_sensor/` |
-| Samsung Galaxy A16 sensors | rosbridge WebSocket (Pi :9090) | Pi edge stack | Optional | `hardware/android_phone_sensors/` |
-| Stereo cameras | USB | Pi edge stack | Optional | `hardware/stereo_cameras/` |
-| USB webcam | USB `/dev/webcam` | Pi edge stack | Optional | `hardware/webcam/` |
+| ESP32 sensor hub (4x HC-SR04 + 2x Sharp IR cliff) | USB serial `/dev/esp32_sensor` @ 460800 | Pi edge stack | Core | `hardware/esp32_sensor_hub/` |
+| Dual OV5647 NoIR stereo cameras | Pi 5 CSI | Pi edge stack | Core | `ros2_ws/src/rovac_stereo_camera/` |
+| Raspberry Pi Sense HAT (status LED panel + joystick) | Pi I2C / GPIO | Pi edge stack | Core | `hardware/rpi_sense_hat/` |
 
 ## Communication Topology
 
@@ -27,11 +29,12 @@ Maker-ESP32 firmware
         v
 Pi 5 edge stack
   - rovac_motor_driver
+  - rovac_sensor_driver
   - lidar
   - cmd_vel mux
   - TF
-  - rosbridge
-  - optional peripherals
+  - stereo cameras
+  - Sense HAT status panel
         |
         | CycloneDDS, ROS_DOMAIN_ID=42
         v
@@ -77,54 +80,67 @@ The current design targets the Slamtec RPLIDAR C1 on the Pi.
 
 Note: `rplidar_ros` is cloned separately on the Pi (patched Slamtec driver) and is not tracked in the shared Git repo. The service runs on the Pi only.
 
-## Phone Integration
+## Sensor Hub
 
-The Samsung Galaxy A16 is optional. It is not required for the core drive stack.
+The ESP32 sensor hub (ESP32-DevKitV1) handles short-range proximity and cliff
+detection. It connects to the Pi over USB serial using the same COBS binary
+protocol as the motor controller.
 
-The phone connects via rosbridge WebSocket on Pi port 9090. The app source is `hardware/android_phone_sensors/`.
+| Attribute | Value |
+|-----------|-------|
+| Device | `/dev/esp32_sensor` |
+| Baud rate | 460800 |
+| Ultrasonic | 4x HC-SR04 (front / rear / left / right) |
+| Cliff | 2x Sharp GP2Y0A51SK0F IR (front / rear) |
+| Runtime service | `config/systemd/rovac-edge-sensor-hub.service` |
+| Pi driver | `ros2_ws/src/rovac_sensor_driver/` |
+| Firmware | `hardware/esp32_sensor_hub/` |
 
-| Topic | Type | Rate | Description |
-|-------|------|------|-------------|
-| `/phone/imu` | Imu | 50 Hz | Phone IMU via rosbridge |
-| `/phone/gps/fix` | NavSatFix | 1 Hz | Phone GPS via rosbridge |
-| `/phone/camera/image_raw/compressed` | CompressedImage | ~2 FPS | Phone rear camera (JPEG) |
+It publishes `/sensors/ultrasonic/*`, `/sensors/cliff/*`, and `/obstacle/points`.
+
+> Phone integration is retired. Android phone sensors (IMU / GPS / camera) were
+> removed on 2026-04-11 — the BNO055 replaced the phone IMU. The app source
+> moved to `archive/legacy_hardware/android_phone_sensors/`.
 
 ## Active Vs Reference Directories
 
-### Start here
+### Start here (active hardware)
 
-- `hardware/esp32_motor_wireless/`
-- `hardware/rplidar_c1/`
-- `hardware/android_phone_sensors/`
-- `hardware/stereo_cameras/`
-- `hardware/webcam/`
-- `hardware/super_sensor/`
-- `hardware/greartisan-zgb37rg-motor/`
+- `hardware/esp32_motor_wireless/` — motor controller firmware
+- `hardware/esp32_sensor_hub/` — sensor hub firmware
+- `hardware/rplidar_c1/` — RPLIDAR C1
+- `hardware/greartisan-zgb37rg-motor/` — drive motors
+- `hardware/rpi_sense_hat/` — Sense HAT status panel
+- `hardware/hc-sr04-ultrasonic/` — ultrasonic sensor docs
+- `hardware/sharp-gp2y0a51sk0f-ir-distance/` — IR cliff sensor docs
 
 ### Useful reference material
 
 - `hardware/maker_esp32/`
 - `hardware/as5600-magnetic-encoder/`
 - `hardware/arduino-nano-atmega328p/`
-- `hardware/hc-sr04-ultrasonic/`
 - `hardware/yahboom-usb3-hub/`
 
-### v2 chassis migration inventory (incoming / not yet integrated)
+### Retired / archived
 
-These components are documented but not yet running on the active ROVAC v1 stack. They're part of the [Neato Botvac D5 donor migration](../docs/v2_chassis_migration/) and will move into "Start here" once the v2 build is online.
+The following hardware was retired and moved out of `hardware/`. It is not
+part of the current bringup path. Path references should point at `archive/`.
 
-- `hardware/delta-bcb1012gj-01-blower-motor/` — 8× Delta BLDC suction blowers (14.4 V, 3.45 A, ~50 W each) for Layout B1 dual-pair vacuum pancake. Received 2026-05-05.
-
-### Historical or superseded experiments
-
-- `hardware/esp32_xv11_bridge/`
-- `hardware/esp32_gateway/`
-- `hardware/esp32_at8236_driver/`
-- `hardware/yahboom-at8236-motor-driver/`
-- `hardware/yahboom-ir-tracking-sensor/`
-- `hardware/nrf24l01-pa-lna-transceiver/`
-
-Those directories are kept for reference, parts reuse, or earlier iterations. They are not part of the current bringup path documented in the root README and `docs/`.
+- Android phone sensors (IMU / GPS / camera) — retired 2026-04-11, replaced by
+  the BNO055. → `archive/legacy_hardware/android_phone_sensors/`,
+  `archive/legacy_hardware/phone_sensors/`, `archive/legacy_hardware/phone_cameras/`
+- Super Sensor (Arduino-Nano proximity module) — replaced by the ESP32 sensor
+  hub. → `archive/legacy_hardware/super_sensor/`,
+  `archive/legacy_hardware/super_sensor_desktop_app/`
+- USB webcams — replaced by the CSI stereo cameras. →
+  `archive/legacy_hardware/webcam/`, `archive/legacy_hardware/stereo_cameras_usb/`
+- AT8236 Python motor driver / Yahboom AT8236 driver board → `archive/legacy_hardware/esp32_at8236_driver/`
+- L298N motor driver firmware → `archive/legacy_hardware/esp32_l298n_firmware/`
+- Hiwonder ROS controller → `archive/legacy_hardware/hiwonder-ros-controller/`
+- WiFi micro-ROS / XV11 lidar bridges → `archive/legacy_hardware/esp32_lidar_wireless/`,
+  `archive/legacy_hardware/esp32_xv11_bridge/`
+- 8× Delta BCB1012GJ-01 blower motors (v2-chassis exploration inventory) →
+  `archive/legacy_hardware/delta-bcb1012gj-01-blower-motor/`
 
 ## Power Budget
 
@@ -133,28 +149,19 @@ Those directories are kept for reference, parts reuse, or earlier iterations. Th
 | Raspberry Pi 5 | 3.0 A | 5.0 A | 5V via USB-C |
 | ESP32 + motors (2x) | 0.5 A | 4.0 A | 12V barrel, depends on load |
 | RPLIDAR C1 | 0.4 A | 0.6 A | 5V USB |
-| Super Sensor (Nano) | 0.05 A | 0.1 A | 5V USB |
-| Phone | 0.5 A | 1.0 A | 5V USB |
-| **Total** | **~4.5 A** | **~11 A** | |
+| ESP32 sensor hub | 0.05 A | 0.1 A | 5V USB |
+| **Total** | **~4.0 A** | **~10 A** | |
 
 **UVLO warning**: The TB67H450FNG motor drivers lock out below ~6.8V input. If battery sags under load, motors will cut out without warning.
 
-## PID Reference (calibrated March 2026)
+## PID Reference
 
-These values are in the ESP32 firmware but documented here for quick reference:
+The canonical PID / feed-forward calibration is maintained in
+`docs/guides/motor_tuning.md` ("Quick reference — canonical NVS calibration"),
+which is the single source of truth for tuned values. The live values are
+stored in ESP32 NVS; read them with `tools/motor_params_cli.py dump`.
 
-| Parameter | Value |
-|-----------|-------|
-| kp | 25 |
-| ki | 60 |
-| kd | 3 |
-| ff_scale | 200 PWM/(m/s) |
-| ff_offset_left | 136 (stiction) |
-| ff_offset_right | 132 (stiction) |
-| max_linear_speed | 0.57 m/s |
-| max_angular_speed | 6.5 rad/s |
-
-Steady-state error <1%, settling time ~400ms. See `tools/motor_characterization.py` for tuning.
+Drive envelope: max linear speed 0.57 m/s, max angular speed 6.5 rad/s.
 
 ## Operator Rules
 

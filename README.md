@@ -1,6 +1,6 @@
 # ROVAC
 
-ROVAC is a ROS 2 Jazzy mobile robot built on a Yahboom G1 tank chassis with a split-brain architecture:
+ROVAC is a general-purpose autonomous mobile robot running ROS 2 Jazzy, built on a Yahboom G1 tank chassis with a split-brain architecture:
 
 - ESP32 on the robot handles motor control, odometry, and the BNO055 IMU
 - Raspberry Pi 5 runs the always-on edge stack
@@ -15,10 +15,9 @@ This repository is shared by both machines:
 
 | Layer | Device | Current responsibility |
 |-------|--------|------------------------|
-| Motor controller | ESP32-WROOM-32E | PID motor control, encoder odometry, BNO055, USB COBS protocol |
-| Edge | Raspberry Pi 5 | motor driver, lidar, mux, TF, rosbridge, safety nodes, systemd orchestration |
+| Motor controller | NULLLAB Maker-ESP32 (ESP32-WROOM-32E) | PID motor control, encoder odometry, BNO055, USB COBS protocol |
+| Edge | Raspberry Pi 5 | motor driver, sensor hub, lidar, stereo cameras, mux, TF, Sense HAT panel, safety nodes, systemd orchestration |
 | Brain | MacBook Pro | SLAM Toolbox, Nav2, EKF, Foxglove, teleop, debugging |
-| Optional sensor package | Samsung Galaxy A16 | GPS, IMU, magnetometer, and camera feeds |
 
 ## Quick Start
 
@@ -60,7 +59,9 @@ On macOS, use `--no-daemon` with `ros2 topic list`, but not with `ros2 topic hz`
 |------|---------|
 | `common/` | Shared serial protocol and COBS framing |
 | `hardware/esp32_motor_wireless/` | Active ESP-IDF motor firmware |
+| `hardware/esp32_sensor_hub/` | Active ESP-IDF sensor hub firmware (ultrasonic + IR cliff) |
 | `ros2_ws/src/rovac_motor_driver/` | Pi-side C++ USB motor driver |
+| `ros2_ws/src/rovac_sensor_driver/` | Pi-side C++ USB sensor hub driver |
 | `ros2_ws/src/tank_description/` | URDF and live `cmd_vel` mux |
 | `config/` | DDS, EKF, Nav2, SLAM, and systemd configuration |
 | `scripts/` | Pi install/orchestration, Mac brain launch, teleop |
@@ -83,10 +84,13 @@ For the tighter subsystem map, start with `docs/ACTIVE_REPO_MAP.md`.
 
 The repo still contains retained legacy packages, vendor imports, and experimental areas. They are useful for reference, but they are not the current runtime path:
 
-- `archive/`
+- `archive/legacy_hardware/` (L298N driver, Hiwonder ROS controller, WiFi micro-ROS, AT8236 Python driver, XV11 lidar, Super Sensor, retired phone-sensor app, USB webcams)
+- `archive/legacy_systemd/` (superseded edge service units, e.g. rosbridge)
+- `archive/experiments/`
 - `docs/archive/`
-- `archive/legacy_ros_packages/` (Yahboom vendor packages and older lidar drivers)
 - `robot_mcp_server/` as a sidecar or experimental subsystem
+
+The vacuum/cleaning function was retired 2026-05-17; ROVAC is no longer a vacuum robot.
 
 ## Note on rplidar_ros
 

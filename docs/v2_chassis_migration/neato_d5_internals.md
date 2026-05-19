@@ -54,6 +54,8 @@ Single-channel Hall = no direction info from the encoder alone. ROVAC firmware e
 
 ## Power architecture
 
+> NOTE: v2 scope under revision — the vacuum subsystem is retired; the brushroll / side-brush / vacuum-fan branches of this power tree need re-scoping by the maintainer.
+
 ```
 DOCK (24 V / 1.67 A SMPS, optocoupler-isolated, ABOV controller)
   │

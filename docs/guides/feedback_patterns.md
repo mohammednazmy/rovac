@@ -1,8 +1,13 @@
 # Operator Feedback And Status Signals
 
-This document covers operator-visible feedback in the current stack.
+This document covers operator-visible feedback in the current stack for
+ROVAC, a general-purpose autonomous mobile robot.
 
-The important distinction is that most status information now comes from ROS topics, systemd state, Foxglove, and the command center UI. LED and buzzer behavior are optional and depend on the super sensor and controller integrations being connected.
+The important distinction is that most status information comes from ROS
+topics, systemd state, Foxglove, and the command center UI. On-robot LED
+status comes from the Raspberry Pi Sense HAT panel
+(`rovac-edge-sense-hat-panel.service`). Standalone buzzer behavior is legacy
+and is not part of the current hardware set.
 
 ## Primary Status Sources
 
@@ -14,30 +19,20 @@ Use these first:
 - Foxglove
 - service logs via `journalctl`
 
-## Optional Buzzer Meanings
+## Sense HAT Panel LED Status
 
-Where a buzzer is wired through the super sensor or related control path, these meanings are reasonable conventions:
+On-robot status is shown on the Raspberry Pi Sense HAT 8x8 LED matrix, driven
+by `rovac-edge-sense-hat-panel.service`. It displays a mode glyph (IDLE / TELEOP
+/ NAV / SLAM / ESTOP) with corner alarm badges for ESP32 health, Mac
+connectivity, and cliff detection. See the root `CLAUDE.md` "Sense HAT Panel"
+section for the full glyph and badge reference.
 
-| Pattern | Meaning |
-|---------|---------|
-| short beep | acknowledgement |
-| long beep | mode change or completed action |
-| repeating triple beep | failure or blocked state |
-
-These are conventions, not a guaranteed contract across all hardware configurations in the repo.
-
-## Optional LED Meanings
-
-If the RGB LED path is wired and active:
-
-| Color | Meaning |
-|-------|---------|
-| Green | edge stack healthy / idle |
-| Blue | teleop active |
-| Yellow | warning or obstacle condition |
-| Red | error, stop condition, or degraded runtime |
-| Off | unavailable, disabled, or not wired |
+> Note: standalone buzzer / RGB-LED codes from earlier hardware iterations
+> (the retired Super Sensor) are no longer part of the robot. They are not a
+> status source on the current stack.
 
 ## Practical Rule
 
-If LED or buzzer state disagrees with ROS diagnostics or service state, trust the software-visible state first. The current runtime is designed around systemd and ROS observability, not around standalone light or sound codes.
+If the Sense HAT panel state disagrees with ROS diagnostics or service state,
+trust the software-visible state first. The current runtime is designed around
+systemd and ROS observability.

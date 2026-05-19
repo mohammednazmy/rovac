@@ -17,7 +17,7 @@ assumes the Phase 0-4 tooling in the repo.
 ## Quick reference — canonical NVS calibration (as of 2026-04-22)
 
 Robot configuration at calibration time:
-- **Weight**: 5.2 kg (chassis + vacuum; no secondary battery mounted)
+- **Weight**: 5.2 kg (fully assembled chassis; no secondary battery mounted)
 - **Wheel separation**: 0.2005 m (track centerline to centerline, physically measured)
 - **Wheel radius**: 0.0222 m (effective rolling radius of drive sprocket,
   physically measured 2026-04-22 via tread-loop method — tape on tread,

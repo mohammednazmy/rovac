@@ -2,6 +2,8 @@
 
 Parts inventory for the v2 build. Status as of 2026-05-01.
 
+> NOTE: v2 scope under revision — the vacuum subsystem is retired; vacuum-related parts in this list need re-scoping by the maintainer.
+
 ## Already in hand (existing ROVAC stack)
 
 | Item | Quantity | Notes |
@@ -22,7 +24,7 @@ Parts inventory for the v2 build. Status as of 2026-05-01.
 
 | Item | Quantity | Cost | ETA | Source |
 |---|---|---|---|---|
-| Delta BCB1012GJ-01 suction motors | 8 | ~$22 | May 6–13 | eBay (bluecloud22) |
+| Delta BCB1012GJ-01 blower motors | 8 | ~$22 | May 6–13 | eBay (bluecloud22) |
 | Neato Botvac D5 donor chassis | 1 | $39.78 | May 6–13 | eBay (thanken22) |
 
 ## Need to source before / during build
@@ -40,6 +42,8 @@ Parts inventory for the v2 build. Status as of 2026-05-01.
 **Subtotal: ~$50–67**
 
 ### Vacuum subsystem (Phase 1 single-motor)
+
+> NOTE: v2 scope under revision — the vacuum subsystem is retired; this section needs re-scoping by the maintainer.
 
 | Item | Approx cost | Notes |
 |---|---|---|

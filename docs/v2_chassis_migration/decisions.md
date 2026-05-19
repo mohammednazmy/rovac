@@ -8,22 +8,22 @@ ADR-lite log of decisions made during planning, with rationale and alternatives 
 
 **Status:** ✅ Accepted (2026-05-01)
 
-**Context:** Current ROVAC is a Yahboom G1 tank chassis with vacuum stacked on top — ~150 mm tall, not vacuum-optimized. Need a low-profile (≤110 mm) D-shape or round chassis with differential drive, dust cup mounting, and LIDAR provision.
+> NOTE: v2 scope under revision — the vacuum subsystem is retired; this section needs re-scoping by the maintainer.
+
+**Context:** Current ROVAC is a Yahboom G1 tank chassis ~150 mm tall. Need a low-profile (≤110 mm) D-shape or round chassis with differential drive and LIDAR provision.
 
 **Decision:** Buy a used "for parts" Neato Botvac D5 ($40 shipped) and use it as a mechanical donor.
 
 **Rationale:**
 - D-shape, ~100 mm tall — fits under furniture
 - Pre-engineered drive system (wheels, suspension, motors, encoders)
-- Pre-engineered dust cup + cyclone + HEPA chamber
 - Pre-engineered LIDAR turret bay + bumper + cliff sensors
-- Neato D-series uses Delta BCB1012GJ-01 motors as OEM suction — drop-in compatible with the 8 we already own
+- Neato D-series uses Delta BCB1012GJ-01 motors as OEM — drop-in compatible with the 8 already owned
 - Cheaper than alternatives: ~$40 vs ~$300+ for ground-up CAD/print or $300 hobby platform
 
 **Alternatives considered:**
-- Yahboom Rosmaster X3 ($300+): mecanum drive (worse for vacuum kinematics), exceeds height budget
+- Yahboom Rosmaster X3 ($300+): mecanum drive, exceeds height budget
 - 3D-printed custom chassis: weeks of CAD work, no proven ergonomics
-- Dyson V6 motor on a custom platform: V6 form factor is stick-vacuum-shaped (220 mm tall), incompatible with low-profile target
 - Roborock S5/S6 donor: chassis available but doesn't have motor compatibility advantage
 
 ---
@@ -46,6 +46,8 @@ ADR-lite log of decisions made during planning, with rationale and alternatives 
 - All sensor signals re-route to our ESP32s
 - Drive motors driven by either ROVAC's TB67H450FNG H-bridges or new dedicated drivers (TBD)
 - Charging logic must be replaced (it's integrated into the discarded mainboard)
+
+> NOTE: D8 and D9 below reference brushroll/side-brush/suction subsystems. v2 scope is under revision — the vacuum subsystem is retired; these decisions need re-scoping by the maintainer.
 
 ---
 
@@ -116,6 +118,8 @@ ADR-lite log of decisions made during planning, with rationale and alternatives 
 
 **Status:** ✅ Accepted (2026-05-01) for initial build; future upgrade path documented
 
+> NOTE: v2 scope under revision — the vacuum subsystem is retired; this section needs re-scoping by the maintainer.
+
 **Context:** Eight Delta BCB1012GJ-01 motors purchased. Multiple layouts considered (Layout A quad-compound, Layout B dual-pair, Layout C dual-quad).
 
 **Decision:** Initial build uses Layout B1: 4 of the 8 motors in a 2×2 flat pancake arrangement. Front pair (S1A → S2A) and rear pair (S1B → S2B). Two intakes (front + rear), two exhausts (sides). 4 motors held as spares.
@@ -123,13 +127,12 @@ ADR-lite log of decisions made during planning, with rationale and alternatives 
 **Rationale:**
 - Compact 160×160 mm footprint fits Neato D5 chassis
 - 65 mm tall — preserves low CoG
-- Two cleaning paths (front + rear) — wider effective cleaning width
 - ~3,500 Pa per intake (compound 2-stage)
 - 4 motor spares for failure replacement and future upgrade
 
 **Future upgrade path:** Layout C2 (stacked dual-quad, 8 motors total) for ~6,500 Pa per intake. Requires extending chassis height by ~65 mm or adding a roof-rack assembly.
 
-**See:** [vacuum_subsystem.md](vacuum_subsystem.md) for full Layout B1 design and CAD references.
+**See:** the v2 `vacuum_subsystem.md` plan, moved to `archive/experiments/` when the vacuum function was retired.
 
 ---
 
@@ -183,9 +186,11 @@ ADR-lite log of decisions made during planning, with rationale and alternatives 
 
 **Status:** ✅ Accepted (2026-05-01) — *deferred from full Layout B1*
 
+> NOTE: v2 scope under revision — the vacuum subsystem is retired; this section needs re-scoping by the maintainer.
+
 **Context:** Layout B1 calls for 4 Delta motors arranged as two compound pairs. But a working single-motor configuration is simpler to bring up and validates the mechanical/electrical integration before adding compound complexity.
 
-**Decision:** First working configuration uses ONE Delta BCB1012GJ-01 motor mounted in the Neato dust cup's existing fan bay. Validate end-to-end (Pi 5 → ESP32 → suction motor → dust cup → cyclone → HEPA → exhaust) before adding compound stages.
+**Decision:** First working configuration uses ONE Delta BCB1012GJ-01 motor mounted in the Neato dust cup's existing fan bay. Validate end-to-end (Pi 5 → ESP32 → blower motor → dust cup → cyclone → HEPA → exhaust) before adding compound stages.
 
 **Upgrade path:** Once single-motor configuration is proven and characterized:
 1. Design 2-stage compound manifold (S1 → S2) on a test bench with manometer measurement

@@ -40,7 +40,7 @@ never silently diverge.
 
 | ID | Decision | Value |
 |---|---|---|
-| D1 | Vacuum vs platform | **Pure nav/sensor platform** (vacuum is v2's domain) |
+| D1 | Form/function | **Pure nav/sensor platform** — general-purpose autonomous mobile robot |
 | D2 | Form factor | **Round** |
 | D3 | Outer diameter | **250 mm** |
 | D4 | Height interpretation | **95 mm chassis + recessed LIDAR** (~113 mm total) |

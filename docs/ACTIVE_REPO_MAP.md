@@ -48,10 +48,10 @@ Mac brain workflows
 
 | Path | Role |
 |------|------|
-| `super_sensor/` and `hardware/super_sensor/` | Ultrasonic sensor stack and obstacle integration |
-| `hardware/android_phone_sensors/` | Phone IMU/GPS/Camera app (rosbridge WebSocket on Pi :9090) |
-| `hardware/stereo_cameras/` | Stereo depth and obstacle detection |
-| `hardware/webcam/` | USB webcam integration |
+| `hardware/esp32_sensor_hub/` | ESP32 sensor hub firmware (4x HC-SR04 ultrasonic + 2x Sharp IR cliff) |
+| `ros2_ws/src/rovac_sensor_driver/` | Pi-side C++ sensor hub driver and obstacle integration |
+| `scripts/edge/sense_hat_panel_node.py` | On-robot Sense HAT status display + joystick panel |
+| Stereo cameras | Dual OV5647 NoIR on Pi 5 CSI; runs via `rovac-edge-stereo-cameras.service` |
 | `robot_mcp_server/` | Experimental/sidecar MCP and AI-facing interfaces |
 
 ## Historical Or Reference Areas
@@ -60,12 +60,10 @@ These remain in the repo, but they are not the starting point for the current st
 
 | Path | Why it exists |
 |------|---------------|
-| `archive/` | Prior robot iterations and deprecated code |
+| `archive/legacy_hardware/` | Retired hardware: L298N driver, Hiwonder ROS controller, WiFi micro-ROS, AT8236 Python driver, XV11 lidar, Super Sensor (Arduino-Nano module), retired Android phone-sensor app, USB webcams |
+| `archive/legacy_systemd/` | Superseded edge service units (e.g. rosbridge) |
+| `archive/experiments/` | Archived experimental areas |
 | `docs/archive/` | Archived phase notes, old wiring docs, and wireless-era plans |
-| `archive/legacy_ros_packages/` | Yahboom vendor packages (controller, peripherals, ros_robot_controller) and older lidar drivers (vorwerk, xv11) |
-| `hardware/esp32_xv11_bridge/` | Previous lidar bridge design |
-| `hardware/esp32_at8236_driver/` | Older motor-driver path |
-| `hardware/yahboom-*` | Older board-specific hardware references |
 
 ## Change By Subsystem
 
@@ -85,7 +83,6 @@ Start with:
 - `scripts/mac_brain_launch.sh`
 - `scripts/ekf_launch.py`
 - `config/ekf_params.yaml`
-- `config/navsat_params.yaml`
 - `config/slam_params.yaml`
 - `config/nav2_params.yaml`
 

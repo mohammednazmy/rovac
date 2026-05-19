@@ -2,6 +2,8 @@
 
 Step-by-step from "donor chassis arrives" to "v2 robot is navigating." Phased to de-risk the integration.
 
+> NOTE: v2 scope under revision — the vacuum subsystem is retired; vacuum/brushroll/side-brush steps throughout this checklist need re-scoping by the maintainer.
+
 ## Phase 0 — Pre-arrival prep
 
 While waiting for hardware (~1 week), do these:
@@ -146,9 +148,12 @@ While waiting for hardware (~1 week), do these:
 - [ ] Connect AS5600 encoders to motor shafts (mechanical mount + I²C wiring)
 - [ ] Connect drive motors → TB67H450FNG H-bridges → ESP32 motor controller PWM
 - [ ] Connect AS5600 → ESP32 motor controller I²C bus
+
+> NOTE: v2 scope under revision — the vacuum subsystem is retired; this section needs re-scoping by the maintainer.
+
 - [ ] Connect brushroll motor → TB67H450FNG → ESP32 sensor hub PWM
 - [ ] Connect side brush motor → TB67H450FNG → ESP32 sensor hub PWM
-- [ ] Connect Delta suction motor → ESP32 sensor hub PWM (4-wire: V+, GND, PWM, FG)
+- [ ] Connect Delta blower motor → ESP32 sensor hub PWM (4-wire: V+, GND, PWM, FG)
 
 ## Phase 5 — Software bring-up
 
@@ -164,7 +169,10 @@ While waiting for hardware (~1 week), do these:
   - [ ] Wheel-drop emergency stop logic
 - [ ] RPLIDAR C1 — verify scan publication via existing `rplidar_ros` node
 - [ ] BNO055 — verify IMU data via existing motor controller firmware
-- [ ] Vacuum control node — new ROS2 node for `/vacuum/cmd` topic
+
+> NOTE: v2 scope under revision — the vacuum subsystem is retired; this section needs re-scoping by the maintainer.
+
+- [ ] ~~Vacuum control node — new ROS2 node for `/vacuum/cmd` topic~~ (retired)
 
 ### System integration (varies)
 - [ ] EKF tuning for new chassis kinematics
@@ -178,11 +186,17 @@ While waiting for hardware (~1 week), do these:
 
 ### Mechanical finalization
 - [ ] Cable management (route wires neatly, secure with zip ties)
+
+> NOTE: v2 scope under revision — the vacuum subsystem is retired; the vacuum-manifold / dust-cup / HEPA steps below need re-scoping by the maintainer.
+
 - [ ] Vibration isolation (Sorbothane pads under vacuum manifold)
 - [ ] Verify dust cup latches and unlatches cleanly
 - [ ] Verify HEPA filter is properly seated
 
 ### Functional testing
+
+> NOTE: v2 scope under revision — the vacuum subsystem is retired; the cleaning-cycle step needs re-scoping by the maintainer.
+
 - [ ] Full cleaning cycle on hard floor
 - [ ] Cliff detection at room edge / stairs
 - [ ] Bump recovery (drive into wall, verify backup behavior)

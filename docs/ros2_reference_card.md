@@ -40,11 +40,13 @@ Never source ESP-IDF in the same shell as the ROS conda environment.
 ```bash
 sudo systemctl status rovac-edge.target
 sudo systemctl status rovac-edge-motor-driver.service
+sudo systemctl status rovac-edge-sensor-hub.service
 sudo systemctl status rovac-edge-rplidar-c1.service
 sudo systemctl status rovac-edge-mux.service
 
 sudo systemctl restart rovac-edge.target
 sudo systemctl restart rovac-edge-motor-driver.service
+sudo systemctl restart rovac-edge-sensor-hub.service
 sudo systemctl restart rovac-edge-rplidar-c1.service
 
 sudo journalctl -u rovac-edge-motor-driver.service -f
@@ -122,8 +124,11 @@ idf.py -p /dev/esp32_motor flash
 |------|-----------------|
 | `/odom` | `rovac_motor_driver` |
 | `/imu/data` | `rovac_motor_driver` |
-| `/diagnostics` | `rovac_motor_driver` |
+| `/diagnostics` | `rovac_motor_driver` + `rovac_sensor_driver` |
 | `/scan` | `rplidar_ros` |
+| `/sensors/ultrasonic/{front,rear,left,right}` | `rovac_sensor_driver` |
+| `/sensors/cliff/{front,rear,detected}` | `rovac_sensor_driver` |
+| `/obstacle/points` | `rovac_sensor_driver` |
 | `/cmd_vel_teleop` | keyboard teleop |
 | `/cmd_vel_joy` | PS2 mapper |
 | `/cmd_vel_obstacle` | obstacle avoidance |
@@ -149,7 +154,7 @@ ssh pi@192.168.1.200
 sudo systemctl status rovac-edge.target
 
 # 2. Are USB devices connected?
-ls -la /dev/esp32_motor /dev/rplidar_c1
+ls -la /dev/esp32_motor /dev/esp32_sensor /dev/rplidar_c1
 
 # 3. Is the motor driver healthy?
 sudo systemctl status rovac-edge-motor-driver --no-pager -l
@@ -247,7 +252,7 @@ ssh pi@192.168.1.200 'systemctl is-active rovac-edge-ekf'   # Should be "inactiv
 ### "USB device not found"
 ```bash
 # Check what's connected
-ls -la /dev/esp32_motor /dev/rplidar_c1
+ls -la /dev/esp32_motor /dev/esp32_sensor /dev/rplidar_c1
 lsusb
 
 # If missing: unplug USB, wait 5s, replug

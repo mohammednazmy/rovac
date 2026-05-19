@@ -56,6 +56,8 @@ Expected core topics:
 - `/cmd_vel_teleop`
 - `/cmd_vel_joy`
 - `/scan`
+- `/sensors/ultrasonic/front` (and `rear` / `left` / `right`)
+- `/sensors/cliff/detected`
 
 ## 6. Sensor Split
 
@@ -69,6 +71,12 @@ If `/scan` is missing:
 
 ```bash
 ssh pi@192.168.1.200 'sudo systemctl status rovac-edge-rplidar-c1.service'
+```
+
+If `/sensors/...` topics are missing:
+
+```bash
+ssh pi@192.168.1.200 'sudo systemctl status rovac-edge-sensor-hub.service'
 ```
 
 If `/cmd_vel` exists but motion does not:

@@ -1,8 +1,8 @@
 # ROVAC Architecture (Verified)
 
-Last aligned against the repository on 2026-04-07.
+Last aligned against the repository on 2026-05-18.
 
-This file is a deployment-aligned snapshot of what the current repository is set up to run. It is intentionally narrower than the broader architecture document.
+This file is a deployment-aligned snapshot of what the current repository is set up to run. It is intentionally narrower than the broader architecture document. ROVAC is a general-purpose autonomous mobile robot — the vacuum/cleaning function was retired 2026-05-17.
 
 ## Verified Against
 
@@ -20,7 +20,8 @@ This file is a deployment-aligned snapshot of what the current repository is set
 | Layer | Host | Current responsibility |
 |------|------|------------------------|
 | ESP32 motor controller | On robot | Motor control, odometry, BNO055, serial framing |
-| Pi edge stack | `192.168.1.200` | Drivers, mux, TF, safety, rosbridge, optional peripherals |
+| ESP32 sensor hub | On robot | 4x HC-SR04 ultrasonic + 2x Sharp IR cliff, serial framing |
+| Pi edge stack | `192.168.1.200` | Drivers, mux, TF, safety, stereo cameras, Sense HAT panel |
 | Mac brain | DHCP on `en0` | SLAM, Nav2, EKF, Foxglove, teleop |
 | DDS | CycloneDDS | Unicast-only peer discovery, `ROS_DOMAIN_ID=42` |
 
@@ -28,12 +29,14 @@ This file is a deployment-aligned snapshot of what the current repository is set
 
 | Component | Status | Location | Notes |
 |-----------|--------|----------|-------|
-| ESP32 firmware | Active | `hardware/esp32_motor_wireless/` | USB serial COBS transport |
+| ESP32 motor firmware | Active | `hardware/esp32_motor_wireless/` | USB serial COBS transport |
+| ESP32 sensor hub firmware | Active | `hardware/esp32_sensor_hub/` | USB serial COBS transport |
 | Shared serial protocol | Active | `common/serial_protocol.h` | Message types, payloads, CRC |
 | Pi motor driver | Active | `ros2_ws/src/rovac_motor_driver/` | Publishes `/odom`, `/imu/data`, `/diagnostics`, optional `/tf` |
+| Pi sensor hub driver | Active | `ros2_ws/src/rovac_sensor_driver/` | Publishes ultrasonic/cliff ranges and `/obstacle/points` |
 | Velocity mux | Active | `ros2_ws/src/tank_description/tank_description/cmd_vel_mux.py` | Human override over safety and Nav2 |
 | URDF / TF model | Active | `ros2_ws/src/tank_description/urdf/tank.urdf` | Current frame geometry |
-| Mac brain launcher | Active | `scripts/mac_brain_launch.sh` | `slam`, `slam-ekf`, `nav`, `ekf`, `ekf-gps`, `foxglove` |
+| Mac brain launcher | Active | `scripts/mac_brain_launch.sh` | `slam`, `slam-ekf`, `nav`, `ekf`, `foxglove`, `all` |
 | Pi edge installer | Active | `scripts/install_pi_systemd.sh` | Installs units and udev rules on the Pi |
 | Optional MCP server | Sidecar | `robot_mcp_server/` | Not part of core bringup |
 
@@ -42,18 +45,20 @@ This file is a deployment-aligned snapshot of what the current repository is set
 These are the services the default edge target tries to start:
 
 - `rovac-edge-motor-driver.service`
+- `rovac-edge-sensor-hub.service`
 - `rovac-edge-rplidar-c1.service`
 - `rovac-edge-mux.service`
 - `rovac-edge-tf.service`
 - `rovac-edge-map-tf.service`
 - `rovac-edge-obstacle.service`
-- `rovac-edge-supersensor.service`
 - `rovac-edge-health.service`
-- `rovac-edge-rosbridge.service`
 - `rovac-edge-ps2-joy.service`
 - `rovac-edge-ps2-mapper.service`
+- `rovac-edge-sense-hat-panel.service`
+- `rovac-edge-stereo-cameras.service`
+- `rovac-edge-diagnostics-splitter.service`
 
-Optional but separate units also exist for stereo, phone sensors, phone cameras, and webcam.
+`rovac-edge-ekf.service` exists in `config/systemd/` but is disabled — EKF runs on the Mac.
 
 ## Key Topics
 
@@ -83,8 +88,8 @@ This matches the current human-override design in `cmd_vel_mux.py`.
 
 ## Notes
 
-- `rplidar_ros` is cloned separately on the Pi (patched Slamtec driver) and is not tracked in this shared Git repo. The LIDAR service runs on the Pi only.
-- Legacy packages are still present in `ros2_ws/src/` but are not part of the current bringup path.
+- `rplidar_ros` is pulled by `vcs import` per `ros2_ws/src/external.repos` (patched Slamtec driver) and is not tracked in this shared Git repo. The LIDAR service runs on the Pi only.
+- Retired hardware (L298N, Hiwonder, WiFi micro-ROS, AT8236 driver, XV11 lidar, Super Sensor, Android phone sensors, USB webcams) lives under `archive/legacy_hardware/`; superseded service units under `archive/legacy_systemd/`.
 - Historical docs from older wireless, XV-11, and Hiwonder eras have been moved under `docs/archive/`.
 
 ## Practical Reading Order

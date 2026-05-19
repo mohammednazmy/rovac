@@ -1,7 +1,12 @@
-# Phone Integration for Yahboom G1 Robot Tank
+# Phone Integration for ROVAC
 
-This module integrates a Samsung Galaxy A16 5G (SM-A166M) Android phone as a sensor pack,
-vision module, and control center for the robot tank.
+> NOTE: The Android phone sensor pack is RETIRED. The BNO055 IMU on the ESP32 motor
+> controller replaced the phone IMU, and GPS is not used. This document is kept for
+> historical reference only — the phone integration is no longer part of the active
+> ROVAC stack.
+
+This module integrated a Samsung Galaxy A16 5G (SM-A166M) Android phone as a sensor pack,
+vision module, and control center for ROVAC.
 
 ## Overview
 

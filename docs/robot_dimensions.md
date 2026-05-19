@@ -1,57 +1,61 @@
 # ROVAC Geometry And Sensor Frames
 
-This document captures the current geometry encoded in the active URDF at `ros2_ws/src/tank_description/urdf/tank.urdf`.
+ROVAC is a general-purpose autonomous mobile robot. This document captures the
+current geometry encoded in the active URDF at
+`ros2_ws/src/tank_description/urdf/tank.urdf`.
 
-If physical measurements and the URDF diverge, update the URDF first and then update this document in the same change.
+**The URDF is the live source of truth.** If physical measurements and the URDF
+diverge, update the URDF first and then update this document in the same change.
 
 ## Coordinate Convention
 
-ROVAC follows REP-103:
+`base_link` is at robot center, at motor-shaft height, 20 mm above the floor.
 
-- `base_link`: robot center at motor shaft height
-- `X`: forward
+- `X`: forward — the red-indicator end of the chassis
 - `Y`: left
 - `Z`: up
 - `base_footprint`: ground projection of `base_link`
 
+Note: ROVAC's front (+X) is the red-indicator end; the rear (-X) is the
+LIDAR / Raspberry Pi / stereo-camera stack end.
+
 ## Chassis Envelope
 
-The active URDF models the base as:
+| Dimension | Value | Notes |
+|-----------|-------|-------|
+| Length | 241.3 mm | overall, chassis nose to tail |
+| Width | 240 mm | 140 mm body + tank treads both sides |
+| Body width | 140 mm | rigid body, treads excluded |
+| `base_link` height above floor | 20 mm | motor-shaft height |
 
-```xml
-<box size="0.22 0.245 0.10"/>
-```
-
-That corresponds to:
-
-| Dimension | Value |
-|-----------|-------|
-| Length | 0.22 m |
-| Width | 0.245 m |
-| Body height in URDF | 0.10 m |
-| `base_footprint` offset | `z = -0.02 m` |
+Chassis: Yahboom G1 Tank (tracked chassis).
 
 ## Fixed Sensor Frames
 
-| Frame | Parent | Transform | Notes |
-|------|--------|-----------|-------|
-| `laser_frame` | `base_link` | `(0.015, 0.0, 0.12)` | RPLIDAR C1 |
-| `super_sensor_link` | `base_link` | `(0.10, 0.0, 0.03)` | Ultrasonic sensor module |
-| `imu_link` | `base_link` | `(0.0, 0.0, 0.02)`, `rpy=(pi, 0, 0)` | BNO055 mounted face-down |
-| `phone_imu` | `base_link` | `(-0.08, 0.0, 0.234)`, `rpy=(1.5708, -0.1868, 1.5708)` | Samsung Galaxy A16 mount |
-| `phone_gps` | `phone_imu` | `(0.0, 0.04, 0.0)` | GPS antenna offset |
-| `phone_camera` | `phone_imu` | `(0.0, 0.07, -0.004)` | Rear phone camera |
+Frame offsets are relative to `base_link` unless noted. Treat the URDF as
+authoritative for exact transforms.
 
-## Ultrasonic Layout
+| Frame | Parent | Position | Notes |
+|------|--------|----------|-------|
+| `base_footprint` | `base_link` | ground projection (`z = -0.02 m`) | |
+| `front_indicator` | `base_link` | +X end | red-indicator front marker |
+| `laser_frame` | `base_link` | 76.2 mm aft of centre (-X) | RPLIDAR C1 |
+| `imu_link` | `base_link` | 95.25 mm forward of centre (+X) | BNO055, mounted face-down (`rpy = (pi, 0, 0)`) |
 
-The super sensor module creates four child frames:
+The ESP32 sensor hub adds ultrasonic and cliff sensor frames — see "Sensor Hub
+Layout" below.
 
-| Frame | Parent | Transform | Orientation |
-|------|--------|-----------|-------------|
-| `super_sensor_link/front_top_link` | `super_sensor_link` | `(0.02, 0.0, 0.015)` | Forward |
-| `super_sensor_link/front_bottom_link` | `super_sensor_link` | `(0.02, 0.0, -0.015)` | Forward with slight downward pitch |
-| `super_sensor_link/left_link` | `super_sensor_link` | `(0.0, 0.03, 0.0)` | Left |
-| `super_sensor_link/right_link` | `super_sensor_link` | `(0.0, -0.03, 0.0)` | Right |
+## Sensor Hub Layout
+
+The ESP32 sensor hub drives 4x HC-SR04 ultrasonic and 2x Sharp GP2Y0A51SK0F IR
+cliff sensors.
+
+| Sensor | Position on chassis |
+|--------|---------------------|
+| Front ultrasonic + front cliff | +120.65 mm edge (+X) |
+| Rear ultrasonic + rear cliff | -120.65 mm edge (-X) |
+| Left ultrasonic | +70 mm body edge (+Y) |
+| Right ultrasonic | -70 mm body edge (-Y) |
 
 ## TF Tree
 
@@ -62,71 +66,17 @@ map
         -> base_footprint
         -> front_indicator
         -> laser_frame
-        -> super_sensor_link
-           -> front_top_link
-           -> front_bottom_link
-           -> left_link
-           -> right_link
         -> imu_link
-        -> phone_imu
-           -> phone_gps
-           -> phone_camera
+        (-> ESP32 sensor hub ultrasonic / cliff frames)
 ```
-
-## Phone Mount Geometry
-
-### Physical Mount
-
-- **Mount type**: Flexible gooseneck clamp attached to rear of upper platform
-- **Phone model**: Samsung Galaxy A16 (SM-A166M), 164.4 x 77.9 x 7.9 mm
-- **Orientation**: Landscape mode, screen facing REAR, rear camera facing FORWARD
-- **Portrait-top edge**: Points to the LEFT of the robot (+Y direction)
-- **Screen tilt**: ~60 degrees from vertical (30 degrees from horizontal), tilting BACKWARD
-
-### Phone Tilt Calculations
-
-```
-Vertical extent of tilted phone = 164mm * cos(60°) = 82mm
-Phone top from ground: 295mm
-Phone bottom from ground: 295 - 82 = 213mm
-Phone center from ground: (295 + 213) / 2 = 254mm
-Phone center above base_link: 254 - 20 = 234mm
-```
-
-### Phone IMU Axis Mapping
-
-**Android IMU coordinate system** (always reported in portrait reference frame):
-- Android X: Right (in portrait mode)
-- Android Y: Up (in portrait mode, toward earpiece/camera end)
-- Android Z: Out of screen (toward viewer)
-
-**Mounted in landscape on the robot (portrait-top pointing LEFT, screen facing REAR):**
-
-| Android Axis | Physical Direction (on robot) | Robot Frame |
-|---|---|---|
-| Android Y (portrait up) | Points LEFT | +Y |
-| Android Z (out of screen) | Points REAR + UP | -X (sin60°) + Z (cos60°) |
-| Android X (portrait right) | Points FORWARD + UP | Derived from Y × Z |
-
-### URDF Transform (base_link → phone_imu)
-
-- **X = -0.08**: 80mm behind chassis center
-- **Y = 0.0**: Centered laterally
-- **Z = 0.234**: 234mm above base_link (phone center)
-- **Roll = π/2 (1.5708)**: Landscape rotation (portrait-top goes left)
-- **Pitch = -0.1868**: Adjusted backward tilt
-- **Yaw = π/2 (1.5708)**: Camera faces forward
-
-## Calibration Notes
-
-1. **Phone tilt precision**: The 60° tilt has ~5° uncertainty. If EKF produces drift, adjust pitch value.
-2. **Verification method**: With robot stationary on flat surface, the phone accelerometer transformed to base_link should show approximately (0, 0, -9.81). Large X or Y components indicate rotation error.
-3. **LIDAR nearly centered**: The LIDAR is only 15mm forward of base_link center.
-4. **Upper platform taper**: The upper platform slopes from ~140mm (front) to ~100mm (rear). Components mounted on it have different heights depending on longitudinal position.
-5. **Width note**: The robot is 245mm wide (outer tracks). Track center-to-center distance differs from outer measurement by track width (~40-50mm total, both sides).
 
 ## Notes
 
-- The current lidar geometry is for the RPLIDAR C1, not the older XV-11 path.
-- The IMU geometry reflects the BNO055 on the ESP32 board, not older Pi- or Hiwonder-hosted IMUs.
-- Phone pose and camera offsets are part of the active URDF and should be treated as the current reference unless a new calibration replaces them.
+- The lidar geometry is for the RPLIDAR C1.
+- The IMU geometry reflects the BNO055 on the ESP32 motor board. The BNO055 is
+  the sole IMU on the robot.
+- Track center-to-center distance differs from the 240 mm outer width by the
+  track width on each side.
+- For exact transform values, frame orientations, and any geometry not listed
+  here, read `ros2_ws/src/tank_description/urdf/tank.urdf` directly — it is the
+  live source of truth.
