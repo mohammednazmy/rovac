@@ -313,6 +313,11 @@ arduino-cli upload -p /dev/ttyUSB0 --fqbn arduino:avr:nano sketch/
 
 ## Notes for ROVAC Integration
 
+> **Not currently used on ROVAC.** The Arduino Nano formerly hosted the "Super Sensor"
+> proximity module; that role has been replaced by the **ESP32 Sensor Hub**
+> (`hardware/esp32_sensor_hub/`). These boards are spares — this document is kept as a
+> generic vendor reference.
+
 1. **Primary Use:** Custom USB sensor modules, real-time I/O processing
 2. **Connection:** USB to Pi 5 (via hub if needed)
 3. **Benefits:**

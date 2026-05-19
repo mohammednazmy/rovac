@@ -1,5 +1,10 @@
 # Yahboom AT8236 Dual Motor Driver Module
 
+> **RETIRED** — The AT8236 motor driver is not used on the current ROVAC.
+> Motor control is handled by the Maker-ESP32 board with 4x TB67H450FNG drivers.
+> The legacy AT8236 Python driver moved to `archive/legacy_hardware/esp32_at8236_driver/`.
+> This document is kept as a vendor/hardware reference only.
+
 ## Overview
 
 The Yahboom AT8236 is a dual-channel H-bridge motor driver module capable of controlling two DC motors with encoders. It uses two AT8236 driver chips and supports 5-12V power input with built-in protection circuits. This module is a potential alternative or supplement to the Yahboom ROS Expansion Board for motor control applications.

@@ -87,9 +87,9 @@ Use a short, high-quality USB 3.0 cable for best performance.
     │
     └──► USB Hub DC Input (9-24V)
               │
-              ├──► USB Port 1: XV11 LIDAR (if USB adapter)
-              ├──► USB Port 2: Camera
-              ├──► USB Port 3: Additional sensors
+              ├──► USB Port 1: RPLIDAR C1
+              ├──► USB Port 2: ESP32 motor controller
+              ├──► USB Port 3: ESP32 sensor hub
               └──► USB Port 4: Spare
               │
               └──► Data cable to Pi 5 USB 3.0 port

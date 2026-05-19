@@ -54,19 +54,36 @@ distance_cm = 1 / (a * voltage + b)
 
 ## ROVAC Integration Status
 
-**NOT YET INTEGRATED** — Sensors are available but not wired or programmed.
+**INTEGRATED** — 2 GP2Y0A51SK0F sensors are used as front/rear cliff detectors, read by the **ESP32 Sensor Hub** (ESP32-DevKitV1) via the ESP32's ADC1 oneshot peripheral. The sensor hub connects to the Pi 5 over USB serial (COBS-framed binary, 460800 baud). Firmware is at `hardware/esp32_sensor_hub/` (`main/cliff_sensor.c`) and the Pi-side C++ driver is `ros2_ws/src/rovac_sensor_driver/`.
 
-### Potential Uses
+> Note: the sensors are software-integrated but not yet mounted on the robot chassis.
 
-1. **Cliff/drop detection**: Mount pointing downward at robot's front edge. Normally reads ~3-5cm (floor distance). If reading jumps to >15cm or no-return, a cliff/stair is detected. Very fast (60 Hz) response.
-2. **Close-range obstacle detection**: Detect objects in the LIDAR's blind zone (below 12.5cm scan height). Mount at front bumper level (2-5cm height) pointing forward.
-3. **Docking sensor**: Precise short-range alignment for autonomous charging station docking.
+### Mounting
 
-### Integration Consideration
+The 2 sensors are intended to mount facing downward at the robot's front and rear edges. Normally each reads the floor distance (~3-5 cm); if a reading jumps high / no-return, a cliff/drop is detected.
 
-These sensors output analog voltage, so they need an ADC to read. Options:
-- **ESP32 ADC**: Connect Vo to an ESP32 ADC pin (12-bit, but noisy and non-linear — use with averaging)
-- **External ADC**: ADS1115 (16-bit I2C ADC) for more precise readings
-- **Arduino Nano ADC**: The existing Super Sensor Arduino Nano has 10-bit ADC pins available
+| Position | URDF Frame |
+|----------|------------|
+| Front cliff | `cliff_front_link` |
+| Rear cliff | `cliff_rear_link` |
 
-For cliff detection, mount 2 sensors facing downward at the front-left and front-right edges of the chassis. The 60 Hz update rate is much faster than the ultrasonics (~10 Hz) and LIDAR (5 Hz), making this ideal for fast cliff detection at driving speed.
+### ROS2 Topics
+
+Published by `rovac_sensor_driver` at 10 Hz, reliable QoS:
+
+| Topic | Type | Description |
+|-------|------|-------------|
+| `/sensors/cliff/front` | Range | Front Sharp IR cliff distance |
+| `/sensors/cliff/rear` | Range | Rear Sharp IR cliff distance |
+| `/sensors/cliff/detected` | Bool | True when a cliff is detected on any sensor |
+
+### Code & Services
+
+- **Sensor hub firmware**: `hardware/esp32_sensor_hub/` (`main/cliff_sensor.c` — ADC1 oneshot reads)
+- **Pi C++ driver**: `ros2_ws/src/rovac_sensor_driver/`
+- **Obstacle/cliff avoidance**: `scripts/obstacle_avoidance_node.py`
+- **Systemd services**: `rovac-edge-sensor-hub.service`, `rovac-edge-obstacle.service`
+
+### ADC Notes
+
+These sensors output analog voltage and require an ADC. ROVAC reads them on the ESP32 Sensor Hub's ADC1 (12-bit oneshot). The bypass capacitor (see Important Notes above) is required because of the pulsed current draw. The output is non-linear — see the Linearization section.

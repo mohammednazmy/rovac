@@ -61,10 +61,10 @@
 
 ### Potential Uses
 
-1. **Cliff/edge detection**: Mount facing downward at the robot's front edge. If the sensor transitions from detecting floor (reflective) to detecting nothing (void/drop), it means a cliff/stairway edge. This is the most practical use for a vacuum robot.
-2. **Line following**: The original intended use — follow a tape line on the floor. Could be used for docking guidance (follow a tape path back to charging station).
-3. **Surface type detection**: Differentiate between carpet (dark/absorptive) and hard floor (reflective) to adjust vacuum power or driving speed.
+1. **Cliff/edge detection**: Mount facing downward at the robot's front edge. If the sensor transitions from detecting floor (reflective) to detecting nothing (void/drop), it means a cliff/stairway edge. This is the most practical use for a mobile robot. (Note: ROVAC currently uses the 2x Sharp GP2Y0A51SK0F IR cliff sensors on the ESP32 sensor hub for this role.)
+2. **Line following**: The original intended use — follow a tape line on the floor. Could be used for docking guidance (follow a tape path back to a charging station).
+3. **Surface type detection**: Differentiate between carpet (dark/absorptive) and hard floor (reflective) to adjust driving speed.
 
 ### Integration Consideration
 
-For cliff detection, mount 2 of the 4 channels at the front-left and front-right edges of the robot, pointing downward at ~45 degrees. The remaining 2 channels could cover the sides. When any channel detects "no floor" (no reflection), publish an emergency stop to `/cmd_vel_obstacle`. This is a critical safety sensor for a vacuum robot operating near stairs.
+For cliff detection, mount 2 of the 4 channels at the front-left and front-right edges of the robot, pointing downward at ~45 degrees. The remaining 2 channels could cover the sides. When any channel detects "no floor" (no reflection), publish an emergency stop to `/cmd_vel_obstacle`. This is a critical safety sensor for a mobile robot operating near stairs.

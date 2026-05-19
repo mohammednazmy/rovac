@@ -1,5 +1,10 @@
 # USB-Lidar Module (Neato XV-11)
 
+> **RETIRED** — The Neato XV-11 LiDAR + Arduino Nano bridge is no longer used on ROVAC.
+> It has been replaced by the **RPLIDAR C1** DTOF scanner (direct USB on the Pi).
+> See `archive/legacy_hardware/` for legacy XV-11 code. This document is kept for
+> historical reference only.
+
 A USB-connected LiDAR module using the Neato XV-11 sensor with Arduino Nano bridge for robotics applications.
 
 ## Features

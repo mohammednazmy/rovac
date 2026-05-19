@@ -1,8 +1,8 @@
 # ESP32 Sensor Hub — Wiring Guide
 
-**Board**: ESP32-DevKitV1 (WROOM-32, 38-pin, CH340 USB)
-**Purpose**: Near-obstacle detection + cliff/edge safety for autonomous vacuum navigation
-**Replaces**: Legacy Arduino Nano "super sensor" module
+**Board**: ESP32-DevKitV1 (WROOM-32, 38-pin, CP2102 USB)
+**Purpose**: Near-obstacle detection + cliff/edge safety for autonomous navigation
+**Replaces**: Legacy Arduino Nano "super sensor" module (retired — see `archive/legacy_hardware/super_sensor/`)
 
 ## Sensors
 

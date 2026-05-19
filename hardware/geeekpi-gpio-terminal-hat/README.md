@@ -109,7 +109,7 @@ I2C Device:
 └── SCL ──► Terminal 5 (GPIO3)
 ```
 
-### 3. UART Devices (when not using XV11 LIDAR)
+### 3. UART Devices
 
 ```
 Serial Device:

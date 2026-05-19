@@ -39,38 +39,36 @@ distance_cm = (echo_pulse_duration_us / 2) / 29.1
 
 ## ROVAC Integration Status
 
-**PARTIALLY INTEGRATED** — 4 sensors are mounted on the Super Sensor module (Arduino Nano-based) at the front of the robot. ROS2 driver exists at `hardware/super_sensor/`. Systemd services `rovac-edge-supersensor` and `rovac-edge-obstacle` exist but hardware is currently disconnected.
+**INTEGRATED** — 4 HC-SR04 sensors are driven by the **ESP32 Sensor Hub** (ESP32-DevKitV1, WROOM-32, CP2102) which connects to the Pi 5 over USB serial (COBS-framed binary, 460800 baud). The sensor hub firmware is at `hardware/esp32_sensor_hub/` and the Pi-side C++ driver is `ros2_ws/src/rovac_sensor_driver/`. This replaced the retired Arduino-Nano "Super Sensor" module (now in `archive/legacy_hardware/super_sensor/`).
 
-### Current Mounting (Super Sensor module)
+> Note: the sensors are physically wired and software-integrated, but not yet mounted on the robot chassis.
+
+### Mounting (front/rear/left/right)
 
 | Position | Direction | URDF Frame |
 |----------|-----------|------------|
-| Front Top | Forward | `super_sensor_link/front_top_link` |
-| Front Bottom | Forward, angled down | `super_sensor_link/front_bottom_link` |
-| Left | 90 degrees left | `super_sensor_link/left_link` |
-| Right | 90 degrees right | `super_sensor_link/right_link` |
+| Front | Forward | `us_front_link` |
+| Rear | Backward | `us_rear_link` |
+| Left | 90 degrees left | `us_left_link` |
+| Right | 90 degrees right | `us_right_link` |
 
-### ROS2 Topics (when connected)
+### ROS2 Topics
+
+Published by `rovac_sensor_driver` at 10 Hz, reliable QoS:
 
 | Topic | Type | Description |
 |-------|------|-------------|
-| `/super_sensor/ranges` | Float32MultiArray | Raw distances from all 4 sensors |
-| `/super_sensor/range/front_top` | Range | Individual sensor reading |
-| `/super_sensor/range/front_bottom` | Range | Individual sensor reading |
-| `/super_sensor/range/left` | Range | Individual sensor reading |
-| `/super_sensor/range/right` | Range | Individual sensor reading |
-| `/super_sensor/obstacle_detected` | Bool | True when any sensor below threshold |
-| `/super_sensor/obstacle_points` | PointCloud2 | Obstacle points for costmap |
+| `/sensors/ultrasonic/front` | Range | Front HC-SR04 obstacle distance |
+| `/sensors/ultrasonic/rear` | Range | Rear HC-SR04 obstacle distance |
+| `/sensors/ultrasonic/left` | Range | Left HC-SR04 obstacle distance |
+| `/sensors/ultrasonic/right` | Range | Right HC-SR04 obstacle distance |
+| `/obstacle/points` | PointCloud2 | Ultrasonic readings as 3D points for the Nav2 costmap |
 
-### Existing Code
+### Code & Services
 
-- **Sensor driver**: `hardware/super_sensor/super_sensor_node.py`
-- **Obstacle avoidance**: `hardware/super_sensor/obstacle_avoidance_node.py`
-- **Systemd services**: `rovac-edge-supersensor.service`, `rovac-edge-obstacle.service`
+- **Sensor hub firmware**: `hardware/esp32_sensor_hub/` (ESP-IDF v5.2; `main/ultrasonic.c` handles HC-SR04 sequential trigger/echo)
+- **Pi C++ driver**: `ros2_ws/src/rovac_sensor_driver/`
+- **Obstacle avoidance**: `scripts/obstacle_avoidance_node.py`
+- **Systemd services**: `rovac-edge-sensor-hub.service`, `rovac-edge-obstacle.service`
 
-### Reconnection Notes
-
-The Super Sensor Arduino Nano connects to the Pi via USB serial. To reconnect:
-1. Plug the Arduino Nano USB into the Pi
-2. Verify device appears: `ls /dev/ttyUSB*` or check udev rules
-3. Restart services: `sudo systemctl restart rovac-edge-supersensor rovac-edge-obstacle`
+The ESP32 Sensor Hub enumerates on the Pi as `/dev/esp32_sensor` (udev rule for CP2102, vendor `10c4:ea60`).
