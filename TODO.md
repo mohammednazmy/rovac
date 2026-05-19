@@ -41,34 +41,23 @@ _Last consolidated: 2026-05-18 (full sweep of code + docs for forgotten TODOs)._
 
 ## Cleanup / housekeeping
 
-- [ ] **Documentation drift sweep.** Several docs still describe retired hardware:
-  `README.md`, `AGENTS.md`, `docs/architecture/architecture.md`,
-  `docs/architecture/ARCHITECTURE_VERIFIED.md`, `docs/guides/bringup.md` still list the
-  Android phone sensor package, `rovac-edge-rosbridge`, and `rovac-edge-supersensor`
-  (all retired). `docs/robot_dimensions.md` still has phone frames and pre-2026-05-18
-  dimensions. Re-derive from the live URDF + current edge-services list.
-
-- [ ] **Archive superseded hardware dirs** (verify dead, then move to `archive/`):
-  `hardware/esp32_gateway/` (micro-ROS era — architecture is now USB COBS serial),
-  `hardware/esp32_xv11_bridge/` (XV11 lidar — replaced by RPLIDAR C1), and the Nano
-  encoder bridge if still present.
-
 - [ ] **`tank_description` package metadata.** `package.xml` / `setup.py` still have
   `license = TODO` and a placeholder maintainer. Set real values.
 
+- [ ] **Delete `hardware/esp32_gateway/`.** Gitignored micro-ROS-era code; left in place
+  during the 2026-05-18 archival because relocating it would un-ignore its build
+  artifacts. It is not in the repo — `rm -rf` it locally when convenient.
+
 ## Major projects (detailed checklists in their own docs)
 
-- [ ] **v2 Chassis Migration** — Neato D5 donor + 8× Delta motors. Fully planned, not
-  started. Checklist: `docs/v2_chassis_migration/conversion_checklist.md` (covers the
-  hardware sourcing, firmware adaptation for Neato motors/AS5600/VL6180X, the vacuum
-  control node, and v2 integration testing).
+- [ ] **v2 Chassis Migration** — Neato D5 donor. Planned, not started, and **needs
+  re-scoping**: v2 was premised on a vacuum subsystem (8× Delta blower motors), which
+  was retired 2026-05-17. Sections of `docs/v2_chassis_migration/` now carry a
+  `> NOTE: v2 scope under revision` marker — decide v2's purpose before proceeding.
 
 - [ ] **v3 Custom 3D-Printed Chassis** — round 250 mm platform. CAD in progress;
   Iter-4 print-prep (split STLs + Bambu project) and first-print fitment validation
   pending. See `rovac_v3/`.
-
-- [ ] **Super-Vacuum experiments (2- and 4-stage)** — exploration rigs; bench-test,
-  print, assembly, leak-test, and characterization steps remain. See `experiments/`.
 
 ## Needs a decision
 
@@ -79,8 +68,6 @@ _Last consolidated: 2026-05-18 (full sweep of code + docs for forgotten TODOs)._
 
 ## Hardware measurement tasks
 
-- [ ] Bench-measure the Delta BCB1012GJ-01 blower motor specs —
-  `hardware/delta-bcb1012gj-01-blower-motor/README.md` table is "TO BE MEASURED".
 - [ ] Salvaged-battery robot integration after first charge —
   `hardware/hiyiton-b6-v2-charger/BATTERY_INVENTORY.md`.
 
@@ -120,6 +107,11 @@ speed-dependent tracking error.
 
 ## Done
 
+- 2026-05-18 — Documentation realignment: ROVAC re-described as a general-purpose
+  autonomous robot (vacuum framing retired); core, architecture, guide, hardware, and
+  sub-project docs swept to current reality; retired hardware archived to
+  `archive/legacy_hardware/`; super-vacuum experiments archived.
+- 2026-05-18 — Established this TODO.md as the tracked single source of truth.
 - 2026-05-18 — URDF front/rear fix: `laser_joint` rotated 180° (the RPLIDAR was mounted
   facing the rear after the front/rear redefinition, so `/scan` rendered flipped).
 - 2026-05-18 — Sensor-hub frames (`us_*`, `cliff_*`) added to the URDF from measured
